@@ -60,6 +60,15 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/cost-control": {
+      "name": "@yaaabk/cost-control",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
     "packages/frontend": {
       "name": "@yaaabk/frontend",
       "version": "0.0.1",
@@ -346,6 +355,8 @@
     "@yaaabk/auth": ["@yaaabk/auth@workspace:packages/auth"],
 
     "@yaaabk/backend": ["@yaaabk/backend@workspace:packages/backend"],
+
+    "@yaaabk/cost-control": ["@yaaabk/cost-control@workspace:packages/cost-control"],
 
     "@yaaabk/frontend": ["@yaaabk/frontend@workspace:packages/frontend"],
 
