@@ -6,6 +6,7 @@
  * this origin through CORS with credentials.
  */
 
+import { PUBLIC_API_BASE_URL } from '$app/env/public';
 import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Plan } from '@yaaabk/plans';
 import type { Project } from '@yaaabk/projects';
@@ -43,8 +44,8 @@ export class ApiError extends Error {
   }
 }
 
-/** Base URL of the backend API. Empty means same-origin. */
-const API_BASE = (import.meta.env.PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
+/** Base URL of the backend API. */
+const API_BASE = PUBLIC_API_BASE_URL.replace(/\/$/, '');
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
