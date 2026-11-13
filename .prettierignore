@@ -8,3 +8,5 @@ test-results
 playwright-report
 bun.lock
 *.md
+templates
+packages/template/src/__fixtures__

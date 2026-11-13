@@ -86,6 +86,18 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/template": {
+      "name": "@yaaabk/template",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
   },
   "packages": {
     "@cacheable/memory": ["@cacheable/memory@2.2.0", "", { "dependencies": { "@cacheable/utils": "^2.5.0", "@keyv/bigmap": "^1.3.1", "hookified": "^1.15.1", "keyv": "^5.6.0" } }, "sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ=="],
@@ -295,6 +307,8 @@
     "@yaaabk/k8s": ["@yaaabk/k8s@workspace:packages/k8s"],
 
     "@yaaabk/shared": ["@yaaabk/shared@workspace:packages/shared"],
+
+    "@yaaabk/template": ["@yaaabk/template@workspace:packages/template"],
 
     "acorn": ["acorn@8.19.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw=="],
 
