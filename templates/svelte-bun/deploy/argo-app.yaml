@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{argoAppName}}
+  namespace: argocd
+  labels:
+    yaaabk.io/project-id: '{{projectId}}'
+spec:
+  project: default
+  source:
+    repoURL: {{repoUrl}}
+    targetRevision: HEAD
+    path: deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{namespace}}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

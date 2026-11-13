@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{projectName}}
+  namespace: {{namespace}}
+  labels:
+    app.kubernetes.io/name: {{projectName}}
+    yaaabk.io/project-id: '{{projectId}}'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{projectName}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{projectName}}
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/your-org/{{projectName}}:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{port}}
+          envFrom:
+            - configMapRef:
+                name: {{projectName}}-config
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
