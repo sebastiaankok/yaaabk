@@ -9,7 +9,14 @@ import {
   type AuthModule,
   type AuthStore,
 } from '@yaaabk/auth';
+import {
+  createFakeSpawner,
+  createGrillMeModule,
+  type FakeSpawner,
+  type GrillMeModule,
+} from '@yaaabk/grill-me';
 import { createMockK8sClient } from '@yaaabk/k8s';
+import { createInMemoryPlanStore, createPlansModule, type PlansModule } from '@yaaabk/plans';
 import {
   createFakeRepositoryProvider,
   createInMemoryProjectStore,
@@ -37,6 +44,9 @@ export interface TestContext {
   app: ReturnType<typeof createApp>;
   auth: AuthModule;
   projects: ProjectsModule;
+  plans: PlansModule;
+  grillMe: GrillMeModule;
+  spawner: FakeSpawner;
   store: AuthStore;
   clock: { ms: number };
   password: string;
@@ -50,6 +60,13 @@ let projectSequence = 0;
 function nextProjectId(): string {
   projectSequence += 1;
   return `${projectSequence.toString(16).padStart(8, '0')}-1111-4111-8111-111111111111`;
+}
+
+/** Hands out distinct Plan ids within a test run. */
+let planSequence = 0;
+function nextPlanId(): string {
+  planSequence += 1;
+  return `plan-${planSequence.toString(16).padStart(8, '0')}`;
 }
 
 /** Builds an app whose modules run on fakes and in-memory stores. */
@@ -87,10 +104,27 @@ export function createTestContext(
     logger: projectsLogger,
   });
 
+  const plans = createPlansModule({
+    store: createInMemoryPlanStore(),
+    ids: nextPlanId,
+    clock: () => new Date(clock.ms),
+    logger: silent,
+  });
+
+  const spawner = createFakeSpawner();
+  const grillMe = createGrillMeModule({
+    spawner,
+    skillPath: '/skills/grill-me/SKILL.md',
+    logger: silent,
+  });
+
   return {
-    app: createApp({ auth, projects, authRoutesOptions }),
+    app: createApp({ auth, projects, plans, grillMe, authRoutesOptions }),
     auth,
     projects,
+    plans,
+    grillMe,
+    spawner,
     store,
     clock,
     password: TEST_PASSWORD,

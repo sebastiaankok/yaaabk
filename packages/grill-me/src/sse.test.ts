@@ -34,6 +34,12 @@ describe('sseFrame', () => {
     );
   });
 
+  it('encodes an event id when supplied', () => {
+    expect(sseFrame('question', { sessionId: 's1', question: 'Why?' }, 7)).toBe(
+      'id: 7\nevent: question\ndata: {"sessionId":"s1","question":"Why?"}\n\n',
+    );
+  });
+
   it('encodes a heartbeat as a comment frame', () => {
     expect(sseHeartbeat()).toBe(': keep-alive\n\n');
   });
@@ -51,7 +57,7 @@ describe('createSseStream', () => {
 
     const { value } = await reader.read();
     expect(decoder.decode(value)).toBe(
-      `event: question\ndata: ${JSON.stringify({ sessionId: first, question: 'Which database?' })}\n\n`,
+      `id: 1\nevent: question\ndata: ${JSON.stringify({ sessionId: first, question: 'Which database?' })}\n\n`,
     );
     expect(second).not.toBe(first);
     await reader.cancel();
@@ -66,7 +72,7 @@ describe('createSseStream', () => {
 
     const ended = await reader.read();
     expect(decoder.decode(ended.value)).toBe(
-      `event: ended\ndata: ${JSON.stringify({ sessionId, reason: 'cancelled' })}\n\n`,
+      `id: 1\nevent: ended\ndata: ${JSON.stringify({ sessionId, reason: 'cancelled' })}\n\n`,
     );
     await expect(reader.read()).resolves.toMatchObject({ done: true });
   });

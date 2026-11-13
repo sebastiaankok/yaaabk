@@ -11,7 +11,9 @@ import {
   createTotp,
   MIN_SECRET_LENGTH,
 } from '@yaaabk/auth';
+import { createGrillMeModule } from '@yaaabk/grill-me';
 import { createK8sClient, detectK8sConnection } from '@yaaabk/k8s';
+import { createPlansModule, createSqlitePlanStore } from '@yaaabk/plans';
 import {
   createGitHubRepositoryProvider,
   createProjectsModule,
@@ -88,9 +90,14 @@ const projects = createProjectsModule({
   ...(githubToken !== undefined && githubToken !== '' ? { githubToken } : {}),
 });
 
+const plans = createPlansModule({ store: createSqlitePlanStore(database) });
+const grillMe = createGrillMeModule();
+
 const app = createApp({
   auth,
   projects,
+  plans,
+  grillMe,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
 });

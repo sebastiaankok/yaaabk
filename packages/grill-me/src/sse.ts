@@ -12,9 +12,15 @@ const ALL_EVENTS: readonly GrillMeEventName[] = [
   'ended',
 ];
 
-/** Encodes one Server-Sent Event frame. */
-export function sseFrame(event: GrillMeEventName, payload: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+/**
+ * Encodes one Server-Sent Event frame.
+ *
+ * When `id` is supplied, the frame carries an `id:` line so a browser's
+ * `EventSource` can report it as `Last-Event-ID` when it reconnects.
+ */
+export function sseFrame(event: GrillMeEventName, payload: unknown, id?: number): string {
+  const idLine = id === undefined ? '' : `id: ${id}\n`;
+  return `${idLine}event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
 
 /** A keep-alive comment frame; comments are ignored by `EventSource`. */
@@ -48,6 +54,7 @@ export function createSseStream(
   const disposers: Array<() => void> = [];
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let closed = false;
+  let sequence = 0;
 
   /** Stops the heartbeat and unsubscribes from the module. Idempotent. */
   function cleanup(): void {
@@ -83,7 +90,8 @@ export function createSseStream(
             if ((payload as { sessionId?: string }).sessionId !== sessionId) {
               return;
             }
-            controller.enqueue(encoder.encode(sseFrame(event, payload)));
+            sequence += 1;
+            controller.enqueue(encoder.encode(sseFrame(event, payload, sequence)));
             if (event === 'ended') {
               close(controller);
             }
