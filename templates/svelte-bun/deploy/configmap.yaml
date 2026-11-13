@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{projectName}}-config
+  namespace: {{namespace}}
+  labels:
+    app.kubernetes.io/name: {{projectName}}
+    yaaabk.io/project-id: '{{projectId}}'
+data:
+  NODE_ENV: production
+  PORT: '{{port}}'

@@ -1,0 +1,23 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' --parallel dev",
+    "build": "bun run --filter '@{{projectName}}/web' build && bun run --filter '@{{projectName}}/server' build",
+    "start": "bun run --filter '@{{projectName}}/server' start",
+    "test": "bun run --filter '*' --if-present test:unit",
+    "typecheck": "bun run --filter '*' --if-present typecheck",
+    "lint": "prettier --check .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.10.1",
+    "prettier-plugin-svelte": "^4.1.1"
+  }
+}
