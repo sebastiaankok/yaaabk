@@ -48,6 +48,8 @@ cp .env.example .env
 | `YAAABK_AUTH_SECRET` | _generated_ | HS256 secret for session cookies; required in production |
 | `YAAABK_WEB_ORIGIN` | `http://localhost:5173` | Frontend origin allowed to call the API with credentials |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
+| `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per issue |
+| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-issue budget in cents; overrides are capped at 500 |
 
 A single root `.env` configures every package: the backend loads it via
 `--env-file`, and Vite loads it via `envDir`. Only variables prefixed with
@@ -73,6 +75,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
+| `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
 Project templates live in [`templates/`](./templates). `@yaaabk/template` copies
@@ -161,6 +164,14 @@ bun run test:e2e
 
   ```sh
   bun run --filter '@yaaabk/auth' test:integration
+  ```
+
+- **OpenRouter integration tests** (`@yaaabk/cost-control`) provision a real
+  budgeted key against the Management API, then delete it. They need a
+  management key and are skipped by default:
+
+  ```sh
+  OPENROUTER_MANAGEMENT_KEY=sk-or-... bun run --filter '@yaaabk/cost-control' test:integration
   ```
 
 ## Production build
