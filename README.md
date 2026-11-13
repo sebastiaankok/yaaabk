@@ -64,6 +64,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/frontend` | `packages/frontend` | SvelteKit + Tailwind + shadcn-svelte browser UI |
 | `@yaaabk/backend` | `packages/backend` | Bun + Hono REST API and SSE bridge |
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
+| `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
 Internal packages export TypeScript source directly and are bundled by their
@@ -109,6 +110,12 @@ bun run test:e2e
   module's interface.
 - **End-to-end tests** live as `*.e2e.ts` and run with
   [Playwright](https://playwright.dev).
+- **Kubernetes integration tests** (`@yaaabk/k8s`) are skipped by default and
+  need a real cluster. Point them at a kind or minikube kubeconfig and run:
+
+  ```sh
+  bun run --filter '@yaaabk/k8s' test:integration
+  ```
 
 ## Production build
 
