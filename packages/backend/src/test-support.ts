@@ -9,6 +9,19 @@ import {
   type AuthModule,
   type AuthStore,
 } from '@yaaabk/auth';
+import { createMockK8sClient } from '@yaaabk/k8s';
+import {
+  createFakeRepositoryProvider,
+  createInMemoryProjectStore,
+  createProjectsModule,
+  silentLogger as projectsLogger,
+  type ProjectsModule,
+} from '@yaaabk/projects';
+import {
+  createFakeGitBackend,
+  createTemplateModule,
+  silentLogger as templateLogger,
+} from '@yaaabk/template';
 import { createApp, type AppOptions } from './app';
 
 /** A password that satisfies the real policy. */
@@ -23,6 +36,7 @@ export const TEST_NOW = Date.UTC(2026, 0, 1, 12);
 export interface TestContext {
   app: ReturnType<typeof createApp>;
   auth: AuthModule;
+  projects: ProjectsModule;
   store: AuthStore;
   clock: { ms: number };
   password: string;
@@ -31,7 +45,14 @@ export interface TestContext {
 
 const silent = { info: () => {}, error: () => {} };
 
-/** Builds an app whose Auth Module runs on fakes and an in-memory store. */
+/** Hands out distinct, namespace-derivable Project ids within a test run. */
+let projectSequence = 0;
+function nextProjectId(): string {
+  projectSequence += 1;
+  return `${projectSequence.toString(16).padStart(8, '0')}-1111-4111-8111-111111111111`;
+}
+
+/** Builds an app whose modules run on fakes and in-memory stores. */
 export function createTestContext(
   authRoutesOptions: AppOptions['authRoutesOptions'] = { attemptsPerMinute: 100 },
 ): TestContext {
@@ -51,9 +72,25 @@ export function createTestContext(
     logger: silent,
   });
 
+  const projects = createProjectsModule({
+    store: createInMemoryProjectStore(),
+    k8s: createMockK8sClient(),
+    templates: createTemplateModule({
+      git: createFakeGitBackend(),
+      dryRun: true,
+      logger: templateLogger,
+    }),
+    repositories: createFakeRepositoryProvider(),
+    githubToken: 'gh-token',
+    ids: nextProjectId,
+    clock: () => new Date(clock.ms),
+    logger: projectsLogger,
+  });
+
   return {
-    app: createApp({ auth, authRoutesOptions }),
+    app: createApp({ auth, projects, authRoutesOptions }),
     auth,
+    projects,
     store,
     clock,
     password: TEST_PASSWORD,

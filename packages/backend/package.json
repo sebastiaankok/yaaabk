@@ -13,7 +13,10 @@
   },
   "dependencies": {
     "@yaaabk/auth": "workspace:*",
+    "@yaaabk/k8s": "workspace:*",
+    "@yaaabk/projects": "workspace:*",
     "@yaaabk/shared": "workspace:*",
+    "@yaaabk/template": "workspace:*",
     "hono": "^4.11.4"
   },
   "devDependencies": {

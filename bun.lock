@@ -51,7 +51,10 @@
       "version": "0.0.0",
       "dependencies": {
         "@yaaabk/auth": "workspace:*",
+        "@yaaabk/k8s": "workspace:*",
+        "@yaaabk/projects": "workspace:*",
         "@yaaabk/shared": "workspace:*",
+        "@yaaabk/template": "workspace:*",
         "hono": "^4.11.4",
       },
       "devDependencies": {
@@ -115,6 +118,21 @@
         "@kubernetes/client-node": "^2.0.2",
       },
       "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
+    "packages/projects": {
+      "name": "@yaaabk/projects",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/k8s": "workspace:*",
+        "@yaaabk/shared": "workspace:*",
+        "@yaaabk/template": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.13",
         "@types/node": "^24.0.0",
         "typescript": "^6.0.3",
         "vitest": "^4.1.8",
@@ -363,6 +381,8 @@
     "@yaaabk/grill-me": ["@yaaabk/grill-me@workspace:packages/grill-me"],
 
     "@yaaabk/k8s": ["@yaaabk/k8s@workspace:packages/k8s"],
+
+    "@yaaabk/projects": ["@yaaabk/projects@workspace:packages/projects"],
 
     "@yaaabk/shared": ["@yaaabk/shared@workspace:packages/shared"],
 

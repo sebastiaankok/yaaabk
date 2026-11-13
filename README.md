@@ -47,6 +47,9 @@ cp .env.example .env
 | `YAAABK_DATA_DIR` | `./data` | Directory holding the SQLite database file |
 | `YAAABK_AUTH_SECRET` | _generated_ | HS256 secret for session cookies; required in production |
 | `YAAABK_WEB_ORIGIN` | `http://localhost:5173` | Frontend origin allowed to call the API with credentials |
+| `YAAABK_GITHUB_TOKEN` | _unset_ | Token used to create Project repositories (`repo` scope, or a GitHub App with `administration:write`) |
+| `YAAABK_GITHUB_OWNER` | _unset_ | Account new Project repositories are created under |
+| `YAAABK_GITHUB_OWNER_TYPE` | `org` | Whether that account is an `org` or the authenticated `user` |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per issue |
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-issue budget in cents; overrides are capped at 500 |
@@ -75,6 +78,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
+| `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
@@ -111,6 +115,47 @@ The first-run wizard needs an authenticator app (Google Authenticator, Authy,
 1Password, …). In development an ephemeral signing secret is generated on each
 start; set `YAAABK_AUTH_SECRET` (≥ 32 characters) to keep sessions across
 restarts, and it is required in production.
+
+## Projects
+
+The `@yaaabk/projects` package owns Project provisioning: creating a Project
+records it locally and, in one step, brings up everything it needs. The backend
+exposes it over HTTP:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/projects` | Create a Project (`name`, `description`, `skillLevel`) |
+| `GET /api/projects` | List Projects, newest first |
+| `GET /api/projects/:id` | Get a Project |
+| `PATCH /api/projects/:id` | Update its `description` and/or `skillLevel` |
+| `DELETE /api/projects/:id` | Tear down its repository and cluster resources |
+
+Creating a Project runs a fixed sequence, reported to the caller through the
+`onProgress` callback:
+
+1. **repository** — create the backing GitHub repository (the `Repository` port;
+   a GitHub REST adapter ships with the module).
+2. **scaffold** — push the `templates/svelte-bun` template to it.
+3. **namespace** — create the `project-<short-uuid>` namespace, labelled
+   `yaaabk.io/project-name`.
+4. **service-account** and **role-binding** — the `yaaabk-agent` ServiceAccount
+   bound to the `edit` ClusterRole within that namespace only.
+5. **secret** — copy the GitHub token in as `yaaabk-github` (skipped when no
+   token is configured).
+6. **argocd** — create the ArgoCD `Application` for the repository.
+7. **persist** — record the Project.
+
+If any step fails the resources created so far are rolled back and no Project is
+recorded, so a failed creation never leaves a half-registered Project.
+
+The module depends on narrow ports, so it is unit-tested against an in-memory
+`ProjectStore`, an in-memory cluster (`createMockK8sClient`), a fake repository
+provider and the Template Module on a fake git backend. The SQLite store runs
+against `bun:sqlite` under `bun test`:
+
+```sh
+bun run --filter '@yaaabk/projects' test:integration
+```
 
 ## Scripts
 
