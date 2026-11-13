@@ -66,6 +66,18 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/grill-me": {
+      "name": "@yaaabk/grill-me",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
     "packages/k8s": {
       "name": "@yaaabk/k8s",
       "version": "0.0.0",
@@ -303,6 +315,8 @@
     "@yaaabk/backend": ["@yaaabk/backend@workspace:packages/backend"],
 
     "@yaaabk/frontend": ["@yaaabk/frontend@workspace:packages/frontend"],
+
+    "@yaaabk/grill-me": ["@yaaabk/grill-me@workspace:packages/grill-me"],
 
     "@yaaabk/k8s": ["@yaaabk/k8s@workspace:packages/k8s"],
 
