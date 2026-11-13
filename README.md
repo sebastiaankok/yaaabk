@@ -65,7 +65,14 @@ This is a Bun workspace monorepo:
 | `@yaaabk/backend` | `packages/backend` | Bun + Hono REST API and SSE bridge |
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
+| `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
+
+Project templates live in [`templates/`](./templates). `@yaaabk/template` copies
+the bundled [`templates/svelte-bun`](./templates/svelte-bun) — a SvelteKit +
+Tailwind app served by a Bun + Hono API, with Docker, Kubernetes, ArgoCD and CI
+wiring — interpolates the project's values, and pushes the result to the new
+project repository.
 
 Internal packages export TypeScript source directly and are bundled by their
 consumers, so there is no separate compile step for `shared`.
