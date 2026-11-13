@@ -1,9 +1,13 @@
 import type { AuthModule } from '@yaaabk/auth';
+import type { GrillMeModule } from '@yaaabk/grill-me';
+import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import { SKILL_LEVELS } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authRoutes, requireAuth, type AuthRoutesOptions } from './auth-routes';
+import { grillRoutes } from './grill-routes';
+import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
 
 /** Origin the browser app is served from in development. */
@@ -20,6 +24,10 @@ export interface AppOptions {
    * GitHub adapters; tests inject fakes.
    */
   projects: ProjectsModule;
+  /** The Plans Module. Tests inject one over an in-memory store. */
+  plans: PlansModule;
+  /** The Grill-Me Module. Tests inject one over a fake spawner. */
+  grillMe: GrillMeModule;
   /** Forwarded to {@link authRoutes}. */
   authRoutesOptions?: AuthRoutesOptions;
   /** Origin allowed to call the API with credentials. Defaults to {@link DEFAULT_WEB_ORIGIN}. */
@@ -50,6 +58,8 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', authRoutes(options.auth, options.authRoutesOptions));
   app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects));
+  app.route('/', planRoutes(options.projects, options.plans));
+  app.route('/', grillRoutes(options.grillMe, options.projects, options.plans));
 
   return app;
 }
