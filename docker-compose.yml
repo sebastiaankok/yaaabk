@@ -1,0 +1,51 @@
+#
+# Local development stack.
+#
+# The primary developer workflow is Bun-native (`bun install && bun run dev`) and
+# needs none of this. Compose exists for container parity and for the SQLite data
+# volume. Run with: docker compose up --build
+#
+name: yaaabk
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    environment:
+      PORT: 3000
+      # Reserved: the SQLite file lives here once the database layer lands.
+      YAAABK_DATA_DIR: /data
+    ports:
+      - '3000:3000'
+    volumes:
+      - yaaabk-data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    environment:
+      PORT: 3000
+      PUBLIC_API_BASE_URL: http://localhost:3000
+    ports:
+      - '5173:3000'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # OpenCode sidecar is introduced with the Grill-Me slice (issue #5); enable it
+  # here when that module lands.
+  # opencode:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/opencode/Dockerfile
+  #   restart: unless-stopped
+
+volumes:
+  yaaabk-data:

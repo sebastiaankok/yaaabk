@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+.svelte-kit
+.output
+coverage
+test-results
+playwright-report
+bun.lock
+*.md

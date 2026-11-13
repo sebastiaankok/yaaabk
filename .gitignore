@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+build
+.output
+.svelte-kit
+
+# Tests
+coverage
+test-results
+playwright-report
+blob-report
+.playwright
+
+# Local data (SQLite)
+data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
