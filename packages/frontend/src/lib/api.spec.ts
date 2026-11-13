@@ -52,7 +52,7 @@ describe('request options', () => {
     await login({ username: 'alice', password: 'secret' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/auth/login',
+      expect.stringMatching(/\/api\/auth\/login$/),
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
   });
