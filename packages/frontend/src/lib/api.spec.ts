@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getStatus, login } from './api';
+import { createProject, deleteProject, getStatus, listProjects, login } from './api';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -54,6 +54,56 @@ describe('request options', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/auth\/login$/),
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+  });
+});
+
+describe('listProjects', () => {
+  it('unwraps the projects array from the response envelope', async () => {
+    const project = { id: 'p1', name: 'todo-app' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ projects: [project] })),
+    );
+
+    await expect(listProjects()).resolves.toEqual([project]);
+  });
+});
+
+describe('createProject', () => {
+  it('POSTs the details as camelCase JSON and returns the created project', async () => {
+    const created = { id: 'p1', name: 'todo-app' };
+    const fetchMock = vi.fn(async () => jsonResponse(created, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createProject({ name: 'todo-app', description: 'A todo list', skillLevel: 'expert' }),
+    ).resolves.toEqual(created);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'todo-app',
+          description: 'A todo list',
+          skillLevel: 'expert',
+        }),
+      }),
+    );
+  });
+});
+
+describe('deleteProject', () => {
+  it('sends a DELETE to the encoded project path', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteProject('p 1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p%201$/),
+      expect.objectContaining({ method: 'DELETE' }),
     );
   });
 });

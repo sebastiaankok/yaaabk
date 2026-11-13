@@ -10,6 +10,7 @@ import { PUBLIC_API_BASE_URL } from '$app/env/public';
 import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Plan } from '@yaaabk/plans';
 import type { Project } from '@yaaabk/projects';
+import type { SkillLevel } from '@yaaabk/shared';
 
 export interface AuthUser {
   id: string;
@@ -105,6 +106,22 @@ export function logout(): Promise<{ ok: boolean }> {
 
 export function getProject(id: string): Promise<Project> {
   return request<Project>(`/api/projects/${encodeURIComponent(id)}`);
+}
+
+export function listProjects(): Promise<Project[]> {
+  return request<{ projects: Project[] }>('/api/projects').then((body) => body.projects);
+}
+
+export function createProject(input: {
+  name: string;
+  description: string;
+  skillLevel: SkillLevel;
+}): Promise<Project> {
+  return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deleteProject(id: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export function listPlans(projectId: string): Promise<Plan[]> {

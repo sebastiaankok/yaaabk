@@ -31,5 +31,5 @@ export const ARGO_DESTINATION_SERVER = 'https://kubernetes.default.svc';
 /** Branch the scaffold pushes to and ArgoCD tracks. */
 export const DEFAULT_BRANCH = 'main';
 
-/** Longest Project description the module accepts. */
-export const MAX_DESCRIPTION_LENGTH = 500;
+// Longest Project description, a field constraint shared with the frontend.
+export { MAX_DESCRIPTION_LENGTH } from '@yaaabk/shared';
