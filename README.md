@@ -27,8 +27,12 @@ bun run dev   # starts the frontend and backend together
 
 | Service | URL | What you should see |
 | --- | --- | --- |
-| Frontend | <http://localhost:5173> | The YAAABK landing page |
-| Backend | <http://localhost:3000> | `GET /health` → `{"status":"ok"}`, `GET /api/skill-levels` |
+| Frontend | <http://localhost:5173> | Redirects to the first-run setup wizard |
+| Backend | <http://localhost:3000> | `GET /health` → `{"status":"ok"}` |
+
+The first time you open the frontend it walks you through creating the admin
+account: choose a username and password, scan the TOTP QR code with an
+authenticator app, then confirm a code. See [Authentication](#authentication).
 
 No configuration is needed to start. To change defaults, copy the example file
 to the repository root:
@@ -40,7 +44,9 @@ cp .env.example .env
 | Variable | Default | Used by |
 | --- | --- | --- |
 | `PORT` | `3000` | Backend HTTP port |
-| `YAAABK_DATA_DIR` | `./data` | Reserved for the SQLite database file |
+| `YAAABK_DATA_DIR` | `./data` | Directory holding the SQLite database file |
+| `YAAABK_AUTH_SECRET` | _generated_ | HS256 secret for session cookies; required in production |
+| `YAAABK_WEB_ORIGIN` | `http://localhost:5173` | Frontend origin allowed to call the API with credentials |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 
 A single root `.env` configures every package: the backend loads it via
@@ -63,6 +69,7 @@ This is a Bun workspace monorepo:
 | --- | --- | --- |
 | `@yaaabk/frontend` | `packages/frontend` | SvelteKit + Tailwind + shadcn-svelte browser UI |
 | `@yaaabk/backend` | `packages/backend` | Bun + Hono REST API and SSE bridge |
+| `@yaaabk/auth` | `packages/auth` | Password policy, TOTP, sessions and the `AuthStore` port |
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
@@ -76,6 +83,31 @@ project repository.
 
 Internal packages export TypeScript source directly and are bundled by their
 consumers, so there is no separate compile step for `shared`.
+
+## Authentication
+
+YAAABK is single-user per instance. The `@yaaabk/auth` package owns the domain
+logic — password policy (zxcvbn-backed), TOTP, sessions and an `AuthStore` port
+with in-memory and SQLite adapters — while the backend exposes it over HTTP:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/auth/status` | Whether setup is complete and whether the caller is signed in |
+| `POST /api/auth/setup` | Create the (unverified) admin account and TOTP secret |
+| `POST /api/auth/setup/verify` | Confirm the TOTP code and sign in |
+| `POST /api/auth/login` | Check the password, returning a second-factor challenge |
+| `POST /api/auth/login/2fa` | Confirm the TOTP code and sign in |
+| `POST /api/auth/logout` | Revoke the session |
+
+Sessions are JWTs in an `HttpOnly`, `SameSite=Strict` cookie that expires after
+seven days. Credential endpoints are limited to five attempts per minute. The
+frontend `/setup` and `/login` pages drive the flow and a route guard bounces
+signed-out Developers to the right step.
+
+The first-run wizard needs an authenticator app (Google Authenticator, Authy,
+1Password, …). In development an ephemeral signing secret is generated on each
+start; set `YAAABK_AUTH_SECRET` (≥ 32 characters) to keep sessions across
+restarts, and it is required in production.
 
 ## Scripts
 
@@ -122,6 +154,13 @@ bun run test:e2e
 
   ```sh
   bun run --filter '@yaaabk/k8s' test:integration
+  ```
+
+- **SQLite integration tests** (`@yaaabk/auth`) run the store against
+  `bun:sqlite` under `bun test`:
+
+  ```sh
+  bun run --filter '@yaaabk/auth' test:integration
   ```
 
 ## Production build

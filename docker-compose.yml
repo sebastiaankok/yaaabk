@@ -14,8 +14,10 @@ services:
       dockerfile: packages/backend/Dockerfile
     environment:
       PORT: 3000
-      # Reserved: the SQLite file lives here once the database layer lands.
       YAAABK_DATA_DIR: /data
+      YAAABK_WEB_ORIGIN: http://localhost:5173
+      # Development-only default; set YAAABK_AUTH_SECRET to keep sessions.
+      YAAABK_AUTH_SECRET: ${YAAABK_AUTH_SECRET:-dev-only-insecure-secret-change-me-0123456789}
     ports:
       - '3000:3000'
     volumes:

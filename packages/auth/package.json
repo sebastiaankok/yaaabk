@@ -1,0 +1,30 @@
+{
+  "name": "@yaaabk/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:integration": "bun test src/sqlite-auth-store.integration.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@yaaabk/shared": "workspace:*",
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-common": "^3.0.4",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^13.1.1",
+    "jose": "^6.1.0",
+    "otplib": "^12.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
