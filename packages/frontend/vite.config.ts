@@ -4,6 +4,8 @@ import adapter from '@sveltejs/adapter-bun';
 import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
+  // Read `.env` from the repository root so a single file configures every package.
+  envDir: '../..',
   plugins: [
     tailwindcss(),
     sveltekit({
