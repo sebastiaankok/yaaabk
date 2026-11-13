@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+**/build
+**/.svelte-kit
+**/.output
+**/coverage
+**/test-results
+**/playwright-report
+.git
+.github
+data
+*.db
+*.log
+*.md
