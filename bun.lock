@@ -68,12 +68,14 @@
         "@yaaabk/agents": "workspace:*",
         "@yaaabk/auth": "workspace:*",
         "@yaaabk/ci-tracker": "workspace:*",
+        "@yaaabk/cost-control": "workspace:*",
         "@yaaabk/github": "workspace:*",
         "@yaaabk/grill-me": "workspace:*",
         "@yaaabk/issues": "workspace:*",
         "@yaaabk/k8s": "workspace:*",
         "@yaaabk/plans": "workspace:*",
         "@yaaabk/projects": "workspace:*",
+        "@yaaabk/settings": "workspace:*",
         "@yaaabk/shared": "workspace:*",
         "@yaaabk/template": "workspace:*",
         "hono": "^4.11.4",
@@ -121,6 +123,7 @@
         "@yaaabk/issues": "workspace:*",
         "@yaaabk/plans": "workspace:*",
         "@yaaabk/projects": "workspace:*",
+        "@yaaabk/settings": "workspace:*",
         "@yaaabk/shared": "workspace:*",
         "dompurify": "^3.2.6",
         "marked": "^15.0.0",
@@ -151,6 +154,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@yaaabk/issues": "workspace:*",
+        "jose": "^6.1.0",
       },
       "devDependencies": {
         "@types/node": "^24.0.0",
@@ -215,6 +219,19 @@
         "@yaaabk/k8s": "workspace:*",
         "@yaaabk/shared": "workspace:*",
         "@yaaabk/template": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.13",
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
+    "packages/settings": {
+      "name": "@yaaabk/settings",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/cost-control": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.3.13",
@@ -480,6 +497,8 @@
     "@yaaabk/plans": ["@yaaabk/plans@workspace:packages/plans"],
 
     "@yaaabk/projects": ["@yaaabk/projects@workspace:packages/projects"],
+
+    "@yaaabk/settings": ["@yaaabk/settings@workspace:packages/settings"],
 
     "@yaaabk/shared": ["@yaaabk/shared@workspace:packages/shared"],
 

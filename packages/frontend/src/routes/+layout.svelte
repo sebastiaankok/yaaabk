@@ -52,6 +52,13 @@
 
 {#if status?.authenticated && !onAuthRoute}
   <header class="flex items-center justify-end gap-3 px-6 py-4">
+    <a
+      href={resolve('/settings')}
+      class="text-sm text-neutral-500 hover:underline"
+      class:font-medium={page.url.pathname === resolve('/settings')}
+    >
+      Settings
+    </a>
     <span class="text-sm text-neutral-500">{status.user?.username}</span>
     <button
       type="button"

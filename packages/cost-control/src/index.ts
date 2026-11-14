@@ -5,4 +5,6 @@ export * from './openrouter-api';
 export * from './budget-store';
 export * from './fake-openrouter-api';
 export * from './openrouter-http';
+export * from './openrouter-verifier';
+export * from './openrouter-verify-types';
 export * from './cost-control';
