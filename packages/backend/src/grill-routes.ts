@@ -5,6 +5,7 @@ import {
   type GrillMeLogger,
   type GrillMeModule,
 } from '@yaaabk/grill-me';
+import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import type { SkillLevel } from '@yaaabk/shared';
@@ -44,6 +45,7 @@ export function grillRoutes(
   grillMe: GrillMeModule,
   projects: ProjectsModule,
   plans: PlansModule,
+  issues: IssuesModule,
   options: GrillRoutesOptions = {},
 ): Hono {
   const app = new Hono();
@@ -81,6 +83,27 @@ export function grillRoutes(
       sessionsById.delete(sessionId);
       sessionsByProject.delete(session.projectId);
     }
+  });
+
+  // The skill emits its issue list after the plan. Persist each emission against
+  // the active plan so the review UI can show and refine it; a later emission
+  // replaces the previous drafts.
+  grillMe.on('issues_generated', ({ sessionId, issues: generated }) => {
+    const session = sessionsById.get(sessionId);
+    if (session === undefined) {
+      return;
+    }
+    void (async () => {
+      const active = await plans.getActive(session.projectId);
+      if (!active.ok || active.value === null) {
+        logger.error('grill-me issues save skipped: no active plan', { sessionId });
+        return;
+      }
+      const result = await issues.replaceForPlan(session.projectId, active.value.id, generated);
+      if (!result.ok) {
+        logger.error('grill-me issues save failed', { sessionId, kind: result.error.kind });
+      }
+    })();
   });
 
   function requireSession(projectId: string, sessionId: string): Session | undefined {

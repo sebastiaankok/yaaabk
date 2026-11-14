@@ -267,3 +267,46 @@ describe('plans from a grill-me session', () => {
     });
   });
 });
+
+describe('issues from a grill-me session', () => {
+  const ISSUES = (title: string) =>
+    `<ISSUES>[{"title":"${title}","labels":["ready"],"depends_on":[]}]</ISSUES>`;
+
+  it('records the generated issues against the active plan', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    await startSession(context, session, projectId);
+
+    context.spawner.processes[0]?.emit('<PLAN># Refined plan</PLAN>');
+    context.spawner.processes[0]?.emit(ISSUES('Add auth'));
+    await tick();
+
+    await expect(context.issues.list(projectId)).resolves.toMatchObject({
+      ok: true,
+      value: [
+        expect.objectContaining({
+          title: 'Add auth',
+          label: 'ready',
+          planId: expect.any(String),
+        }),
+      ],
+    });
+  });
+
+  it('replaces the previous drafts when the skill emits a new list', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    await startSession(context, session, projectId);
+
+    context.spawner.processes[0]?.emit('<PLAN># Refined plan</PLAN>');
+    context.spawner.processes[0]?.emit(ISSUES('First pass'));
+    await tick();
+    context.spawner.processes[0]?.emit(ISSUES('Second pass'));
+    await tick();
+
+    const listed = await context.issues.list(projectId);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.map((issue) => issue.title)).toEqual(['Second pass']);
+  });
+});

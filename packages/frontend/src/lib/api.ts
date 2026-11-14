@@ -8,6 +8,7 @@
 
 import { PUBLIC_API_BASE_URL } from '$app/env/public';
 import type { GeneratedIssue } from '@yaaabk/grill-me';
+import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
 import type { Project } from '@yaaabk/projects';
 import type { SkillLevel } from '@yaaabk/shared';
@@ -218,4 +219,51 @@ export interface GrillErrorEvent {
 export interface GrillEndedEvent {
   sessionId: string;
   reason: 'completed' | 'failed' | 'cancelled' | 'timeout';
+}
+
+// --- Issues -----------------------------------------------------------------
+
+export function listIssues(projectId: string): Promise<Issue[]> {
+  return request<{ issues: Issue[] }>(`/api/projects/${encodeURIComponent(projectId)}/issues`).then(
+    (body) => body.issues,
+  );
+}
+
+export function getIssueGraph(projectId: string): Promise<IssueGraph> {
+  return request<IssueGraph>(`/api/projects/${encodeURIComponent(projectId)}/issues/graph`);
+}
+
+export function generateIssues(projectId: string): Promise<Issue[]> {
+  return request<{ issues: Issue[] }>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/generate`,
+    { method: 'POST' },
+  ).then((body) => body.issues);
+}
+
+export function refineIssues(projectId: string, feedback: string): Promise<Issue[]> {
+  return request<{ issues: Issue[] }>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/refine`,
+    { method: 'POST', body: JSON.stringify({ feedback }) },
+  ).then((body) => body.issues);
+}
+
+export function approveIssues(projectId: string): Promise<Issue[]> {
+  return request<{ issues: Issue[] }>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/approve`,
+    { method: 'POST' },
+  ).then((body) => body.issues);
+}
+
+export function updateIssue(projectId: string, issueId: string, patch: IssuePatch): Promise<Issue> {
+  return request<Issue>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}`,
+    { method: 'PATCH', body: JSON.stringify(patch) },
+  );
+}
+
+export function deleteIssue(projectId: string, issueId: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}`,
+    { method: 'DELETE' },
+  );
 }

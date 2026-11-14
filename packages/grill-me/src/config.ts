@@ -65,3 +65,39 @@ export function buildRefineMessage(feedback: string): string {
     'Respond with an updated <ISSUES></ISSUES> block only.',
   ].join('\n');
 }
+
+export interface IssuesPromptInput {
+  projectId: string;
+  plan: string;
+  skillLevel: SkillLevel;
+  skillPath: string;
+  /** Revision feedback, when the run refines an existing issue list. */
+  feedback?: string;
+}
+
+/** The one-shot prompt that turns a finished plan into an implementation issue list. */
+export function buildIssuesPrompt(input: IssuesPromptInput): string {
+  const lines = [
+    'You are the YAAABK grill-me agent. Turn the finished plan below into an implementation issue list.',
+    '',
+    `Load and follow the skill at: ${input.skillPath}`,
+    `Project id: ${input.projectId}`,
+    `Developer skill level: ${input.skillLevel}`,
+    DEPTH_GUIDANCE[input.skillLevel],
+    '',
+    'Do not ask questions. Respond with a single <ISSUES></ISSUES> block: a JSON array of',
+    '{ title, body, labels, depends_on } objects. `depends_on` holds the titles of issues',
+    'that must be implemented first.',
+  ];
+  if (input.feedback !== undefined && input.feedback.trim() !== '') {
+    lines.push(
+      '',
+      'Revise the issue list using this feedback from the Developer:',
+      '"""',
+      input.feedback.trim(),
+      '"""',
+    );
+  }
+  lines.push('', 'The plan:', '"""', input.plan.trim(), '"""');
+  return lines.join('\n');
+}

@@ -66,6 +66,14 @@ export type GrillMeEventName = keyof GrillMeEventMap;
 export type GrillMeEventHandler<K extends GrillMeEventName> = (payload: GrillMeEventMap[K]) => void;
 
 /**
+ * Optional context for a one-shot {@link GrillMeModule.generateIssues} run.
+ */
+export interface GenerateIssuesOptions {
+  /** Revision feedback to fold into the prompt, turning the run into a refine pass. */
+  feedback?: string;
+}
+
+/**
  * The Grill-Me Module's public contract.
  *
  * Commands resolve to a {@link GrillMeResult}; output is delivered through
@@ -85,6 +93,17 @@ export interface GrillMeModule {
   refineIssues(sessionId: string, feedback: string): Promise<GrillMeResult<void>>;
   /** Ends the session and stops its process. */
   cancelSession(sessionId: string): Promise<GrillMeResult<void>>;
+  /**
+   * Runs a one-shot OpenCode pass over an existing plan and returns the issues
+   * it emits, without holding a session open. Used to (re)generate a Project's
+   * issues from its active plan; pass `feedback` to revise an existing list.
+   */
+  generateIssues(
+    projectId: string,
+    plan: string,
+    skillLevel: SkillLevel,
+    options?: GenerateIssuesOptions,
+  ): Promise<GrillMeResult<GeneratedIssue[]>>;
   /** Subscribes to an event; returns a function that unsubscribes. */
   on<K extends GrillMeEventName>(event: K, handler: GrillMeEventHandler<K>): () => void;
 }

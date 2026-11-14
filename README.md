@@ -79,6 +79,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
+| `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
@@ -157,8 +158,40 @@ against `bun:sqlite` under `bun test`:
 bun run --filter '@yaaabk/projects' test:integration
 ```
 
-## Scripts
+## Issues
 
+The `@yaaabk/issues` package owns Issues: the local mirror of the GitHub Issues a
+Plan generates. The backend exposes it over HTTP:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/projects/:id/issues` | Create an Issue (`title`, `body`, `label`, `depends_on`, `budget_cents`) |
+| `GET /api/projects/:id/issues` | List a Project's Issues, oldest first |
+| `GET /api/projects/:id/issues/:issueId` | Get an Issue |
+| `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status` or `depends_on` |
+| `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
+| `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
+| `POST /api/projects/:id/issues/generate` | Run the grill-me one-shot over the active Plan and record its Issues |
+| `POST /api/projects/:id/issues/refine` | Re-run generation with revision feedback |
+| `POST /api/projects/:id/issues/approve` | Mark every Issue `ready` |
+
+The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
+the generated Issues grouped by wave (with label pills, dependency tags and any
+circular-dependency warning), a "Refine with prompt" box, and "Approve & Create".
+Issues are also recorded automatically whenever a live grill-me session emits an
+`<ISSUES>` block.
+
+`buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
+wave 0 to the Issues with no dependencies and one past their highest dependency
+after that, and reports any cycle (or an Issue that transitively depends on one)
+with no wave, so the UI can surface it. The module is unit-tested against an
+in-memory `IssueStore` and the SQLite store runs against `bun:sqlite`:
+
+```sh
+bun run --filter '@yaaabk/issues' test:integration
+```
+
+## Scripts
 Run these from the repository root; each fans out across the workspace.
 
 | Command | Description |

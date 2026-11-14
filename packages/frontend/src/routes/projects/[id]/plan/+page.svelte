@@ -441,7 +441,15 @@
 
     {#if issues.length > 0}
       <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="issues-heading">
-        <h2 id="issues-heading" class="mb-2 text-sm font-semibold">Generated issues</h2>
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <h2 id="issues-heading" class="text-sm font-semibold">Generated issues</h2>
+          <a
+            href={resolve('/projects/[id]/issues/review', { id: project.id })}
+            class="text-sm text-neutral-500 hover:underline"
+          >
+            Review issues →
+          </a>
+        </div>
         <ul class="flex flex-col gap-2">
           {#each issues as issue (issue.title)}
             <li class="rounded-md border border-neutral-200 p-3 text-sm">

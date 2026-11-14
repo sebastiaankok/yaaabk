@@ -1,5 +1,6 @@
 import type { AuthModule } from '@yaaabk/auth';
 import type { GrillMeModule } from '@yaaabk/grill-me';
+import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import { SKILL_LEVELS } from '@yaaabk/shared';
@@ -7,6 +8,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authRoutes, requireAuth, type AuthRoutesOptions } from './auth-routes';
 import { grillRoutes } from './grill-routes';
+import { issueRoutes } from './issue-routes';
 import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
 
@@ -26,6 +28,8 @@ export interface AppOptions {
   projects: ProjectsModule;
   /** The Plans Module. Tests inject one over an in-memory store. */
   plans: PlansModule;
+  /** The Issues Module. Tests inject one over an in-memory store. */
+  issues: IssuesModule;
   /** The Grill-Me Module. Tests inject one over a fake spawner. */
   grillMe: GrillMeModule;
   /** Forwarded to {@link authRoutes}. */
@@ -59,7 +63,8 @@ export function createApp(options: AppOptions): Hono {
   app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects));
   app.route('/', planRoutes(options.projects, options.plans));
-  app.route('/', grillRoutes(options.grillMe, options.projects, options.plans));
+  app.route('/', issueRoutes(options.issues, options.projects, options.plans, options.grillMe));
+  app.route('/', grillRoutes(options.grillMe, options.projects, options.plans, options.issues));
 
   return app;
 }

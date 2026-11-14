@@ -229,6 +229,137 @@ describe('commands', () => {
   });
 });
 
+describe('generateIssues', () => {
+  const PLAN = '# Plan\n\n- set up the database';
+  const ISSUES =
+    '<ISSUES>[{"title":"Add auth","labels":["ready"],"depends_on":["Set up DB"]}]</ISSUES>';
+
+  it('spawns a one-shot run seeded with the plan and resolves the parsed issues', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await tick();
+    spawner.last().emit(ISSUES);
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([
+      { title: 'Add auth', body: '', labels: ['ready'], depends_on: ['Set up DB'] },
+    ]);
+    expect(spawner.requests[0]).toMatchObject({ projectId: 'proj-1', skillLevel: 'expert' });
+    expect(spawner.requests[0]?.prompt).toContain('set up the database');
+    expect(spawner.last().stopped).toBe(true);
+  });
+
+  it('folds refine feedback into the prompt', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert', { feedback: 'Split auth' });
+    await tick();
+    spawner.last().emit(ISSUES);
+    await pending;
+
+    expect(spawner.requests[0]?.prompt).toContain('Split auth');
+  });
+
+  it('ignores question and plan blocks while waiting for the issue list', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await tick();
+    spawner.last().emit('<QUESTION>Which database?</QUESTION>');
+    spawner.last().emit('<PLAN># Plan</PLAN>');
+    spawner.last().emit(ISSUES);
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+  });
+
+  it('flushes a final issue block when the process exits', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await tick();
+    spawner.last().emit(ISSUES);
+    spawner.last().exit(0);
+    await tick();
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+  });
+
+  it('reports a run that produced no issues as invalid-issues', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await tick();
+    spawner.last().exit(0);
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-issues');
+  });
+
+  it('reports a non-zero exit with no issues as process-failed', async () => {
+    const { module, spawner } = setup();
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await tick();
+    spawner.last().exit(1);
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('process-failed');
+  });
+
+  it.each([
+    ['an empty plan', 'proj-1', '   ', 'expert'],
+    ['an empty project id', '', PLAN, 'expert'],
+    ['an unknown skill level', 'proj-1', PLAN, 'wizard'],
+  ])('rejects %s without spawning', async (_label, projectId, plan, skillLevel) => {
+    const { module, spawner } = setup();
+
+    const result = await module.generateIssues(projectId, plan, skillLevel as 'expert');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
+    expect(spawner.requests).toEqual([]);
+  });
+
+  it('reports a failed launch as spawn-failed', async () => {
+    const spawner = createFakeSpawner({ spawnError: 'opencode not found' });
+    const module = createGrillMeModule({ spawner, skillPath: SKILL_PATH, logger: silent });
+
+    const result = await module.generateIssues('proj-1', PLAN, 'expert');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({ kind: 'spawn-failed', operation: 'generateIssues' });
+  });
+
+  it('times out and stops the process', async () => {
+    vi.useFakeTimers();
+    const { module, spawner } = setup({ timeoutMs: 1000 });
+
+    const pending = module.generateIssues('proj-1', PLAN, 'expert');
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('timeout');
+    expect(spawner.last().stopped).toBe(true);
+  });
+});
+
 describe('session lifecycle', () => {
   it('cancel stops the process and emits a cancelled end', async () => {
     const { module, spawner, events } = setup();
