@@ -2,9 +2,9 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { SKILL_LEVELS, type SkillLevel } from '@yaaabk/shared';
-  import { ApiError, createProject } from '#lib/api.js';
+  import { ApiError, createProjectStream } from '#lib/api.js';
   import {
-    advanceCreation,
+    applyProvisioningEvent,
     completeCreation,
     failCreation,
     startCreation,
@@ -17,9 +17,6 @@
   } from '#lib/project-form.js';
 
   type Step = 'details' | 'skill' | 'creating';
-
-  /** How quickly the optimistic checklist advances while the request is in flight. */
-  const ADVANCE_MS = 400;
 
   const SKILL_LABELS: Record<SkillLevel, string> = { beginner: 'Beginner', expert: 'Expert' };
   const SKILL_HINTS: Record<SkillLevel, string> = {
@@ -34,17 +31,6 @@
   let errors = $state<ProjectDetailsErrors>({});
   let creation = $state<CreationState | null>(null);
   let failure = $state<string | null>(null);
-  let timer: ReturnType<typeof setInterval> | null = null;
-
-  function stopTimer(): void {
-    if (timer !== null) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }
-
-  // Never leave an interval running once the page is gone.
-  $effect(() => stopTimer);
 
   function continueToSkill(): void {
     errors = validateProjectDetails({ name, description });
@@ -60,21 +46,21 @@
     failure = null;
     creation = startCreation();
     step = 'creating';
-    timer = setInterval(() => {
-      if (creation !== null) creation = advanceCreation(creation);
-    }, ADVANCE_MS);
 
     try {
-      const project = await createProject({
-        name: name.trim(),
-        description: description.trim(),
-        skillLevel,
-      });
-      stopTimer();
+      const project = await createProjectStream(
+        {
+          name: name.trim(),
+          description: description.trim(),
+          skillLevel,
+        },
+        (event) => {
+          if (creation !== null) creation = applyProvisioningEvent(creation, event);
+        },
+      );
       creation = completeCreation(creation ?? startCreation());
       await goto(resolve('/projects/[id]', { id: project.id }));
     } catch (cause) {
-      stopTimer();
       const message = describe(cause);
       failure = message;
       if (creation !== null) creation = failCreation(creation, message);
@@ -82,7 +68,6 @@
   }
 
   function tryAgain(): void {
-    stopTimer();
     creation = null;
     failure = null;
     step = 'details';

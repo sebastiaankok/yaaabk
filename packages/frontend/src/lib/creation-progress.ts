@@ -1,14 +1,12 @@
-import type { ProvisioningStep } from '@yaaabk/projects';
+import type { ProvisioningEvent, ProvisioningStep } from '@yaaabk/projects';
+
+export type { ProvisioningEvent };
 
 /**
- * The optimistic progress checklist shown while a Project is being created.
+ * The checklist shown while a Project is being created.
  *
- * The backend's `POST /api/projects` is a single synchronous call that reports
- * no per-step progress, so the wizard shows the known provisioning steps and
- * advances them on a timer while the request is in flight, then settles the
- * whole checklist on success or marks the current step failed. This module is
- * the pure state machine behind that display; the wizard only drives the timer
- * and the request.
+ * The backend streams a `progress` frame per provisioning step lifecycle event;
+ * `applyProvisioningEvent` folds those real events into the checklist state.
  */
 
 /** Lifecycle of one provisioning step in the checklist. */
@@ -36,6 +34,9 @@ const STEP_DEFS: readonly { id: ProvisioningStep; label: string }[] = [
   { id: 'repository', label: 'Creating GitHub repository' },
   { id: 'scaffold', label: 'Scaffolding project files' },
   { id: 'namespace', label: 'Provisioning namespace' },
+  { id: 'service-account', label: 'Creating agent service account' },
+  { id: 'role-binding', label: 'Granting agent permissions' },
+  { id: 'secret', label: 'Storing GitHub credentials' },
   { id: 'argocd', label: 'Configuring ArgoCD' },
   { id: 'persist', label: 'Finishing up' },
 ];
@@ -51,26 +52,6 @@ export function startCreation(): CreationState {
       ...def,
       status: index === 0 ? 'active' : 'pending',
     })),
-  };
-}
-
-/** Completes the active step and activates the next, if any. */
-export function advanceCreation(state: CreationState): CreationState {
-  const active = state.steps.findIndex((step) => step.status === 'active');
-  if (active === -1) {
-    return state;
-  }
-  return {
-    ...state,
-    steps: state.steps.map((step, index) => {
-      if (index <= active) {
-        return { ...step, status: 'done' };
-      }
-      if (index === active + 1) {
-        return { ...step, status: 'active' };
-      }
-      return step;
-    }),
   };
 }
 
@@ -90,5 +71,34 @@ export function failCreation(state: CreationState, message: string): CreationSta
     steps: state.steps.map((step) =>
       step.status === 'active' ? { ...step, status: 'failed' } : step,
     ),
+  };
+}
+
+/**
+ * Folds one real provisioning event from the backend into the checklist.
+ *
+ * A `started` event makes its step active and resets later steps to pending;
+ * a `completed` event finishes its step (and anything before it) and activates
+ * the next. Events for steps the checklist does not show are ignored.
+ */
+export function applyProvisioningEvent(
+  state: CreationState,
+  event: ProvisioningEvent,
+): CreationState {
+  const index = state.steps.findIndex((step) => step.id === event.step);
+  if (index === -1) {
+    return state;
+  }
+  return {
+    ...state,
+    steps: state.steps.map((step, position) => {
+      if (position < index || (event.status === 'completed' && position === index)) {
+        return { ...step, status: 'done' };
+      }
+      if (position === index || (event.status === 'completed' && position === index + 1)) {
+        return { ...step, status: 'active' };
+      }
+      return step;
+    }),
   };
 }

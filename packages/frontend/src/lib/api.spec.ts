@@ -173,9 +173,7 @@ describe('createProjectStream', () => {
   it('rejects with an ApiError when the response is not a stream', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        jsonResponse({ error: 'unauthorized', message: 'Sign in required' }, 401),
-      ),
+      vi.fn(async () => jsonResponse({ error: 'unauthorized', message: 'Sign in required' }, 401)),
     );
 
     await expect(
