@@ -12,7 +12,7 @@ import type { PullSummary, PushSummary, IssueSyncStatus, SyncSummary } from '@ya
 import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
-import type { Project } from '@yaaabk/projects';
+import type { Project, ProvisioningEvent } from '@yaaabk/projects';
 import type { SkillLevel } from '@yaaabk/shared';
 
 export interface AuthUser {
@@ -121,6 +121,93 @@ export function createProject(input: {
   skillLevel: SkillLevel;
 }): Promise<Project> {
   return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/**
+ * Creates a Project, streaming provisioning progress as it happens.
+ *
+ * `POST /api/projects` with `Accept: text/event-stream` responds with an SSE
+ * stream: one `progress` frame per provisioning step lifecycle event, then a
+ * final `done` frame carrying the created Project — or an `error` frame
+ * carrying the failure. Resolves with the Project on `done`; rejects with an
+ * `ApiError` on `error` or on a non-stream response (e.g. an auth rejection).
+ */
+export async function createProjectStream(
+  input: { name: string; description: string; skillLevel: SkillLevel },
+  onProgress: (event: ProvisioningEvent) => void,
+): Promise<Project> {
+  const response = await fetch(`${API_BASE}/api/projects`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+    };
+    throw new ApiError(response.status, body.error ?? 'unknown', body.message ?? 'Request failed');
+  }
+  if (!(response.headers.get('content-type') ?? '').includes('text/event-stream')) {
+    throw new ApiError(response.status, 'unknown', 'Unexpected response to project creation');
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let settled = false;
+  let resolve!: (project: Project) => void;
+  let reject!: (cause: unknown) => void;
+  const finished = new Promise<Project>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  /** Dispatches one complete SSE frame. */
+  function handleFrame(frame: string): void {
+    const event = /^event: (.*)$/m.exec(frame)?.[1] ?? '';
+    const data = /^data: (.*)$/m.exec(frame)?.[1] ?? '';
+    if (event === 'progress') {
+      onProgress(JSON.parse(data) as ProvisioningEvent);
+      return;
+    }
+    settled = true;
+    if (event === 'done') {
+      resolve(JSON.parse(data) as Project);
+    } else {
+      const payload = JSON.parse(data) as { error?: { kind?: string; message?: string } };
+      reject(
+        new ApiError(
+          response.status,
+          payload.error?.kind ?? 'unknown',
+          payload.error?.message ?? 'Project creation failed',
+        ),
+      );
+    }
+  }
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        handleFrame(buffer.slice(0, separator));
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf('\n\n');
+      }
+      if (settled) break;
+    }
+    if (!settled) {
+      reject(new ApiError(response.status, 'unknown', 'Project creation stream ended early'));
+    }
+  } catch (cause) {
+    if (!settled) reject(cause);
+  }
+  return finished;
 }
 
 export function deleteProject(id: string): Promise<{ ok: boolean }> {

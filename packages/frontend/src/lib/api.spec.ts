@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createProject,
+  createProjectStream,
   deleteProject,
   getIssueSyncStatus,
   getStatus,
@@ -102,6 +103,87 @@ describe('createProject', () => {
         }),
       }),
     );
+  });
+});
+
+describe('createProjectStream', () => {
+  function sseResponse(frames: string[]): Response {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  }
+
+  it('delivers progress events and resolves with the finished project', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        sseResponse([
+          'event: progress\ndata: {"step":"repository","status":"started"}\n\n',
+          'event: progress\ndata: {"step":"repository","status":"completed"}\n\n',
+          'event: done\ndata: {"id":"p1","name":"todo-app"}\n\n',
+        ]),
+      ),
+    );
+    const events: unknown[] = [];
+
+    const project = await createProjectStream(
+      { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+      (event) => events.push(event),
+    );
+
+    expect(project).toEqual({ id: 'p1', name: 'todo-app' });
+    expect(events).toEqual([
+      { step: 'repository', status: 'started' },
+      { step: 'repository', status: 'completed' },
+    ]);
+  });
+  it('rejects with an ApiError when a frame reports failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        sseResponse([
+          'event: progress\ndata: {"step":"repository","status":"started"}\n\n',
+          'event: error\ndata: {"error":{"kind":"repository","message":"repository quota exceeded"}}\n\n',
+        ]),
+      ),
+    );
+    const events: unknown[] = [];
+
+    await expect(
+      createProjectStream(
+        { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+        (event) => events.push(event),
+      ),
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'repository',
+      message: 'repository quota exceeded',
+    });
+    expect(events).toHaveLength(1);
+  });
+
+  it('rejects with an ApiError when the response is not a stream', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ error: 'unauthorized', message: 'Sign in required' }, 401),
+      ),
+    );
+
+    await expect(
+      createProjectStream(
+        { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+        () => {},
+      ),
+    ).rejects.toMatchObject({ name: 'ApiError', status: 401, code: 'unauthorized' });
   });
 });
 
