@@ -58,7 +58,7 @@
   async function save(): Promise<void> {
     if (settings === null) return;
     budgetError = validateBudgetDollars(defaultIssueBudgetDollars) ?? null;
-    if (budgetError !== undefined) return;
+    if (budgetError !== null) return;
 
     saveState = 'saving';
     saveError = null;
