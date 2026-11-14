@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
+  import type { IssueSyncStatus } from '@yaaabk/github';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Plan } from '@yaaabk/plans';
   import type { Project } from '@yaaabk/projects';
@@ -10,11 +11,15 @@
     generateIssues,
     getActivePlan,
     getIssueGraph,
+    getIssueSyncStatus,
     getProject,
     listIssues,
+    pushIssues,
     refineIssues,
+    syncIssues,
   } from '#lib/api.js';
   import { groupByWave, reviewItems, type WaveGroup } from '#lib/issue-review.js';
+  import { describePush, describeSyncStatus } from '#lib/issue-sync.js';
   import { renderMarkdown } from '#lib/markdown.js';
 
   const projectId = $derived(page.params.id);
@@ -23,11 +28,13 @@
   let plan = $state<Plan | null>(null);
   let issues = $state<Issue[]>([]);
   let graph = $state<IssueGraph | null>(null);
+  let syncStatus = $state<IssueSyncStatus | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state(false);
   let feedback = $state('');
   let approved = $state(false);
+  let syncMessage = $state<string | null>(null);
 
   const groups = $derived<WaveGroup[]>(
     graph === null ? [] : groupByWave(reviewItems(issues, graph)),
@@ -45,16 +52,18 @@
   }
 
   async function refresh(id: string): Promise<void> {
-    const [nextProject, nextPlan, nextIssues, nextGraph] = await Promise.all([
+    const [nextProject, nextPlan, nextIssues, nextGraph, nextSyncStatus] = await Promise.all([
       getProject(id),
       getActivePlan(id),
       listIssues(id),
       getIssueGraph(id),
+      getIssueSyncStatus(id),
     ]);
     project = nextProject;
     plan = nextPlan;
     issues = nextIssues;
     graph = nextGraph;
+    syncStatus = nextSyncStatus;
   }
 
   // Load the project, its active plan and the generated issues once the route is known.
@@ -65,6 +74,7 @@
     loading = true;
     error = null;
     approved = false;
+    syncMessage = null;
     refresh(id)
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -112,8 +122,25 @@
     busy = true;
     try {
       await approveIssues(projectId);
+      const push = await pushIssues(projectId);
       await refresh(projectId);
       approved = true;
+      syncMessage = describePush(push);
+    } catch (cause) {
+      error = describe(cause);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function syncWithGitHub(): Promise<void> {
+    if (projectId === undefined || busy) return;
+    error = null;
+    busy = true;
+    try {
+      const result = await syncIssues(projectId);
+      await refresh(projectId);
+      syncMessage = describePush(result.push);
     } catch (cause) {
       error = describe(cause);
     } finally {
@@ -153,8 +180,35 @@
 
     {#if approved}
       <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
-        Issues approved and ready. The issue board arrives with #13; the GitHub sync with #12.
+        Issues approved. The issue board arrives with #13.
       </p>
+    {/if}
+
+    {#if syncStatus !== null}
+      <section
+        class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-4"
+        aria-labelledby="sync-heading"
+      >
+        <div>
+          <h2 id="sync-heading" class="text-sm font-semibold">GitHub sync</h2>
+          <p class="text-xs text-neutral-500">
+            {describeSyncStatus(syncStatus)}{#if syncStatus.lastSyncedAt !== null}<span>
+                · last synced {new Date(syncStatus.lastSyncedAt).toLocaleString()}</span
+              >{/if}
+          </p>
+          {#if syncMessage !== null}
+            <p class="mt-1 text-xs text-emerald-700" role="status">{syncMessage}</p>
+          {/if}
+        </div>
+        <button
+          type="button"
+          onclick={() => void syncWithGitHub()}
+          disabled={busy || issues.length === 0}
+          class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50"
+        >
+          Sync with GitHub
+        </button>
+      </section>
     {/if}
 
     {#if plan !== null}

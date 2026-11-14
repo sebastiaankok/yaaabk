@@ -7,6 +7,7 @@
  */
 
 import { PUBLIC_API_BASE_URL } from '$app/env/public';
+import type { PullSummary, PushSummary, IssueSyncStatus, SyncSummary } from '@yaaabk/github';
 import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
@@ -266,4 +267,29 @@ export function deleteIssue(projectId: string, issueId: string): Promise<{ ok: b
     `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}`,
     { method: 'DELETE' },
   );
+}
+
+export function getIssueSyncStatus(projectId: string): Promise<IssueSyncStatus> {
+  return request<IssueSyncStatus>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/sync/status`,
+  );
+}
+
+export function pushIssues(projectId: string): Promise<PushSummary> {
+  return request<PushSummary>(`/api/projects/${encodeURIComponent(projectId)}/issues/sync/push`, {
+    method: 'POST',
+  });
+}
+
+export function pullIssues(projectId: string): Promise<PullSummary> {
+  return request<PullSummary>(`/api/projects/${encodeURIComponent(projectId)}/issues/sync/pull`, {
+    method: 'POST',
+  });
+}
+
+/** Runs a full push-then-pull cycle against GitHub. */
+export function syncIssues(projectId: string): Promise<SyncSummary> {
+  return request<SyncSummary>(`/api/projects/${encodeURIComponent(projectId)}/issues/sync`, {
+    method: 'POST',
+  });
 }
