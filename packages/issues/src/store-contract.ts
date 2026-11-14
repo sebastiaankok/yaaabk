@@ -26,6 +26,7 @@ export function issueRecord(overrides: Partial<Issue> = {}): Issue {
     projectId: 'project-1',
     planId: null,
     githubNumber: null,
+    githubSyncedAt: null,
     title: 'Add login',
     body: '',
     status: 'open',
@@ -107,6 +108,17 @@ export function issueStoreContract(api: StoreTestApi, createStore: () => IssueSt
 
       expect(store.get('project-1', 'issue-1')).toEqual(
         issueRecord({ title: 'Add signup', status: 'closed', dependsOn: ['Schema'] }),
+      );
+    });
+
+    it('records when an issue last synced with GitHub', () => {
+      const store = createStore();
+      store.create(issueRecord());
+
+      store.update(issueRecord({ githubNumber: 12, githubSyncedAt: '2026-02-01T00:00:00.000Z' }));
+
+      expect(store.get('project-1', 'issue-1')).toEqual(
+        issueRecord({ githubNumber: 12, githubSyncedAt: '2026-02-01T00:00:00.000Z' }),
       );
     });
 

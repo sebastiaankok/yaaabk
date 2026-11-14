@@ -24,6 +24,7 @@ interface IssueRow {
   project_id: string;
   plan_id: string | null;
   github_number: number | null;
+  github_synced_at: string | null;
   title: string;
   body: string;
   status: string;
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS issues (
   project_id          TEXT NOT NULL,
   plan_id             TEXT,
   github_number       INTEGER,
+  github_synced_at    TEXT,
   title               TEXT NOT NULL,
   body                TEXT NOT NULL,
   status              TEXT NOT NULL,
@@ -67,6 +69,7 @@ function toIssue(row: IssueRow): Issue {
     projectId: row.project_id,
     planId: row.plan_id,
     githubNumber: row.github_number,
+    githubSyncedAt: row.github_synced_at,
     title: row.title,
     body: row.body,
     status: isIssueStatus(row.status) ? row.status : 'open',
@@ -86,6 +89,23 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
+ * Adds a column that a newer version of the store introduced, so databases
+ * created before it keep working. `CREATE TABLE IF NOT EXISTS` is a no-op on an
+ * existing table, so additive changes need an explicit step.
+ */
+function ensureColumn(
+  database: SqliteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((entry) => entry.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+/**
  * Builds the production {@link IssueStore} on a SQLite database.
  *
  * The caller owns the database handle (the backend opens it with `bun:sqlite`);
@@ -93,6 +113,7 @@ function isUniqueViolation(error: unknown): boolean {
  */
 export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
   database.exec(SCHEMA);
+  ensureColumn(database, 'issues', 'github_synced_at', 'TEXT');
 
   function requireRow(projectId: string, issueId: string): IssueRow {
     const row = database
@@ -109,15 +130,17 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
       database
         .prepare(
           `INSERT INTO issues
-             (id, project_id, plan_id, github_number, title, body, status, label, depends_on,
-              attempt_count, max_attempts, budget_cents, openrouter_key_hash, closed_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, project_id, plan_id, github_number, github_synced_at, title, body, status, label,
+              depends_on, attempt_count, max_attempts, budget_cents, openrouter_key_hash, closed_at,
+              created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           issue.id,
           issue.projectId,
           issue.planId,
           issue.githubNumber,
+          issue.githubSyncedAt,
           issue.title,
           issue.body,
           issue.status,
@@ -166,14 +189,15 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
         database
           .prepare(
             `UPDATE issues SET
-               plan_id = ?, github_number = ?, title = ?, body = ?, status = ?, label = ?,
-               depends_on = ?, attempt_count = ?, max_attempts = ?, budget_cents = ?,
+               plan_id = ?, github_number = ?, github_synced_at = ?, title = ?, body = ?, status = ?,
+               label = ?, depends_on = ?, attempt_count = ?, max_attempts = ?, budget_cents = ?,
                openrouter_key_hash = ?, closed_at = ?
              WHERE project_id = ? AND id = ?`,
           )
           .run(
             issue.planId,
             issue.githubNumber,
+            issue.githubSyncedAt,
             issue.title,
             issue.body,
             issue.status,

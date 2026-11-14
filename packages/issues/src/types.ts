@@ -47,6 +47,8 @@ export interface Issue {
   planId: string | null;
   /** The GitHub Issue number, once synced. */
   githubNumber: number | null;
+  /** When the Issue last synced with GitHub, if it has. */
+  githubSyncedAt: string | null;
   title: string;
   body: string;
   status: IssueStatus;
@@ -99,6 +101,7 @@ export interface IssuePatch {
   budgetCents?: number;
   maxAttempts?: number;
   githubNumber?: number | null;
+  githubSyncedAt?: string | null;
   openrouterKeyHash?: string | null;
   closedAt?: string | null;
 }
