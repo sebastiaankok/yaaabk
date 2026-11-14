@@ -81,15 +81,36 @@ export interface ApplicationInfo extends ResourceMeta {
   healthStatus: string;
 }
 
+/** A named volume a Job mounts into its container. */
+export interface JobVolume {
+  name: string;
+  persistentVolumeClaim: { claimName: string };
+}
+
+/** A mount of a {@link JobVolume} at a path inside the container. */
+export interface JobVolumeMount {
+  name: string;
+  mountPath: string;
+}
+
 /** Specification for a per-issue agent Job. */
 export interface JobSpec {
   image: string;
   command?: string[];
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * Secrets whose keys are exposed as environment variables. YAAABK references
+   * the Secret by name; it never reads the values itself.
+   */
+  envFrom?: Array<{ secretRef: { name: string } }>;
   serviceAccountName?: string;
   restartPolicy?: 'Never' | 'OnFailure';
   backoffLimit?: number;
+  /** Seconds a Job may run before Kubernetes kills its pod. */
+  activeDeadlineSeconds?: number;
+  volumes?: JobVolume[];
+  volumeMounts?: JobVolumeMount[];
   labels?: Record<string, string>;
   resources?: {
     requests?: Record<string, string>;

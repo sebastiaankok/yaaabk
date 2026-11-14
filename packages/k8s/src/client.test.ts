@@ -406,6 +406,39 @@ describe('jobs', () => {
     });
   });
 
+  it('mounts a workspace and sources credentials from Secrets without reading them', async () => {
+    const objectApi = createInMemoryObjectApi();
+    const client = createK8sClient({ objectApi, logger: silentLogger });
+
+    await client.jobs.create('project-a', 'agent-issue-1-attempt-1', {
+      image: 'yaaabk/agent:1.0.0',
+      env: { ISSUE_NUMBER: '42' },
+      envFrom: [
+        { secretRef: { name: 'yaaabk-github' } },
+        { secretRef: { name: 'agent-openrouter-issue-1' } },
+      ],
+      volumes: [{ name: 'work', persistentVolumeClaim: { claimName: 'agent-work-issue-1-1' } }],
+      volumeMounts: [{ name: 'work', mountPath: '/work' }],
+      activeDeadlineSeconds: 1800,
+    });
+
+    const stored = await objectApi.read(jobRef('agent-issue-1-attempt-1'));
+    const spec = stored.spec as {
+      activeDeadlineSeconds: number;
+      template: { spec: Record<string, unknown> };
+    };
+    expect(spec.activeDeadlineSeconds).toBe(1800);
+    const container = (spec.template.spec.containers as Array<Record<string, unknown>>)[0];
+    expect(container?.envFrom).toEqual([
+      { secretRef: { name: 'yaaabk-github' } },
+      { secretRef: { name: 'agent-openrouter-issue-1' } },
+    ]);
+    expect(container?.volumeMounts).toEqual([{ name: 'work', mountPath: '/work' }]);
+    expect(spec.template.spec.volumes).toEqual([
+      { name: 'work', persistentVolumeClaim: { claimName: 'agent-work-issue-1-1' } },
+    ]);
+  });
+
   it('reports a running job while it has active pods', async () => {
     const objectApi = createInMemoryObjectApi([jobObject('agent-42', { status: { active: 1 } })]);
     const client = createK8sClient({ objectApi, logger: silentLogger });

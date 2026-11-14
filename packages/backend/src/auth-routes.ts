@@ -166,11 +166,13 @@ export function authRoutes(auth: AuthModule, options: AuthRoutesOptions = {}): H
 
 /**
  * Rejects unauthenticated requests to everything under `/api`, except the
- * `/api/auth/*` routes the login flow itself needs.
+ * `/api/auth/*` routes the login flow itself needs and the
+ * `/api/agent-runs/*` callback, which Agent Jobs authenticate with their
+ * per-run token instead of a session.
  */
 export function requireAuth(auth: AuthModule): MiddlewareHandler {
   return async (c, next) => {
-    if (c.req.path.startsWith('/api/auth/')) {
+    if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/agent-runs/')) {
       await next();
       return;
     }

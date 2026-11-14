@@ -16,8 +16,13 @@ export const PROJECT_AGENT_ROLE_REF: RoleRef = {
 /** Secret holding the GitHub token copied into each Project namespace. */
 export const PROJECT_GITHUB_SECRET = 'yaaabk-github';
 
-/** Key the GitHub token is stored under in that Secret. */
-export const GITHUB_TOKEN_KEY = 'token';
+/**
+ * Key the GitHub token is stored under in that Secret.
+ *
+ * Matches the environment variable name so an agent Job can load the whole
+ * Secret with `envFrom` rather than YAAABK reading the value.
+ */
+export const GITHUB_TOKEN_KEY = 'GITHUB_TOKEN';
 
 /** Label tying a namespace back to its Project by human-readable name. */
 export const PROJECT_NAME_LABEL = 'yaaabk.io/project-name';

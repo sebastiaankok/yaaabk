@@ -49,6 +49,9 @@ jobs:
       - name: Plans SQLite integration tests
         run: bun run --filter '@yaaabk/plans' test:integration
 
+      - name: Agents SQLite integration tests
+        run: bun run --filter '@yaaabk/agents' test:integration
+
       - name: Build
         run: bun run build
 

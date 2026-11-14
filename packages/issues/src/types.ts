@@ -100,6 +100,8 @@ export interface IssuePatch {
   dependsOn?: string[];
   budgetCents?: number;
   maxAttempts?: number;
+  /** How many Agent attempts have run; the Agent Manager advances this. */
+  attemptCount?: number;
   githubNumber?: number | null;
   githubSyncedAt?: string | null;
   openrouterKeyHash?: string | null;

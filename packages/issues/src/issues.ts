@@ -94,6 +94,14 @@ function patchReason(patch: IssuePatch): string | undefined {
   if (patch.maxAttempts !== undefined && !isValidAttempts(patch.maxAttempts)) {
     return 'The attempt cap must be a positive whole number';
   }
+  if (
+    patch.attemptCount !== undefined &&
+    (typeof patch.attemptCount !== 'number' ||
+      !Number.isInteger(patch.attemptCount) ||
+      patch.attemptCount < 0)
+  ) {
+    return 'The attempt count must be a non-negative whole number';
+  }
   return undefined;
 }
 
@@ -242,6 +250,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
           ...(patch.dependsOn === undefined ? {} : { dependsOn: [...patch.dependsOn] }),
           ...(patch.budgetCents === undefined ? {} : { budgetCents: patch.budgetCents }),
           ...(patch.maxAttempts === undefined ? {} : { maxAttempts: patch.maxAttempts }),
+          ...(patch.attemptCount === undefined ? {} : { attemptCount: patch.attemptCount }),
           ...(patch.githubNumber === undefined ? {} : { githubNumber: patch.githubNumber }),
           ...(patch.githubSyncedAt === undefined ? {} : { githubSyncedAt: patch.githubSyncedAt }),
           ...(patch.openrouterKeyHash === undefined

@@ -169,6 +169,12 @@ function jobManifest(namespace: string, name: string, spec: JobSpec): K8sObject 
   if (spec.env !== undefined) {
     container.env = Object.entries(spec.env).map(([envName, value]) => ({ name: envName, value }));
   }
+  if (spec.envFrom !== undefined) {
+    container.envFrom = spec.envFrom;
+  }
+  if (spec.volumeMounts !== undefined) {
+    container.volumeMounts = spec.volumeMounts;
+  }
   if (spec.resources !== undefined) {
     container.resources = spec.resources;
   }
@@ -180,14 +186,22 @@ function jobManifest(namespace: string, name: string, spec: JobSpec): K8sObject 
   if (spec.serviceAccountName !== undefined) {
     podSpec.serviceAccountName = spec.serviceAccountName;
   }
+  if (spec.volumes !== undefined) {
+    podSpec.volumes = spec.volumes;
+  }
+
+  const jobSpec: Record<string, unknown> = {
+    backoffLimit: spec.backoffLimit ?? 1,
+    template: { spec: podSpec },
+  };
+  if (spec.activeDeadlineSeconds !== undefined) {
+    jobSpec.activeDeadlineSeconds = spec.activeDeadlineSeconds;
+  }
 
   return {
     ...KINDS.job,
     metadata: { name, namespace, labels: spec.labels ?? {} },
-    spec: {
-      backoffLimit: spec.backoffLimit ?? 1,
-      template: { spec: podSpec },
-    },
+    spec: jobSpec,
   };
 }
 

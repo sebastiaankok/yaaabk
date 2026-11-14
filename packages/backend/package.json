@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@yaaabk/agents": "workspace:*",
     "@yaaabk/auth": "workspace:*",
     "@yaaabk/github": "workspace:*",
     "@yaaabk/grill-me": "workspace:*",
