@@ -24,6 +24,7 @@
     "@yaaabk/projects": "workspace:*",
     "@yaaabk/settings": "workspace:*",
     "@yaaabk/shared": "workspace:*",
+    "@yaaabk/stats": "workspace:*",
     "@yaaabk/template": "workspace:*",
     "hono": "^4.11.4"
   },

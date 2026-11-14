@@ -4,6 +4,7 @@ import {
   createProjectStream,
   deleteProject,
   getIssueSyncStatus,
+  getProjectStats,
   getStatus,
   listIssueRuns,
   listProjectRuns,
@@ -263,7 +264,8 @@ describe('agent runs', () => {
   });
 
   it('lists every run for a project', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ runs: [{ id: 'r1' }] }));
+    const res = { runs: [{ id: 'r1' }] };
+    const fetchMock = vi.fn(async () => jsonResponse(res));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(listProjectRuns('p1')).resolves.toEqual([{ id: 'r1' }]);
@@ -271,6 +273,40 @@ describe('agent runs', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p1\/agent-runs$/),
       expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+});
+
+describe('getProjectStats', () => {
+  it('requests the project stats with an optional date range', async () => {
+    const stats = { issues: { total: 0 }, agents: { total: 0 } };
+    const fetchMock = vi.fn(async () => jsonResponse(stats));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      getProjectStats('p 1', {
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-02-01T00:00:00.000Z',
+      }),
+    ).resolves.toEqual(stats);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\/api\/projects\/p%201\/stats\?from=2026-01-01T00%3A00%3A00.000Z&to=2026-02-01T00%3A00%3A00.000Z$/,
+      ),
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
+  it('omits the query string when no range is given', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getProjectStats('p1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/stats$/),
+      expect.anything(),
     );
   });
 });

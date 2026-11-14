@@ -85,6 +85,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
+| `@yaaabk/stats` | `packages/stats` | Pure Project statistics (`computeProjectStats`): issue counts, velocity, agent success, cost and durations |
 | `@yaaabk/ci-tracker` | `packages/ci-tracker` | The CI Tracker: watches `automerge` pull requests, merges the passing ones and spawns fix attempts (`createCiTracker`) |
 | `@yaaabk/github` | `packages/github` | GitHub Issues and Pulls ports + REST adapters, the `createIssueSyncModule` mirror and fakes |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
@@ -294,6 +295,27 @@ and fakes for both GitHub ports:
 
 ```sh
 bun run --filter '@yaaabk/ci-tracker' test:unit
+```
+
+## Stats
+
+`@yaaabk/stats` turns a Project's Issues and Agent runs into the numbers the
+dashboard shows. `computeProjectStats` is pure: the backend fetches the Issues
+and runs, then aggregates them in one pass.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/projects/:id/stats` | Issue counts, close velocity, Agent success rate, cost breakdown, run durations and history |
+| `GET /api/projects/:id/stats?from=&to=` | The same, with Agent runs and the close timeline filtered to the range |
+
+The browser surface is `/projects/:id/stats`: summary cards, a 7/14/30-day close
+chart, a status donut, per-Issue cost bars, run duration by attempt, and a
+sortable/filterable run history. The project list also shows each Project's
+open/closed counts and last Agent run. Charts are hand-rolled SVG/CSS, so no
+chart library is added.
+
+```sh
+bun run --filter '@yaaabk/stats' test:unit
 ```
 
 ## Scripts

@@ -1,17 +1,33 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import type { Project } from '@yaaabk/projects';
-  import { ApiError, listProjects } from '#lib/api.js';
+  import type { ProjectStats } from '@yaaabk/stats';
+  import { ApiError, getProjectStats, listProjects } from '#lib/api.js';
 
   let projects = $state<Project[] | null>(null);
+  let statsById = $state<Record<string, ProjectStats>>({});
   let error = $state<string | null>(null);
 
-  // Load the Project list once when the page mounts.
+  // Load the Project list once when the page mounts, then enrich each card with
+  // its stats. A stats failure only leaves that card's summary blank.
   $effect(() => {
     let cancelled = false;
     listProjects()
-      .then((next) => {
-        if (!cancelled) projects = next;
+      .then(async (next) => {
+        if (cancelled) return;
+        projects = next;
+        const results = await Promise.allSettled(
+          next.map(async (project) => ({
+            id: project.id,
+            stats: await getProjectStats(project.id),
+          })),
+        );
+        if (cancelled) return;
+        const loaded: Record<string, ProjectStats> = {};
+        for (const result of results) {
+          if (result.status === 'fulfilled') loaded[result.value.id] = result.value.stats;
+        }
+        statsById = loaded;
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -56,15 +72,47 @@
   {:else}
     <ul class="grid gap-3 sm:grid-cols-2">
       {#each projects as project (project.id)}
-        <li class="rounded-lg border border-neutral-200 p-4">
-          <a
-            href={resolve('/projects/[id]', { id: project.id })}
-            class="text-lg font-semibold hover:underline"
-          >
-            {project.name}
-          </a>
+        {@const stats = statsById[project.id]}
+        {@const active = (stats?.agents.active ?? 0) > 0}
+        {@const lastRun = stats?.runs[0]}
+        <li class="flex flex-col rounded-lg border border-neutral-200 p-4">
+          <div class="flex items-start justify-between gap-2">
+            <a
+              href={resolve('/projects/[id]', { id: project.id })}
+              class="text-lg font-semibold hover:underline"
+            >
+              {project.name}
+            </a>
+            <span
+              class="rounded-full px-2 py-0.5 text-xs {active
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-neutral-100 text-neutral-600'}"
+            >
+              {active ? 'Active' : 'Idle'}
+            </span>
+          </div>
           <p class="mt-1 text-sm text-neutral-600">{project.description}</p>
           <dl class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+            <div class="flex gap-1">
+              <dt class="font-medium">Issues</dt>
+              <dd>
+                {#if stats}
+                  {stats.issues.open} open · {stats.issues.closed} closed
+                {:else}
+                  —
+                {/if}
+              </dd>
+            </div>
+            <div class="flex gap-1">
+              <dt class="font-medium">Last run</dt>
+              <dd>
+                {#if lastRun}
+                  <time datetime={lastRun.createdAt}>{lastRun.createdAt.slice(0, 10)}</time>
+                {:else}
+                  —
+                {/if}
+              </dd>
+            </div>
             <div class="flex gap-1">
               <dt class="font-medium">Skill</dt>
               <dd>{project.skillLevel}</dd>
@@ -74,6 +122,26 @@
               <dd><code>{project.namespace}</code></dd>
             </div>
           </dl>
+          <div class="mt-4 flex flex-wrap gap-2 text-sm">
+            <a
+              href={resolve('/projects/[id]/plan', { id: project.id })}
+              class="rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
+            >
+              Grill-Me
+            </a>
+            <a
+              href={resolve('/projects/[id]/issues', { id: project.id })}
+              class="rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
+            >
+              Issue board
+            </a>
+            <a
+              href={resolve('/projects/[id]/stats', { id: project.id })}
+              class="rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
+            >
+              Stats
+            </a>
+          </div>
         </li>
       {/each}
     </ul>

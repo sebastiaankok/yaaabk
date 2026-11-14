@@ -19,6 +19,7 @@ import { issueSyncRoutes } from './issue-sync-routes';
 import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
 import { settingsRoutes } from './settings-routes';
+import { statsRoutes } from './stats-routes';
 
 /** Origin the browser app is served from in development. */
 export const DEFAULT_WEB_ORIGIN = 'http://localhost:5173';
@@ -82,6 +83,7 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', issueRoutes(options.issues, options.projects, options.plans, options.grillMe));
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));
+  app.route('/', statsRoutes(options.issues, options.agents, options.projects));
   app.route('/', grillRoutes(options.grillMe, options.projects, options.plans, options.issues));
   app.route('/', ciRoutes(options.ciTracker));
   app.route('/', settingsRoutes(options.settings));
