@@ -7,6 +7,7 @@
  */
 
 import { PUBLIC_API_BASE_URL } from '$app/env/public';
+import type { AgentRun } from '@yaaabk/agents';
 import type { PullSummary, PushSummary, IssueSyncStatus, SyncSummary } from '@yaaabk/github';
 import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
@@ -292,4 +293,35 @@ export function syncIssues(projectId: string): Promise<SyncSummary> {
   return request<SyncSummary>(`/api/projects/${encodeURIComponent(projectId)}/issues/sync`, {
     method: 'POST',
   });
+}
+
+// --- Agents -----------------------------------------------------------------
+
+/** Every agent run for an issue, oldest first. */
+export function listIssueRuns(projectId: string, issueId: string): Promise<AgentRun[]> {
+  return request<{ runs: AgentRun[] }>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/runs`,
+  ).then((body) => body.runs);
+}
+
+/** Every agent run for a project, newest first. */
+export function listProjectRuns(projectId: string): Promise<AgentRun[]> {
+  return request<{ runs: AgentRun[] }>(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
+  ).then((body) => body.runs);
+}
+
+/**
+ * Schedules an agent attempt for an issue. An OpenRouter key is optional; the
+ * backend provisions a per-attempt Secret from it when given.
+ */
+export function spawnAgent(
+  projectId: string,
+  issueId: string,
+  options: { openrouterApiKey?: string } = {},
+): Promise<AgentRun> {
+  return request<AgentRun>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/spawn`,
+    { method: 'POST', body: JSON.stringify(options) },
+  );
 }
