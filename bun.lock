@@ -123,6 +123,7 @@
         "@yaaabk/issues": "workspace:*",
         "@yaaabk/plans": "workspace:*",
         "@yaaabk/projects": "workspace:*",
+        "@yaaabk/settings": "workspace:*",
         "@yaaabk/shared": "workspace:*",
         "dompurify": "^3.2.6",
         "marked": "^15.0.0",

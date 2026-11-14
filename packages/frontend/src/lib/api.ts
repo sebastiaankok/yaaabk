@@ -13,6 +13,7 @@ import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
 import type { Project, ProvisioningEvent } from '@yaaabk/projects';
+import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
 import type { SkillLevel } from '@yaaabk/shared';
 
 export interface AuthUser {
@@ -103,6 +104,36 @@ export function verifyTwoFactor(input: {
 
 export function logout(): Promise<{ ok: boolean }> {
   return request('/api/auth/logout', { method: 'POST' });
+}
+
+// --- Settings ----------------------------------------------------------------
+
+export function getSettings(): Promise<SettingsView> {
+  return request<SettingsView>('/api/settings');
+}
+
+export function updateSettings(update: SettingsUpdate): Promise<SettingsView> {
+  return request<SettingsView>('/api/settings', { method: 'PUT', body: JSON.stringify(update) });
+}
+
+export interface GitHubVerifyOk {
+  ok: true;
+  kind: 'pat' | 'app';
+  account: string;
+}
+
+export interface OpenRouterVerifyOk {
+  ok: true;
+  keys: number;
+  workspaceId?: string;
+}
+
+export function verifyGithubSettings(): Promise<GitHubVerifyOk> {
+  return request<GitHubVerifyOk>('/api/settings/github/verify', { method: 'POST' });
+}
+
+export function verifyOpenrouterSettings(): Promise<OpenRouterVerifyOk> {
+  return request<OpenRouterVerifyOk>('/api/settings/openrouter/verify', { method: 'POST' });
 }
 
 // --- Projects, Plans and Grill-Me -------------------------------------------
