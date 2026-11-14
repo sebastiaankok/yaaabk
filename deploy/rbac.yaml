@@ -1,0 +1,35 @@
+# Cluster-wide access for the backend: it provisions a Namespace, Secrets,
+# ServiceAccounts and RoleBindings per Project, spawns Agent Jobs in those
+# Namespaces, and creates ArgoCD Applications. The generic object API plus
+# Watches means the verb set covers list/get/watch/create/patch/delete.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: yaaabk-backend
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: yaaabk-backend
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, secrets, serviceaccounts, rolebindings]
+    verbs: [create, get, list, watch, patch, update, delete]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, get, list, watch, patch, update, delete]
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [create, get, list, watch, patch, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: yaaabk-backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: yaaabk-backend
+subjects:
+  - kind: ServiceAccount
+    name: yaaabk-backend
