@@ -76,3 +76,39 @@ test('deletes the project after confirmation', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
   expect(deletes).toHaveLength(1);
 });
+
+test('exports the project to the developer github account', async ({ page }) => {
+  await mockProject(page);
+  const exports: Array<{ url: string; body: unknown }> = [];
+  await page.route('**/api/projects/p1/export', async (route) => {
+    exports.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    await route.fulfill({
+      json: { ...PROJECT, repoFullName: 'dev/todo', repoUrl: 'https://github.com/dev/todo' },
+    });
+  });
+
+  await gotoHydrated(page, '/projects/p1');
+  await page.getByLabel('GitHub username').fill('dev');
+  await page.getByLabel('Repository name', { exact: false }).fill('todo');
+  await page.getByRole('button', { name: 'Transfer' }).click();
+
+  await expect(page.getByRole('link', { name: 'dev/todo' })).toBeVisible();
+  await expect(page.getByText('Project exported to dev/todo')).toBeVisible();
+  expect(exports).toHaveLength(1);
+  expect(exports[0]?.body).toEqual({ owner: 'dev', repoName: 'todo' });
+});
+
+test('shows validation errors without calling the export endpoint', async ({ page }) => {
+  await mockProject(page);
+  const exports: string[] = [];
+  await page.route('**/api/projects/p1/export', (route) => {
+    exports.push(route.request().url());
+    return route.fulfill({ json: {} });
+  });
+
+  await gotoHydrated(page, '/projects/p1');
+  await page.getByRole('button', { name: 'Transfer' }).click();
+
+  await expect(page.getByText('A GitHub username is required')).toBeVisible();
+  expect(exports).toHaveLength(0);
+});

@@ -8,7 +8,10 @@ import type {
 
 /** A recorded call to a {@link RepositoryProvider} method. */
 export type RepositoryOperation =
-  { op: 'create'; input: CreateRepositoryInput } | { op: 'delete'; fullName: string };
+  | { op: 'create'; input: CreateRepositoryInput }
+  | { op: 'delete'; fullName: string }
+  | { op: 'add-collaborator'; fullName: string; username: string }
+  | { op: 'transfer'; fullName: string; newOwner: string; repoName?: string };
 
 export interface FakeRepositoryProviderOptions {
   /** Owner the fake nests repositories under. Defaults to `acme`. */
@@ -17,6 +20,10 @@ export interface FakeRepositoryProviderOptions {
   createError?: { message: string; kind?: RepositoryErrorKind };
   /** When set, every `delete` fails with this message and kind. */
   deleteError?: { message: string; kind?: RepositoryErrorKind };
+  /** When set, every `addCollaborator` fails with this message and kind. */
+  addCollaboratorError?: { message: string; kind?: RepositoryErrorKind };
+  /** When set, every `transfer` fails with this message and kind. */
+  transferError?: { message: string; kind?: RepositoryErrorKind };
 }
 
 /** A {@link RepositoryProvider} that records its calls and touches no remote, for tests. */
@@ -67,6 +74,41 @@ export function createFakeRepositoryProvider(
         return fail('delete', options.deleteError.message, options.deleteError.kind ?? 'unknown');
       }
       return { ok: true, value: undefined };
+    },
+
+    async addCollaborator(fullName, username) {
+      calls.push({ op: 'add-collaborator', fullName, username });
+      if (options.addCollaboratorError !== undefined) {
+        return fail(
+          'addCollaborator',
+          options.addCollaboratorError.message,
+          options.addCollaboratorError.kind ?? 'unknown',
+        );
+      }
+      return { ok: true, value: undefined };
+    },
+
+    async transfer(fullName, target) {
+      calls.push({
+        op: 'transfer',
+        fullName,
+        newOwner: target.newOwner,
+        repoName: target.repoName,
+      });
+      if (options.transferError !== undefined) {
+        return fail(
+          'transfer',
+          options.transferError.message,
+          options.transferError.kind ?? 'unknown',
+        );
+      }
+      const name = target.repoName ?? fullName.split('/')[1];
+      const repository: Repository = {
+        fullName: `${target.newOwner}/${name}`,
+        cloneUrl: `https://github.com/${target.newOwner}/${name}.git`,
+        url: `https://github.com/${target.newOwner}/${name}`,
+      };
+      return { ok: true, value: repository };
     },
   };
 }

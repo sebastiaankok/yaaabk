@@ -5,6 +5,7 @@ import { isSkillLevel, projectNamespace } from '@yaaabk/shared';
 import { isValidProjectName, type TemplateModule } from '@yaaabk/template';
 import {
   ARGO_DESTINATION_SERVER,
+  ARGO_NAMESPACE_RESOURCES,
   ARGO_SOURCE_PATH,
   DEFAULT_BRANCH,
   GITHUB_TOKEN_KEY,
@@ -14,6 +15,7 @@ import {
   PROJECT_AGENT_SERVICE_ACCOUNT,
   PROJECT_GITHUB_SECRET,
   PROJECT_NAME_LABEL,
+  PROJECT_PSA_LABELS,
 } from './config';
 import { consoleLogger, projectError, toProjectError, type ProjectsLogger } from './errors';
 import { DuplicateProjectNameError } from './in-memory-project-store';
@@ -43,8 +45,6 @@ export interface ProjectsModuleOptions {
   githubToken?: string;
   /** Branch the scaffold pushes and ArgoCD tracks. Defaults to `main`. */
   branch?: string;
-  /** ArgoCD project to scope the Application to. Defaults to `default`. */
-  argoProject?: string;
   /** ArgoCD destination server. Defaults to the in-cluster API server. */
   argoServer?: string;
   /** Injectable clock. Defaults to `Date`. */
@@ -82,7 +82,6 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
   const now = options.clock ?? (() => new Date());
   const newId = options.ids ?? randomUUID;
   const branch = options.branch ?? DEFAULT_BRANCH;
-  const argoProject = options.argoProject ?? 'default';
   const argoServer = options.argoServer ?? ARGO_DESTINATION_SERVER;
 
   /**
@@ -191,7 +190,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
 
         await step('namespace', async () => {
           const result = await k8s.namespaces.create(namespace, {
-            labels: { [PROJECT_NAME_LABEL]: name },
+            labels: { [PROJECT_NAME_LABEL]: name, ...PROJECT_PSA_LABELS },
           });
           if (!result.ok) {
             throw projectError('kubernetes', result.error.message);
@@ -233,8 +232,25 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         }
 
         await step('argocd', async () => {
+          // An AppProject per Project pins its Applications to this repo,
+          // cluster and namespace, and whitelists the resource kinds the
+          // template deploys. Cluster-scoped, so it is its own undo step.
+          const project = await k8s.argoProjects.create(name, {
+            sourceRepos: [repository.url],
+            destinations: [{ server: argoServer, namespace }],
+            namespaceResources: ARGO_NAMESPACE_RESOURCES,
+            syncPolicy: { automated: { prune: true, selfHeal: true } },
+            labels: { [PROJECT_NAME_LABEL]: name },
+          });
+          if (!project.ok) {
+            throw projectError('kubernetes', project.error.message);
+          }
+          undo.push(() =>
+            requireOk('kubernetes', 'argoProjects.delete', () => k8s.argoProjects.delete(name)),
+          );
+
           const result = await k8s.applications.create(namespace, name, {
-            project: argoProject,
+            project: name,
             source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
             destination: { server: argoServer, namespace },
             syncPolicy: { automated: { prune: true, selfHeal: true } },
@@ -339,6 +355,71 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
       });
     },
 
+    export(id, input) {
+      return guard('export', { id, owner: input.owner }, async () => {
+        const project = store.get(id);
+        if (project === undefined) {
+          throw projectError('not-found', `No project with id "${id}"`);
+        }
+        const owner = input.owner.trim();
+        const repoName = (input.repoName ?? project.name).trim();
+        if (!isValidProjectName(owner)) {
+          throw projectError('invalid-input', `"${owner}" is not a valid GitHub username`);
+        }
+        if (!isValidProjectName(repoName)) {
+          throw projectError('invalid-input', `"${repoName}" is not a valid repository name`);
+        }
+
+        // Grant the Developer access before the move so the repository never
+        // sits between two owners they cannot see.
+        const access = await repositories.addCollaborator(project.repoFullName, owner);
+        if (!access.ok) {
+          throw projectError('repository', access.error.message);
+        }
+
+        const transferred = await repositories.transfer(project.repoFullName, {
+          newOwner: owner,
+          repoName,
+        });
+        if (!transferred.ok) {
+          throw projectError('repository', transferred.error.message);
+        }
+        const repository = transferred.value;
+
+        const syncPolicy = { automated: { prune: true, selfHeal: true } } as const;
+        const appProject = await k8s.argoProjects.update(project.name, {
+          sourceRepos: [repository.url],
+          destinations: [{ server: argoServer, namespace: project.namespace }],
+          namespaceResources: ARGO_NAMESPACE_RESOURCES,
+          syncPolicy,
+          labels: { [PROJECT_NAME_LABEL]: project.name },
+        });
+        if (!appProject.ok) {
+          throw projectError('kubernetes', appProject.error.message);
+        }
+
+        const application = await k8s.applications.update(project.namespace, project.argoAppName, {
+          project: project.name,
+          source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
+          destination: { server: argoServer, namespace: project.namespace },
+          syncPolicy,
+          labels: { [PROJECT_NAME_LABEL]: project.name },
+        });
+        if (!application.ok) {
+          throw projectError('kubernetes', application.error.message);
+        }
+
+        const updated: Project = {
+          ...project,
+          repoFullName: repository.fullName,
+          repoUrl: repository.url,
+          updatedAt: now().toISOString(),
+        };
+        store.update(updated);
+        return updated;
+      });
+    },
+
     remove(id) {
       return guard('remove', { id }, async () => {
         const project = store.get(id);
@@ -351,6 +432,9 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         );
         await requireOk('kubernetes', 'namespaces.delete', () =>
           k8s.namespaces.delete(project.namespace),
+        );
+        await requireOk('kubernetes', 'argoProjects.delete', () =>
+          k8s.argoProjects.delete(project.name),
         );
         await requireOk('repository', 'repository.delete', () =>
           repositories.delete(project.repoFullName),

@@ -103,6 +103,14 @@ export interface CreateProjectOptions {
   onProgress?: (event: ProvisioningEvent) => void;
 }
 
+/** The target a Project is exported to. */
+export interface ExportProjectInput {
+  /** GitHub username the repository is transferred to. */
+  owner: string;
+  /** Desired repository name after transfer. Defaults to the Project name. */
+  repoName?: string;
+}
+
 /** The Projects Module's public contract. */
 export interface ProjectsModule {
   /** Provisions the repository and cluster resources, then records the Project. */
@@ -114,6 +122,12 @@ export interface ProjectsModule {
   update(id: string, patch: ProjectPatch): Promise<ProjectsResult<Project>>;
   /** Tears down the Project's repository and cluster resources, then forgets it. */
   remove(id: string): Promise<ProjectsResult<void>>;
+  /**
+   * Transfers the Project's repository out of YAAABK to a Developer's GitHub
+   * account and repoints ArgoCD at the new location, so the app keeps
+   * deploying after the Project leaves the platform.
+   */
+  export(id: string, input: ExportProjectInput): Promise<ProjectsResult<Project>>;
 }
 
 /**

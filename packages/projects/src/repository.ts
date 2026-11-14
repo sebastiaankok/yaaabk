@@ -50,4 +50,17 @@ export interface RepositoryProvider {
   create(input: CreateRepositoryInput): Promise<RepositoryResult<Repository>>;
   /** Deletes the repository, or fails. Callers treat `not-found` as success. */
   delete(fullName: string): Promise<RepositoryResult<void>>;
+  /**
+   * Grants a user read/write access before an ownership transfer, so the
+   * recipient can see the repository the moment it moves.
+   */
+  addCollaborator(fullName: string, username: string): Promise<RepositoryResult<void>>;
+  /**
+   * Transfers ownership to `newOwner`, optionally renaming to `repoName`.
+   * Resolves with the repository's new identity (owner, and name if changed).
+   */
+  transfer(
+    fullName: string,
+    target: { newOwner: string; repoName?: string },
+  ): Promise<RepositoryResult<Repository>>;
 }
