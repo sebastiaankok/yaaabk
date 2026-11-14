@@ -54,9 +54,18 @@ test('creates a project and follows it to its dashboard', async ({ page }) => {
       return;
     }
     posted = route.request().postDataJSON();
-    // Simulate the round-trip so the progress checklist is observable.
+    // Stream real progress frames before finishing, mimicking the backend.
     await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.fulfill({ status: 201, json: PROJECT });
+    const frames = [
+      'event: progress\ndata: {"step":"repository","status":"started"}\n\n',
+      'event: progress\ndata: {"step":"repository","status":"completed"}\n\n',
+      `event: done\ndata: ${JSON.stringify(PROJECT)}\n\n`,
+    ].join('');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      body: frames,
+    });
   });
   await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
 
