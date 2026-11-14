@@ -21,7 +21,7 @@ import {
   type FakeGitHubIssues,
   type IssueSyncModule,
 } from '@yaaabk/github';
-import { createMockK8sClient } from '@yaaabk/k8s';
+import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createInMemoryPlanStore, createPlansModule, type PlansModule } from '@yaaabk/plans';
 import {
@@ -29,8 +29,15 @@ import {
   createInMemoryProjectStore,
   createProjectsModule,
   silentLogger as projectsLogger,
+  type ProjectStore,
   type ProjectsModule,
 } from '@yaaabk/projects';
+import {
+  createAgentManager,
+  createInMemoryAgentStore,
+  silentLogger as agentsLogger,
+  type AgentManager,
+} from '@yaaabk/agents';
 import {
   createFakeGitBackend,
   createTemplateModule,
@@ -56,6 +63,9 @@ export interface TestContext {
   issueSync: IssueSyncModule;
   github: FakeGitHubIssues;
   grillMe: GrillMeModule;
+  agents: AgentManager;
+  projectStore: ProjectStore;
+  k8s: MockK8sClient;
   spawner: FakeSpawner;
   store: AuthStore;
   clock: { ms: number };
@@ -106,9 +116,11 @@ export function createTestContext(
     logger: silent,
   });
 
+  const projectStore = createInMemoryProjectStore();
+  const k8s = createMockK8sClient();
   const projects = createProjectsModule({
-    store: createInMemoryProjectStore(),
-    k8s: createMockK8sClient(),
+    store: projectStore,
+    k8s,
     templates: createTemplateModule({
       git: createFakeGitBackend(),
       dryRun: true,
@@ -151,8 +163,27 @@ export function createTestContext(
     logger: silent,
   });
 
+  const agents = createAgentManager({
+    store: createInMemoryAgentStore(),
+    issues,
+    projects: projectStore,
+    k8s,
+    ids: () => `run-${Math.random().toString(16).slice(2, 10)}`,
+    clock: () => new Date(clock.ms),
+    logger: agentsLogger,
+  });
+
   return {
-    app: createApp({ auth, projects, plans, issues, issueSync, grillMe, authRoutesOptions }),
+    app: createApp({
+      auth,
+      projects,
+      plans,
+      issues,
+      issueSync,
+      grillMe,
+      agents,
+      authRoutesOptions,
+    }),
     auth,
     projects,
     plans,
@@ -160,6 +191,9 @@ export function createTestContext(
     issueSync,
     github,
     grillMe,
+    agents,
+    projectStore,
+    k8s,
     spawner,
     store,
     clock,

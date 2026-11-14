@@ -1,3 +1,4 @@
+import type { AgentManager } from '@yaaabk/agents';
 import type { AuthModule } from '@yaaabk/auth';
 import type { IssueSyncModule } from '@yaaabk/github';
 import type { GrillMeModule } from '@yaaabk/grill-me';
@@ -8,6 +9,7 @@ import { SKILL_LEVELS } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authRoutes, requireAuth, type AuthRoutesOptions } from './auth-routes';
+import { agentRoutes } from './agent-routes';
 import { grillRoutes } from './grill-routes';
 import { issueRoutes } from './issue-routes';
 import { issueSyncRoutes } from './issue-sync-routes';
@@ -36,6 +38,8 @@ export interface AppOptions {
   issueSync: IssueSyncModule;
   /** The Grill-Me Module. Tests inject one over a fake spawner. */
   grillMe: GrillMeModule;
+  /** The Agent Manager Module. Tests inject one over a mock cluster. */
+  agents: AgentManager;
   /** Forwarded to {@link authRoutes}. */
   authRoutesOptions?: AuthRoutesOptions;
   /** Origin allowed to call the API with credentials. Defaults to {@link DEFAULT_WEB_ORIGIN}. */
@@ -69,6 +73,7 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', planRoutes(options.projects, options.plans));
   app.route('/', issueRoutes(options.issues, options.projects, options.plans, options.grillMe));
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
+  app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', grillRoutes(options.grillMe, options.projects, options.plans, options.issues));
 
   return app;

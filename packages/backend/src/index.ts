@@ -2,6 +2,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
+import { createAgentManager, createSqliteAgentStore } from '@yaaabk/agents';
 import {
   createAuthModule,
   createBcryptHasher,
@@ -113,9 +114,11 @@ const auth = createAuthModule({
 });
 
 const githubToken = process.env.YAAABK_GITHUB_TOKEN;
+const projectStore = createSqliteProjectStore(database);
+const k8s = createK8sClient({ connection: detectK8sConnection() });
 const projects = createProjectsModule({
-  store: createSqliteProjectStore(database),
-  k8s: createK8sClient({ connection: detectK8sConnection() }),
+  store: projectStore,
+  k8s,
   templates: createTemplateModule(),
   repositories: resolveRepositories(),
   ...(githubToken !== undefined && githubToken !== '' ? { githubToken } : {}),
@@ -131,6 +134,17 @@ const issues = createIssuesModule({
 const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues() });
 const grillMe = createGrillMeModule();
 
+const agents = createAgentManager({
+  store: createSqliteAgentStore(database),
+  issues,
+  projects: projectStore,
+  k8s,
+  ...(process.env.YAAABK_AGENT_IMAGE !== undefined
+    ? { image: process.env.YAAABK_AGENT_IMAGE }
+    : {}),
+  ...(process.env.YAAABK_API_URL !== undefined ? { apiUrl: process.env.YAAABK_API_URL } : {}),
+});
+
 const app = createApp({
   auth,
   projects,
@@ -138,9 +152,26 @@ const app = createApp({
   issues,
   issueSync,
   grillMe,
+  agents,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
 });
+
+/**
+ * Drives the Agent Manager: dispatches queued attempts, records finished Jobs
+ * and schedules retries. The interval is configurable so tests and constrained
+ * clusters can slow it down.
+ */
+const agentPollMs = Number(process.env.YAAABK_AGENT_POLL_MS ?? 15000);
+if (Number.isFinite(agentPollMs) && agentPollMs > 0) {
+  setInterval(() => {
+    void agents.reconcile().then((result) => {
+      if (!result.ok) {
+        console.error('agents reconcile failed', result.error);
+      }
+    });
+  }, agentPollMs);
+}
 
 export default {
   port: Number(process.env.PORT ?? 3000),
