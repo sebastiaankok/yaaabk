@@ -21,12 +21,17 @@ export async function runAgent(
   deps: AgentDependencies,
 ): Promise<AgentOutcome> {
   const directory = deps.directory ?? DEFAULT_DIRECTORY;
-  const branch = (deps.branchFor ?? defaultBranch)(config);
+  const fix = config.branch !== undefined;
+  const branch = config.branch ?? (deps.branchFor ?? defaultBranch)(config);
   const issue = await deps.github.fetchIssue(config.issueNumber);
   const logs: string[] = [];
 
   await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
-  await deps.git.createBranch(directory, branch);
+  if (fix) {
+    await deps.git.checkoutBranch(directory, branch);
+  } else {
+    await deps.git.createBranch(directory, branch);
+  }
 
   const implemented = await deps.openCode.implement({
     directory,
@@ -51,7 +56,7 @@ export async function runAgent(
   }
 
   await deps.git.commitAll(directory, `${pullRequestTitle(issue)} (#${issue.number})`);
-  await deps.git.push(directory, branch, config.githubToken);
+  await deps.git.push(directory, branch, { force: fix });
   const pullRequest = await deps.github.openPullRequest({
     branch,
     title: pullRequestTitle(issue),

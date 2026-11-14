@@ -67,6 +67,7 @@
       "dependencies": {
         "@yaaabk/agents": "workspace:*",
         "@yaaabk/auth": "workspace:*",
+        "@yaaabk/ci-tracker": "workspace:*",
         "@yaaabk/github": "workspace:*",
         "@yaaabk/grill-me": "workspace:*",
         "@yaaabk/issues": "workspace:*",
@@ -80,6 +81,23 @@
       "devDependencies": {
         "@types/bun": "^1.3.13",
         "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
+    "packages/ci-tracker": {
+      "name": "@yaaabk/ci-tracker",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/agents": "workspace:*",
+        "@yaaabk/github": "workspace:*",
+        "@yaaabk/issues": "workspace:*",
+        "@yaaabk/projects": "workspace:*",
+        "@yaaabk/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "@yaaabk/k8s": "workspace:*",
         "typescript": "^6.0.3",
         "vitest": "^4.1.8",
       },
@@ -444,6 +462,8 @@
     "@yaaabk/auth": ["@yaaabk/auth@workspace:packages/auth"],
 
     "@yaaabk/backend": ["@yaaabk/backend@workspace:packages/backend"],
+
+    "@yaaabk/ci-tracker": ["@yaaabk/ci-tracker@workspace:packages/ci-tracker"],
 
     "@yaaabk/cost-control": ["@yaaabk/cost-control@workspace:packages/cost-control"],
 

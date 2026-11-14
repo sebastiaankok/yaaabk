@@ -14,6 +14,7 @@
   "dependencies": {
     "@yaaabk/agents": "workspace:*",
     "@yaaabk/auth": "workspace:*",
+    "@yaaabk/ci-tracker": "workspace:*",
     "@yaaabk/github": "workspace:*",
     "@yaaabk/grill-me": "workspace:*",
     "@yaaabk/issues": "workspace:*",

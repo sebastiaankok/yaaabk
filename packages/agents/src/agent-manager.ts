@@ -76,6 +76,7 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     jobName: run.jobName,
     pvcName: run.pvcName,
     openrouterSecretName: run.openrouterSecretName,
+    branch: run.branch,
     status: run.status,
     prUrl: run.prUrl,
     logs: run.logs,
@@ -194,6 +195,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       if (options.apiUrl !== undefined) {
         env.YAAABK_API_URL = options.apiUrl;
       }
+      if (run.branch !== null) {
+        env.BRANCH = run.branch;
+      }
       const envFrom: JobSpec['envFrom'] = [{ secretRef: { name: PROJECT_GITHUB_SECRET } }];
       if (run.openrouterSecretName !== null) {
         envFrom.push({ secretRef: { name: run.openrouterSecretName } });
@@ -296,6 +300,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       jobName: null,
       pvcName: null,
       openrouterSecretName: secret,
+      branch: spawnOptions.branch ?? null,
       status: 'queued',
       prUrl: null,
       logs: null,

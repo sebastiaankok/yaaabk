@@ -56,6 +56,7 @@ cp .env.example .env
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
 | `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
+| `YAAABK_CI_POLL_MS` | `30000` | How often the CI Tracker watches `automerge` pull requests |
 
 A single root `.env` configures every package: the backend loads it via
 `--env-file`, and Vite loads it via `envDir`. Only variables prefixed with
@@ -84,7 +85,8 @@ This is a Bun workspace monorepo:
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
-| `@yaaabk/github` | `packages/github` | GitHub Issues port + REST adapter, the `createIssueSyncModule` mirror and a fake |
+| `@yaaabk/ci-tracker` | `packages/ci-tracker` | The CI Tracker: watches `automerge` pull requests, merges the passing ones and spawns fix attempts (`createCiTracker`) |
+| `@yaaabk/github` | `packages/github` | GitHub Issues and Pulls ports + REST adapters, the `createIssueSyncModule` mirror and fakes |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
@@ -262,6 +264,37 @@ project's checks, and opens a pull request labelled `automerge`. The clone →
 implement → checks → PR flow is driven through narrow ports, so it is
 unit-tested without a cluster, a repository or an LLM; the real adapters shell
 out to `git`, OpenCode and the GitHub API.
+
+## CI Tracker
+
+The `@yaaabk/ci-tracker` package closes the agent loop. A background polling loop
+(`createCiTracker`, started by the backend on boot) walks every Project, lists
+the pull requests labelled `automerge`, and reads the combined check state of
+each head commit through the `GitHubPulls` port:
+
+- **passing** — the pull request is merged and its Issue is closed locally and on
+  GitHub.
+- **failing** — a fix attempt is spawned on the same branch, up to the Issue's
+  attempt budget; once the budget is spent the Issue is labelled `needs-human`
+  and no further attempts are made.
+- **pending** — nothing yet; the tracker waits for CI to finish.
+
+A still-failing head commit is remembered, so a fix is spawned exactly once per
+commit. The pull request is mapped back to its Issue by its head branch
+(`agent/issue-<n>`), the same convention the agent uses. The backend exposes the
+loop over HTTP:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/admin/ci/status` | The loop's config, when it last checked, and the pull requests it watches |
+| `PATCH /api/admin/ci/config` | Enable/disable the loop and change its interval (5s–24h) |
+
+The module is unit-tested against the in-memory Issues Module and Agent Manager
+and fakes for both GitHub ports:
+
+```sh
+bun run --filter '@yaaabk/ci-tracker' test:unit
+```
 
 ## Scripts
 Run these from the repository root; each fans out across the workspace.

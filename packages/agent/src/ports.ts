@@ -6,6 +6,7 @@
  * verified without a cluster, a repository or an LLM.
  */
 
+import { issueBranch } from '@yaaabk/shared';
 import type { AgentConfig } from './config';
 
 /** The Issue as the agent needs it. */
@@ -32,10 +33,15 @@ export interface Git {
   clone(input: CloneInput): Promise<void>;
   /** Creates and checks out `branch`, replacing any stale local branch. */
   createBranch(directory: string, branch: string): Promise<void>;
+  /**
+   * Fetches and checks out an existing remote `branch`, the way a fix attempt
+   * picks up the pull request it is continuing.
+   */
+  checkoutBranch(directory: string, branch: string): Promise<void>;
   /** Stages and commits every change. */
   commitAll(directory: string, message: string): Promise<void>;
-  /** Pushes `branch` to `origin`. */
-  push(directory: string, branch: string, token: string): Promise<void>;
+  /** Pushes `branch` to `origin`, force-updating it when `force` is set. */
+  push(directory: string, branch: string, options?: { force?: boolean }): Promise<void>;
 }
 
 export interface OpenCode {
@@ -94,5 +100,5 @@ export const AUTOMERGE_LABEL = 'automerge';
 
 /** The default branch name for an Issue's work. */
 export function defaultBranch(config: AgentConfig): string {
-  return `agent/issue-${config.issueNumber}`;
+  return issueBranch(config.issueNumber);
 }
