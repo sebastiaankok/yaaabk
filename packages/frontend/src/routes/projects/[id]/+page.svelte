@@ -118,12 +118,12 @@
         >
           Issue board
         </a>
-        <span
-          class="cursor-not-allowed rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-400"
-          title="Coming soon"
+        <a
+          href={resolve('/projects/[id]/stats', { id: project.id })}
+          class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
         >
           Stats
-        </span>
+        </a>
       </div>
     </section>
 

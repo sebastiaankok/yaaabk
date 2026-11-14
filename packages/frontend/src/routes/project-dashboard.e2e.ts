@@ -50,6 +50,10 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'href',
     '/projects/p1/plan',
   );
+  await expect(page.getByRole('link', { name: 'Stats' })).toHaveAttribute(
+    'href',
+    '/projects/p1/stats',
+  );
 });
 
 test('deletes the project after confirmation', async ({ page }) => {

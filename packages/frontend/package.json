@@ -29,6 +29,7 @@
     "@yaaabk/projects": "workspace:*",
     "@yaaabk/settings": "workspace:*",
     "@yaaabk/shared": "workspace:*",
+    "@yaaabk/stats": "workspace:*",
     "dompurify": "^3.2.6",
     "marked": "^15.0.0",
     "uqr": "^0.1.3"

@@ -15,6 +15,7 @@ import type { Plan } from '@yaaabk/plans';
 import type { Project, ProvisioningEvent } from '@yaaabk/projects';
 import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
 import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectStats } from '@yaaabk/stats';
 
 export interface AuthUser {
   id: string;
@@ -243,6 +244,23 @@ export async function createProjectStream(
 
 export function deleteProject(id: string): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** The range the stats dashboard is filtered to, as ISO-8601 instants. */
+export interface StatsRange {
+  from?: string;
+  to?: string;
+}
+
+/** Reads a Project's aggregated stats, optionally filtered to a date range. */
+export function getProjectStats(projectId: string, range: StatsRange = {}): Promise<ProjectStats> {
+  const params = new URLSearchParams();
+  if (range.from !== undefined) params.set('from', range.from);
+  if (range.to !== undefined) params.set('to', range.to);
+  const query = params.toString();
+  return request<ProjectStats>(
+    `/api/projects/${encodeURIComponent(projectId)}/stats${query === '' ? '' : `?${query}`}`,
+  );
 }
 
 export function listPlans(projectId: string): Promise<Plan[]> {
