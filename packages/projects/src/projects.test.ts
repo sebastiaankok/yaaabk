@@ -136,7 +136,7 @@ describe('create', () => {
     });
 
     const secret = await k8s.secrets.get(project.namespace, 'yaaabk-github');
-    expect(secret.ok && secret.value.keys).toEqual(['token']);
+    expect(secret.ok && secret.value.keys).toEqual(['GITHUB_TOKEN']);
 
     const application = await k8s.applications.get(project.namespace, 'todo-app');
     expect(application.ok).toBe(true);
