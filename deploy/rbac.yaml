@@ -12,7 +12,7 @@ kind: ClusterRole
 metadata:
   name: yaaabk-backend
 rules:
-  - apiGroups: [""]
+  - apiGroups: ['']
     resources: [namespaces, secrets, serviceaccounts, rolebindings]
     verbs: [create, get, list, watch, patch, update, delete]
   - apiGroups: [batch]
