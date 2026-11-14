@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { IssueSyncStatus } from '@yaaabk/github';
 import type { IssueGraph } from '@yaaabk/issues';
 
 const PROJECT = {
@@ -31,6 +32,7 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
     projectId: 'p1',
     planId: 'v1',
     githubNumber: null,
+    githubSyncedAt: null,
     body: '',
     status: 'open',
     label: 'refinement-needed',
@@ -65,11 +67,24 @@ const GRAPH: IssueGraph = {
 interface Mocks {
   issues: Record<string, unknown>[];
   graph: IssueGraph;
+  syncStatus: IssueSyncStatus;
 }
+
+/** The status a fully mirrored project reports. */
+const SYNCED: IssueSyncStatus = {
+  total: 2,
+  synced: 2,
+  pending: 0,
+  lastSyncedAt: '2026-01-02T00:00:00.000Z',
+};
 
 /** Mocks the project, its active plan and the issue endpoints. */
 async function mockReview(page: Page): Promise<Mocks> {
-  const state: Mocks = { issues: [SCHEMA, API], graph: GRAPH };
+  const state: Mocks = {
+    issues: [SCHEMA, API],
+    graph: GRAPH,
+    syncStatus: { total: 2, synced: 0, pending: 2, lastSyncedAt: null },
+  };
 
   await page.route('**/api/auth/status', (route) =>
     route.fulfill({
@@ -83,6 +98,9 @@ async function mockReview(page: Page): Promise<Mocks> {
   );
   await page.route('**/api/projects/p1/issues/graph', (route) =>
     route.fulfill({ json: state.graph }),
+  );
+  await page.route('**/api/projects/p1/issues/sync/status', (route) =>
+    route.fulfill({ json: state.syncStatus }),
   );
   return state;
 }
@@ -136,17 +154,46 @@ test('refines the issue list with a prompt', async ({ page }) => {
   await expect(page.getByText('Schema')).toBeHidden();
 });
 
-test('approves the issue list', async ({ page }) => {
+test('approves the issue list and pushes it to GitHub', async ({ page }) => {
   const state = await mockReview(page);
   await page.route('**/api/projects/p1/issues/approve', (route) => {
     state.issues = state.issues.map((item) => ({ ...item, label: 'ready' }));
     return route.fulfill({ json: { issues: state.issues } });
   });
+  await page.route('**/api/projects/p1/issues/sync/push', (route) => {
+    state.issues = state.issues.map((item, index) => ({ ...item, githubNumber: index + 1 }));
+    state.syncStatus = SYNCED;
+    return route.fulfill({ json: { created: 2, updated: 0, status: state.syncStatus } });
+  });
 
   await page.goto('/projects/p1/issues/review');
   await page.getByRole('button', { name: 'Approve & Create' }).click();
 
-  await expect(page.getByText('Issues approved and ready.')).toBeVisible();
+  await expect(page.getByText('Issues approved.')).toBeVisible();
+  await expect(page.getByText('GitHub in sync · 2 created')).toBeVisible();
+  await expect(page.getByText('All 2 issues on GitHub')).toBeVisible();
+});
+
+test('syncs with GitHub on demand', async ({ page }) => {
+  const state = await mockReview(page);
+
+  await page.goto('/projects/p1/issues/review');
+  await expect(page.getByText('Not yet on GitHub · 2 pending')).toBeVisible();
+
+  await page.route('**/api/projects/p1/issues/sync', (route) => {
+    state.issues = state.issues.map((item, index) => ({ ...item, githubNumber: index + 1 }));
+    state.syncStatus = SYNCED;
+    return route.fulfill({
+      json: {
+        push: { created: 2, updated: 0, status: state.syncStatus },
+        pull: { changed: 0, status: state.syncStatus },
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Sync with GitHub' }).click();
+
+  await expect(page.getByText('GitHub in sync · 2 created')).toBeVisible();
+  await expect(page.getByText('All 2 issues on GitHub')).toBeVisible();
 });
 
 test('offers to generate issues when there are none', async ({ page }) => {

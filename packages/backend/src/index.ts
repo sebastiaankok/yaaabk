@@ -12,6 +12,12 @@ import {
   MIN_SECRET_LENGTH,
 } from '@yaaabk/auth';
 import { createGrillMeModule } from '@yaaabk/grill-me';
+import {
+  createGitHubIssuesClient,
+  createIssueSyncModule,
+  type GitHubIssues,
+  type GitHubResult,
+} from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
 import { createK8sClient, detectK8sConnection } from '@yaaabk/k8s';
 import { createPlansModule, createSqlitePlanStore } from '@yaaabk/plans';
@@ -69,6 +75,30 @@ function resolveRepositories(): RepositoryProvider {
   };
 }
 
+/**
+ * Resolves the GitHub Issues port. Until the Settings credential store exists,
+ * credentials come from the environment; without them every sync fails with a
+ * clear typed error rather than breaking startup.
+ */
+function resolveGitHubIssues(): GitHubIssues {
+  const token = process.env.YAAABK_GITHUB_TOKEN;
+  if (token !== undefined && token !== '') {
+    return createGitHubIssuesClient({ token });
+  }
+  const message = 'GitHub is not configured; set YAAABK_GITHUB_TOKEN to sync issues';
+  const fail = async (): Promise<GitHubResult<never>> => ({
+    ok: false,
+    error: { kind: 'unauthorized', operation: 'github', message },
+  });
+  return {
+    ensureLabels: fail,
+    createIssue: fail,
+    updateIssue: fail,
+    getIssue: fail,
+    listIssues: fail,
+  };
+}
+
 const dataDir = process.env.YAAABK_DATA_DIR ?? './data';
 mkdirSync(dataDir, { recursive: true });
 
@@ -98,6 +128,7 @@ const issues = createIssuesModule({
     ? { defaultBudgetCents: Number(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS) }
     : {}),
 });
+const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues() });
 const grillMe = createGrillMeModule();
 
 const app = createApp({
@@ -105,6 +136,7 @@ const app = createApp({
   projects,
   plans,
   issues,
+  issueSync,
   grillMe,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },

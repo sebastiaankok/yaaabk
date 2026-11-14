@@ -15,6 +15,12 @@ import {
   type FakeSpawner,
   type GrillMeModule,
 } from '@yaaabk/grill-me';
+import {
+  createFakeGitHubIssues,
+  createIssueSyncModule,
+  type FakeGitHubIssues,
+  type IssueSyncModule,
+} from '@yaaabk/github';
 import { createMockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createInMemoryPlanStore, createPlansModule, type PlansModule } from '@yaaabk/plans';
@@ -47,6 +53,8 @@ export interface TestContext {
   projects: ProjectsModule;
   plans: PlansModule;
   issues: IssuesModule;
+  issueSync: IssueSyncModule;
+  github: FakeGitHubIssues;
   grillMe: GrillMeModule;
   spawner: FakeSpawner;
   store: AuthStore;
@@ -127,6 +135,15 @@ export function createTestContext(
     logger: silent,
   });
 
+  const github = createFakeGitHubIssues();
+  const issueSync = createIssueSyncModule({
+    issues,
+    github,
+    clock: () => new Date(clock.ms),
+    sleep: async () => {},
+    logger: silent,
+  });
+
   const spawner = createFakeSpawner();
   const grillMe = createGrillMeModule({
     spawner,
@@ -135,11 +152,13 @@ export function createTestContext(
   });
 
   return {
-    app: createApp({ auth, projects, plans, issues, grillMe, authRoutesOptions }),
+    app: createApp({ auth, projects, plans, issues, issueSync, grillMe, authRoutesOptions }),
     auth,
     projects,
     plans,
     issues,
+    issueSync,
+    github,
     grillMe,
     spawner,
     store,

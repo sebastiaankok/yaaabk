@@ -80,6 +80,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
+| `@yaaabk/github` | `packages/github` | GitHub Issues port + REST adapter, the `createIssueSyncModule` mirror and a fake |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
@@ -174,6 +175,10 @@ Plan generates. The backend exposes it over HTTP:
 | `POST /api/projects/:id/issues/generate` | Run the grill-me one-shot over the active Plan and record its Issues |
 | `POST /api/projects/:id/issues/refine` | Re-run generation with revision feedback |
 | `POST /api/projects/:id/issues/approve` | Mark every Issue `ready` |
+| `GET /api/projects/:id/issues/sync/status` | How much of the Issue set is mirrored to GitHub |
+| `POST /api/projects/:id/issues/sync/push` | Create or update the Project's Issues on GitHub |
+| `POST /api/projects/:id/issues/sync/pull` | Pull GitHub's open/closed state back onto local Issues |
+| `POST /api/projects/:id/issues/sync` | A full push-then-pull cycle |
 
 The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
 the generated Issues grouped by wave (with label pills, dependency tags and any
@@ -189,6 +194,30 @@ in-memory `IssueStore` and the SQLite store runs against `bun:sqlite`:
 
 ```sh
 bun run --filter '@yaaabk/issues' test:integration
+```
+
+### GitHub sync
+
+`@yaaabk/github` mirrors each local Issue to a GitHub Issue on the Project's
+repository. `push` opens a GitHub Issue for every local Issue that has none and
+updates the rest; `pull` takes GitHub's open/closed state back, so an Issue a
+human closes on GitHub closes locally too. YAAABK stays the source of truth for
+everything else — title, body, labels, dependencies and budget — so the two
+sides do not fight. The dependency titles and per-Issue budget ride along in an
+invisible `<!-- yaaabk:meta … -->` footer that `push` writes and `pull` reads
+past, so YAAABK-only fields survive a round trip.
+
+An exhausted GitHub rate limit or a network failure is retried up to three times
+with back-off; if it persists the route reports `429` (rate limited) or `502`
+(any other GitHub error) rather than failing silently. The review page shows a
+sync-status indicator and a **Sync with GitHub** button, and **Approve & Create**
+pushes the freshly approved Issues.
+
+The GitHub Issues port is unit-tested against an in-memory fake, and the REST
+adapter against an injected `fetch`:
+
+```sh
+bun run --filter '@yaaabk/github' test:unit
 ```
 
 ## Scripts

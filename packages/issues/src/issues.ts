@@ -122,6 +122,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
       projectId: input.projectId,
       planId: input.planId ?? null,
       githubNumber: null,
+      githubSyncedAt: null,
       title: input.title.trim(),
       body: input.body ?? '',
       status: 'open',
@@ -242,6 +243,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
           ...(patch.budgetCents === undefined ? {} : { budgetCents: patch.budgetCents }),
           ...(patch.maxAttempts === undefined ? {} : { maxAttempts: patch.maxAttempts }),
           ...(patch.githubNumber === undefined ? {} : { githubNumber: patch.githubNumber }),
+          ...(patch.githubSyncedAt === undefined ? {} : { githubSyncedAt: patch.githubSyncedAt }),
           ...(patch.openrouterKeyHash === undefined
             ? {}
             : { openrouterKeyHash: patch.openrouterKeyHash }),

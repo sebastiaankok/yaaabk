@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createProject, deleteProject, getStatus, listProjects, login } from './api';
+import {
+  createProject,
+  deleteProject,
+  getIssueSyncStatus,
+  getStatus,
+  listProjects,
+  login,
+  syncIssues,
+} from './api';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -104,6 +112,30 @@ describe('deleteProject', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p%201$/),
       expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+});
+
+describe('issue sync', () => {
+  it('reads the sync status', async () => {
+    const status = { total: 2, synced: 0, pending: 2, lastSyncedAt: null };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(status)),
+    );
+
+    await expect(getIssueSyncStatus('p1')).resolves.toEqual(status);
+  });
+
+  it('POSTs a full sync cycle', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ push: {}, pull: {} }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await syncIssues('p1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/issues\/sync$/),
+      expect.objectContaining({ method: 'POST' }),
     );
   });
 });

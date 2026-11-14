@@ -8,6 +8,7 @@ function issue(overrides: Partial<Issue> & { title: string }): Issue {
     projectId: 'project-1',
     planId: 'plan-1',
     githubNumber: null,
+    githubSyncedAt: null,
     body: '',
     status: 'open',
     label: 'refinement-needed',
