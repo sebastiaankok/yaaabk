@@ -99,7 +99,7 @@ describe('SettingsModule', () => {
 
     const result = await settings.verifyOpenRouter();
 
-    expect(result).toEqual({ ok: true, value: { account: 'acme' } });
+    expect(result).toEqual({ ok: true, value: { keys: 3 } });
     expect(openRouterVerifier.verified).toEqual(['sk-or-v1-abcdefgh1c96']);
   });
 

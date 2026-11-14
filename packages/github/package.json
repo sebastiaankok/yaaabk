@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@yaaabk/issues": "workspace:*"
+    "@yaaabk/issues": "workspace:*",
+    "jose": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

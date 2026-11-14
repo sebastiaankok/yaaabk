@@ -82,7 +82,7 @@ describe('POST /api/settings/openrouter/verify', () => {
     const res = await request(context, session, '/api/settings/openrouter/verify', { method: 'POST' });
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({ ok: true, account: 'acme' });
+    await expect(res.json()).resolves.toMatchObject({ ok: true, keys: 3 });
   });
 
   it('reports unauthorized instead of a 500 when no key is configured', async () => {

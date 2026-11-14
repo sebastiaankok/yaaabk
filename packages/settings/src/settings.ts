@@ -7,7 +7,7 @@ import type { CredentialField, CredentialValue, SettingsRecord, SettingsStore } 
 export const MIN_ISSUE_BUDGET_CENTS = 1;
 
 /** The kinds of failure a Settings command can report. */
-export type SettingsErrorKind = 'invalid-input' | 'unauthorized';
+export type SettingsErrorKind = 'invalid-input' | 'unauthorized' | 'network' | 'server' | 'rate-limited';
 
 /** A typed failure, never thrown across the module boundary. */
 export interface SettingsError {
@@ -69,12 +69,23 @@ export interface DecryptedSettings {
 
 /** What OpenRouter reports about a management key. */
 export interface OpenRouterAccount {
-  account: string;
+  /** The workspace the management key belongs to, when OpenRouter reports it. */
+  workspaceId?: string;
+  /** How many API keys the management key can see. */
+  keys: number;
 }
+
+/**
+ * What a verifier port reports: transport-level, without the module's
+ * `operation` bookkeeping. The module maps failures into {@link SettingsError}.
+ */
+export type VerifyOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; kind: 'unauthorized' | 'network' | 'server' | 'rate-limited'; message: string };
 
 /** Verifies a management key with OpenRouter's Management API. */
 export interface OpenRouterVerifier {
-  verify(managementKey: string): Promise<SettingsResult<OpenRouterAccount>>;
+  verify(managementKey: string): Promise<VerifyOutcome<OpenRouterAccount>>;
 }
 
 /** How the configured GitHub credentials authenticate. */
@@ -89,12 +100,12 @@ export interface GitHubAccount {
 
 /** Verifies GitHub credentials, either a PAT or a GitHub App installation. */
 export interface GitHubVerifier {
-  verifyWithPat(pat: string): Promise<SettingsResult<GitHubAccount>>;
+  verifyWithPat(pat: string): Promise<VerifyOutcome<GitHubAccount>>;
   verifyWithApp(app: {
     appId: string;
     privateKey: string;
     installationId?: string;
-  }): Promise<SettingsResult<GitHubAccount>>;
+  }): Promise<VerifyOutcome<GitHubAccount>>;
 }
 
 const CREDENTIAL_FIELDS: readonly CredentialField[] = [
@@ -146,6 +157,18 @@ export function createSettingsModule({
       decrypted.defaultIssueBudgetCents = record.defaultIssueBudgetCents;
     }
     return decrypted;
+  }
+
+  function mapOutcome(
+    operation: SettingsError['operation'],
+  ): <T>(outcome: VerifyOutcome<T>) => SettingsResult<T> {
+    return (outcome) =>
+      outcome.ok
+        ? { ok: true, value: outcome.value }
+        : {
+            ok: false,
+            error: { kind: outcome.kind, operation, message: outcome.message },
+          };
   }
 
   return {
@@ -204,19 +227,21 @@ export function createSettingsModule({
           },
         };
       }
-      return openRouterVerifier.verify(openrouterManagementKey);
+      return openRouterVerifier.verify(openrouterManagementKey).then(mapOutcome('verify-openrouter'));
     },
     async verifyGitHub() {
       const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } = await credentials();
       if (githubAppId !== undefined && githubPrivateKey !== undefined) {
-        return githubVerifier.verifyWithApp({
-          appId: githubAppId,
-          privateKey: githubPrivateKey,
-          ...(githubInstallationId === undefined ? {} : { installationId: githubInstallationId }),
-        });
+        return githubVerifier
+          .verifyWithApp({
+            appId: githubAppId,
+            privateKey: githubPrivateKey,
+            ...(githubInstallationId === undefined ? {} : { installationId: githubInstallationId }),
+          })
+          .then(mapOutcome('verify-github'));
       }
       if (githubPat !== undefined) {
-        return githubVerifier.verifyWithPat(githubPat);
+        return githubVerifier.verifyWithPat(githubPat).then(mapOutcome('verify-github'));
       }
       return {
         ok: false,

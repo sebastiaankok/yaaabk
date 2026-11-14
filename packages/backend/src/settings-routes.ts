@@ -1,4 +1,4 @@
-import type { SettingsError, SettingsErrorKind, SettingsModule, SettingsUpdate, SettingsView } from '@yaaabk/settings';
+import type { SettingsError, SettingsErrorKind, SettingsModule, SettingsUpdate } from '@yaaabk/settings';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
@@ -7,6 +7,9 @@ const STATUS_BY_KIND: Record<SettingsErrorKind, ContentfulStatusCode> = {
   // A failed verify is the Developer's input problem, not a session problem —
   // the session is already authenticated by the middleware.
   unauthorized: 400,
+  network: 502,
+  server: 502,
+  'rate-limited': 429,
 };
 
 function fail(c: Context, error: SettingsError) {

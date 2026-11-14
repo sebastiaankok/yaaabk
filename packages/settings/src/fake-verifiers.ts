@@ -1,11 +1,17 @@
-import type { GitHubAccount, GitHubVerifier, OpenRouterAccount, OpenRouterVerifier, SettingsResult } from './settings';
+import type {
+  GitHubAccount,
+  GitHubVerifier,
+  OpenRouterAccount,
+  OpenRouterVerifier,
+  VerifyOutcome,
+} from './settings';
 
 /**
  * An {@link OpenRouterVerifier} fake for tests. Returns the configured result
  * and records each key it was asked to verify.
  */
 export function createFakeOpenRouterVerifier(
-  result: SettingsResult<OpenRouterAccount> = { ok: true, value: { account: 'acme' } },
+  result: VerifyOutcome<OpenRouterAccount> = { ok: true, value: { keys: 3 } },
 ): OpenRouterVerifier & { verified: string[] } {
   const verified: string[] = [];
   return {
@@ -22,7 +28,7 @@ export function createFakeOpenRouterVerifier(
  * records how it was asked to verify.
  */
 export function createFakeGitHubVerifier(
-  result: SettingsResult<GitHubAccount> = { ok: true, value: { kind: 'pat', account: 'octocat' } },
+  result: VerifyOutcome<GitHubAccount> = { ok: true, value: { kind: 'pat', account: 'octocat' } },
 ): GitHubVerifier & { patCalls: string[]; appCalls: Array<{ appId: string; installationId?: string }> } {
   const patCalls: string[] = [];
   const appCalls: Array<{ appId: string; installationId?: string }> = [];
