@@ -7,12 +7,12 @@ import type { CredentialField, CredentialValue, SettingsRecord, SettingsStore } 
 export const MIN_ISSUE_BUDGET_CENTS = 1;
 
 /** The kinds of failure a Settings command can report. */
-export type SettingsErrorKind = 'invalid-input';
+export type SettingsErrorKind = 'invalid-input' | 'unauthorized';
 
 /** A typed failure, never thrown across the module boundary. */
 export interface SettingsError {
   kind: SettingsErrorKind;
-  operation: 'update';
+  operation: 'update' | 'verify-openrouter' | 'verify-github';
   message: string;
 }
 
@@ -51,6 +51,10 @@ export interface SettingsModule {
    * GitHub/OpenRouter clients. Never exposed through the API.
    */
   credentials(): Promise<DecryptedSettings>;
+  /** Checks the stored OpenRouter management key with OpenRouter. */
+  verifyOpenRouter(): Promise<SettingsResult<OpenRouterAccount>>;
+  /** Checks the stored GitHub credentials (App preferred, PAT otherwise). */
+  verifyGitHub(): Promise<SettingsResult<GitHubAccount>>;
 }
 
 /** Plaintext credentials for backend use only; mirrors {@link SettingsRecord}. */
@@ -61,6 +65,36 @@ export interface DecryptedSettings {
   githubPat?: string;
   openrouterManagementKey?: string;
   defaultIssueBudgetCents?: number;
+}
+
+/** What OpenRouter reports about a management key. */
+export interface OpenRouterAccount {
+  account: string;
+}
+
+/** Verifies a management key with OpenRouter's Management API. */
+export interface OpenRouterVerifier {
+  verify(managementKey: string): Promise<SettingsResult<OpenRouterAccount>>;
+}
+
+/** How the configured GitHub credentials authenticate. */
+export type GitHubCredentialKind = 'pat' | 'app';
+
+/** What GitHub reports about the resolved credentials. */
+export interface GitHubAccount {
+  kind: GitHubCredentialKind;
+  /** The login the credentials resolve to (user for a PAT, app or org otherwise). */
+  account: string;
+}
+
+/** Verifies GitHub credentials, either a PAT or a GitHub App installation. */
+export interface GitHubVerifier {
+  verifyWithPat(pat: string): Promise<SettingsResult<GitHubAccount>>;
+  verifyWithApp(app: {
+    appId: string;
+    privateKey: string;
+    installationId?: string;
+  }): Promise<SettingsResult<GitHubAccount>>;
 }
 
 const CREDENTIAL_FIELDS: readonly CredentialField[] = [
@@ -74,9 +108,13 @@ const CREDENTIAL_FIELDS: readonly CredentialField[] = [
 export function createSettingsModule({
   store,
   crypto,
+  openRouterVerifier,
+  githubVerifier,
 }: {
   store: SettingsStore;
   crypto: SecretCrypto;
+  openRouterVerifier: OpenRouterVerifier;
+  githubVerifier: GitHubVerifier;
 }): SettingsModule {
   function viewOf(record: SettingsRecord): SettingsView {
     const masked: SettingsView = { updatedAt: record.updatedAt };
@@ -92,10 +130,28 @@ export function createSettingsModule({
     return masked;
   }
 
+  async function credentials(): Promise<DecryptedSettings> {
+    const record = store.load();
+    const decrypted: DecryptedSettings = {};
+    if (record === undefined) {
+      return decrypted;
+    }
+    for (const field of CREDENTIAL_FIELDS) {
+      const credential: CredentialValue | undefined = record[field];
+      if (credential !== undefined) {
+        decrypted[field] = crypto.decrypt(credential.ciphertext);
+      }
+    }
+    if (record.defaultIssueBudgetCents !== undefined) {
+      decrypted.defaultIssueBudgetCents = record.defaultIssueBudgetCents;
+    }
+    return decrypted;
+  }
+
   return {
-    async get() {
+    get: () => {
       const record = store.load();
-      return record === undefined ? { updatedAt: new Date(0).toISOString() } : viewOf(record);
+      return Promise.resolve(record === undefined ? { updatedAt: new Date(0).toISOString() } : viewOf(record));
     },
     async update(update) {
       const budget = update.defaultIssueBudgetCents;
@@ -135,22 +191,41 @@ export function createSettingsModule({
       store.save(next);
       return { ok: true, value: viewOf(next) };
     },
-    async credentials() {
-      const record = store.load();
-      const decrypted: DecryptedSettings = {};
-      if (record === undefined) {
-        return decrypted;
+    credentials,
+    async verifyOpenRouter() {
+      const { openrouterManagementKey } = await credentials();
+      if (openrouterManagementKey === undefined) {
+        return {
+          ok: false,
+          error: {
+            kind: 'unauthorized',
+            operation: 'verify-openrouter',
+            message: 'No OpenRouter management key is configured',
+          },
+        };
       }
-      for (const field of CREDENTIAL_FIELDS) {
-        const credential: CredentialValue | undefined = record[field];
-        if (credential !== undefined) {
-          decrypted[field] = crypto.decrypt(credential.ciphertext);
-        }
+      return openRouterVerifier.verify(openrouterManagementKey);
+    },
+    async verifyGitHub() {
+      const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } = await credentials();
+      if (githubAppId !== undefined && githubPrivateKey !== undefined) {
+        return githubVerifier.verifyWithApp({
+          appId: githubAppId,
+          privateKey: githubPrivateKey,
+          ...(githubInstallationId === undefined ? {} : { installationId: githubInstallationId }),
+        });
       }
-      if (record.defaultIssueBudgetCents !== undefined) {
-        decrypted.defaultIssueBudgetCents = record.defaultIssueBudgetCents;
+      if (githubPat !== undefined) {
+        return githubVerifier.verifyWithPat(githubPat);
       }
-      return decrypted;
+      return {
+        ok: false,
+        error: {
+          kind: 'unauthorized',
+          operation: 'verify-github',
+          message: 'No GitHub credentials are configured',
+        },
+      };
     },
   };
 }

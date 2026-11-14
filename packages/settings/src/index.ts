@@ -4,3 +4,4 @@ export * from './store-contract';
 export * from './in-memory-settings-store';
 export * from './sqlite-settings-store';
 export * from './settings';
+export * from './fake-verifiers';

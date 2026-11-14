@@ -6,6 +6,7 @@ import type { GrillMeModule } from '@yaaabk/grill-me';
 import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
+import type { SettingsModule } from '@yaaabk/settings';
 import { SKILL_LEVELS } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -17,6 +18,7 @@ import { issueRoutes } from './issue-routes';
 import { issueSyncRoutes } from './issue-sync-routes';
 import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
+import { settingsRoutes } from './settings-routes';
 
 /** Origin the browser app is served from in development. */
 export const DEFAULT_WEB_ORIGIN = 'http://localhost:5173';
@@ -44,6 +46,8 @@ export interface AppOptions {
   agents: AgentManager;
   /** The CI Tracker Module. Tests inject one over fake GitHub ports. */
   ciTracker: CiTracker;
+  /** The Settings Module. Tests inject one over an in-memory store. */
+  settings: SettingsModule;
   /** Forwarded to {@link authRoutes}. */
   authRoutesOptions?: AuthRoutesOptions;
   /** Origin allowed to call the API with credentials. Defaults to {@link DEFAULT_WEB_ORIGIN}. */
@@ -80,6 +84,7 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', grillRoutes(options.grillMe, options.projects, options.plans, options.issues));
   app.route('/', ciRoutes(options.ciTracker));
+  app.route('/', settingsRoutes(options.settings));
 
   return app;
 }

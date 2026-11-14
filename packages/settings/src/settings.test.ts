@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createInMemorySettingsStore } from './in-memory-settings-store';
 import { createSecretCrypto } from './secret-crypto';
 import { createSettingsModule, type SettingsModule, type SettingsUpdate, type SettingsView } from './settings';
+import { createFakeGitHubVerifier, createFakeOpenRouterVerifier } from './fake-verifiers';
 
 const SECRET = 'a'.repeat(32);
 
@@ -9,6 +10,8 @@ function createModule() {
   return createSettingsModule({
     store: createInMemorySettingsStore(),
     crypto: createSecretCrypto({ secret: SECRET }),
+    openRouterVerifier: createFakeOpenRouterVerifier(),
+    githubVerifier: createFakeGitHubVerifier(),
   });
 }
 
@@ -82,5 +85,86 @@ describe('SettingsModule', () => {
     expect(credentials.githubPat).toBe('ghp_originalvalue1234');
     expect(credentials.openrouterManagementKey).toBe('sk-or-v1-abcdefgh1c96');
     expect(credentials.defaultIssueBudgetCents).toBe(75);
+  });
+
+  it('verifies the stored OpenRouter key against the verifier port', async () => {
+    const openRouterVerifier = createFakeOpenRouterVerifier();
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier,
+      githubVerifier: createFakeGitHubVerifier(),
+    });
+    await applyUpdate(settings, { openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+
+    const result = await settings.verifyOpenRouter();
+
+    expect(result).toEqual({ ok: true, value: { account: 'acme' } });
+    expect(openRouterVerifier.verified).toEqual(['sk-or-v1-abcdefgh1c96']);
+  });
+
+  it('reports unauthorized when verifying OpenRouter without a configured key', async () => {
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      githubVerifier: createFakeGitHubVerifier(),
+    });
+
+    const result = await settings.verifyOpenRouter();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('unauthorized');
+    }
+  });
+
+  it('verifies GitHub through the App when App credentials are configured', async () => {
+    const githubVerifier = createFakeGitHubVerifier({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      githubVerifier,
+    });
+    await applyUpdate(settings, {
+      githubAppId: '12345',
+      githubPrivateKey: '-----BEGIN PRIVATE KEY-----',
+      githubInstallationId: '67890',
+      githubPat: 'ghp_originalvalue1234',
+    });
+
+    const result = await settings.verifyGitHub();
+
+    expect(result).toEqual({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
+    expect(githubVerifier.appCalls).toEqual([{ appId: '12345', installationId: '67890' }]);
+    expect(githubVerifier.patCalls).toEqual([]);
+  });
+
+  it('falls back to the PAT when no App credentials are configured', async () => {
+    const githubVerifier = createFakeGitHubVerifier();
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      githubVerifier,
+    });
+    await applyUpdate(settings, { githubPat: 'ghp_originalvalue1234' });
+
+    const result = await settings.verifyGitHub();
+
+    expect(result).toEqual({ ok: true, value: { kind: 'pat', account: 'octocat' } });
+    expect(githubVerifier.patCalls).toEqual(['ghp_originalvalue1234']);
+  });
+
+  it('reports unauthorized when verifying GitHub without any credentials', async () => {
+    const settings = createModule();
+
+    const result = await settings.verifyGitHub();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('unauthorized');
+    }
   });
 });

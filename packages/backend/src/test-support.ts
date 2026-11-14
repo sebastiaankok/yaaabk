@@ -43,6 +43,14 @@ import {
 } from '@yaaabk/agents';
 import { createCiTracker, silentLogger as ciLogger, type CiTracker } from '@yaaabk/ci-tracker';
 import {
+  createFakeGitHubVerifier,
+  createFakeOpenRouterVerifier,
+  createInMemorySettingsStore,
+  createSecretCrypto,
+  createSettingsModule,
+  type SettingsModule,
+} from '@yaaabk/settings';
+import {
   createFakeGitBackend,
   createTemplateModule,
   silentLogger as templateLogger,
@@ -70,6 +78,7 @@ export interface TestContext {
   agents: AgentManager;
   ciTracker: CiTracker;
   pulls: FakeGitHubPulls;
+  settings: SettingsModule;
   projectStore: ProjectStore;
   k8s: MockK8sClient;
   spawner: FakeSpawner;
@@ -181,6 +190,12 @@ export function createTestContext(
   });
 
   const pulls = createFakeGitHubPulls();
+  const settings = createSettingsModule({
+    store: createInMemorySettingsStore(),
+    crypto: createSecretCrypto({ secret: 'x'.repeat(MIN_SECRET_LENGTH) }),
+    openRouterVerifier: createFakeOpenRouterVerifier(),
+    githubVerifier: createFakeGitHubVerifier(),
+  });
   const ciTracker = createCiTracker({
     projects: projectStore,
     issues,
@@ -201,6 +216,7 @@ export function createTestContext(
       grillMe,
       agents,
       ciTracker,
+      settings,
       authRoutesOptions,
     }),
     auth,
@@ -213,6 +229,7 @@ export function createTestContext(
     agents,
     ciTracker,
     pulls,
+    settings,
     projectStore,
     k8s,
     spawner,
