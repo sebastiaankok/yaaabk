@@ -53,6 +53,9 @@ cp .env.example .env
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per issue |
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-issue budget in cents; overrides are capped at 500 |
+| `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
+| `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
+| `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
 
 A single root `.env` configures every package: the backend loads it via
 `--env-file`, and Vite loads it via `envDir`. Only variables prefixed with
@@ -80,6 +83,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
+| `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
 | `@yaaabk/github` | `packages/github` | GitHub Issues port + REST adapter, the `createIssueSyncModule` mirror and a fake |
 | `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
@@ -219,6 +223,45 @@ adapter against an injected `fetch`:
 ```sh
 bun run --filter '@yaaabk/github' test:unit
 ```
+
+## Agents
+
+The `@yaaabk/agents` package owns the Agent Manager: the lifecycle of the
+per-Issue Kubernetes Jobs that implement a Plan's Issues. The backend exposes it
+over HTTP:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/projects/:id/issues/:issueId/spawn` | Schedule an attempt for an Issue |
+| `GET /api/projects/:id/issues/:issueId/runs` | An Issue's attempts, oldest first |
+| `GET /api/projects/:id/agent-runs` | A Project's attempts, newest first |
+| `POST /api/agent-runs/:runId/report` | An agent Job reports its result, authenticated by its per-run token |
+
+`spawn` creates the attempt's working PVC and Job (mounted at `/work`, with a
+30-minute deadline) and flips the Issue to `in_progress`. At most **two** agents
+run per Project and **ten** cluster-wide; an attempt that arrives over the limit
+is recorded `queued` and dispatched by the reconcile loop as slots free. The loop
+runs on a timer (`YAAABK_AGENT_POLL_MS`, default 15s) and, on a finished Job,
+marks the attempt `success` and records the pull request URL, or marks it
+`failed` and either schedules the next attempt or — once `maxAttempts` is reached
+— labels the Issue `needs-human`. Credentials reach the Job through `envFrom`
+Secret references, so YAAABK never reads their values.
+
+Concurrency is enforced by reserving an attempt's slot synchronously before the
+first cluster call, so two racing `spawn`s cannot both claim the last slot. The
+module is unit-tested against the in-memory `AgentStore`, a mock cluster and the
+real Issues Module; the SQLite store runs against `bun:sqlite`:
+
+```sh
+bun run --filter '@yaaabk/agents' test:integration
+```
+
+The `@yaaabk/agent` package is what the Job runs: it fetches the Issue, clones
+the repository, runs OpenCode with the bundled `implement-issue` skill, runs the
+project's checks, and opens a pull request labelled `automerge`. The clone →
+implement → checks → PR flow is driven through narrow ports, so it is
+unit-tested without a cluster, a repository or an LLM; the real adapters shell
+out to `git`, OpenCode and the GitHub API.
 
 ## Scripts
 Run these from the repository root; each fans out across the workspace.
