@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createFakeRepositoryProvider } from '@yaaabk/projects';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
@@ -82,6 +83,92 @@ describe('POST /api/projects', () => {
 
     expect(res.status).toBe(409);
     await expect(res.json()).resolves.toMatchObject({ error: 'duplicate-name' });
+  });
+});
+
+describe('POST /api/projects (streaming)', () => {
+  interface SseFrame {
+    event: string;
+    data: Record<string, unknown>;
+  }
+
+  /** Splits an SSE body into `{event, data}` frames. */
+  function parseSse(body: string): SseFrame[] {
+    return body
+      .split('\n\n')
+      .filter((chunk) => chunk.trim() !== '')
+      .map((chunk) => {
+        const event = /event: (.*)/.exec(chunk)?.[1] ?? '';
+        const data = /data: (.*)/.exec(chunk)?.[1] ?? '';
+        return { event, data: JSON.parse(data) as Record<string, unknown> };
+      });
+  }
+
+  it('streams provisioning progress and finishes with the project', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/projects', {
+      method: 'POST',
+      headers: { accept: 'text/event-stream' },
+      body: JSON.stringify(PROJECT),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+    const frames = parseSse(await res.text());
+    const progress = frames.filter((frame) => frame.event === 'progress');
+    expect(progress.map((frame) => `${frame.data.step}:${frame.data.status}`)).toEqual([
+      'repository:started',
+      'repository:completed',
+      'scaffold:started',
+      'scaffold:completed',
+      'namespace:started',
+      'namespace:completed',
+      'service-account:started',
+      'service-account:completed',
+      'role-binding:started',
+      'role-binding:completed',
+      'secret:started',
+      'secret:completed',
+      'argocd:started',
+      'argocd:completed',
+      'persist:started',
+      'persist:completed',
+    ]);
+
+    const done = frames.find((frame) => frame.event === 'done');
+    expect(done).toBeDefined();
+    expect(done!.data).toMatchObject({ name: 'todo-app' });
+    expect(done!.data.namespace).toMatch(/^project-[0-9a-f]{8}$/);
+
+    await expect(context.projects.list()).resolves.toMatchObject({
+      ok: true,
+      value: [expect.objectContaining({ name: 'todo-app' })],
+    });
+  });
+  it('reports a provisioning failure as an error event', async () => {
+    const repositories = createFakeRepositoryProvider({
+      createError: { message: 'repository quota exceeded', kind: 'unknown' },
+    });
+    const context = createTestContext({ attemptsPerMinute: 100 }, repositories);
+    const session = await signIn(context);
+
+    const res = await request(context, session, '/api/projects', {
+      method: 'POST',
+      headers: { accept: 'text/event-stream' },
+      body: JSON.stringify(PROJECT),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+    const body = await res.text();
+    expect(body).toContain('event: error');
+    expect(body).toContain('repository quota exceeded');
+    expect(body).not.toContain('event: done');
+
+    await expect(context.projects.list()).resolves.toMatchObject({ ok: true, value: [] });
   });
 });
 

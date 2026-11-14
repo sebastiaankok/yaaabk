@@ -33,6 +33,7 @@ import {
   silentLogger as projectsLogger,
   type ProjectStore,
   type ProjectsModule,
+  type RepositoryProvider,
 } from '@yaaabk/projects';
 import {
   createAgentManager,
@@ -104,6 +105,7 @@ function nextIssueId(): string {
 /** Builds an app whose modules run on fakes and in-memory stores. */
 export function createTestContext(
   authRoutesOptions: AppOptions['authRoutesOptions'] = { attemptsPerMinute: 100 },
+  repositories: RepositoryProvider = createFakeRepositoryProvider(),
 ): TestContext {
   const clock = { ms: TEST_NOW };
   const store = createInMemoryAuthStore();
@@ -131,7 +133,7 @@ export function createTestContext(
       dryRun: true,
       logger: templateLogger,
     }),
-    repositories: createFakeRepositoryProvider(),
+    repositories,
     githubToken: 'gh-token',
     ids: nextProjectId,
     clock: () => new Date(clock.ms),
