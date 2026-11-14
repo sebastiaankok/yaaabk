@@ -12,6 +12,12 @@ export interface AgentConfig {
   openrouterApiKey: string;
   /** Maximum implementation attempts allowed for the issue. */
   maxAttempts: number;
+  /** YAAABK run id, when the Job was given one, so it can report back. */
+  runId?: string;
+  /** Token authenticating the report callback, when the Job was given one. */
+  runToken?: string;
+  /** Base URL of the YAAABK API, when the Job was given one. */
+  apiUrl?: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -36,6 +42,11 @@ function positiveInt(env: Env, name: string, fallback?: number): number {
   return value;
 }
 
+function optional(env: Env, name: string): string | undefined {
+  const value = env[name];
+  return value === undefined || value.trim() === '' ? undefined : value;
+}
+
 /**
  * Reads and validates the agent's configuration from the environment.
  *
@@ -43,11 +54,17 @@ function positiveInt(env: Env, name: string, fallback?: number): number {
  * than midway through an implementation attempt.
  */
 export function loadAgentConfig(env: Env): AgentConfig {
+  const runId = optional(env, 'AGENT_RUN_ID');
+  const runToken = optional(env, 'AGENT_RUN_TOKEN');
+  const apiUrl = optional(env, 'YAAABK_API_URL');
   return {
     issueNumber: positiveInt(env, 'ISSUE_NUMBER'),
     repoUrl: require(env, 'REPO_URL'),
     githubToken: require(env, 'GITHUB_TOKEN'),
     openrouterApiKey: require(env, 'OPENROUTER_API_KEY'),
     maxAttempts: positiveInt(env, 'MAX_ATTEMPTS', DEFAULT_MAX_ATTEMPTS),
+    ...(runId === undefined ? {} : { runId }),
+    ...(runToken === undefined ? {} : { runToken }),
+    ...(apiUrl === undefined ? {} : { apiUrl }),
   };
 }

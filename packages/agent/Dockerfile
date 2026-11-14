@@ -12,5 +12,10 @@ RUN apk add --no-cache git github-cli ca-certificates
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/packages/agent/dist ./dist
+# The implement-issue skill the agent loads, and the working directory the
+# attempt's PVC is mounted at.
+COPY --from=build /app/packages/agent/skills ./skills
+RUN mkdir -p /work && chown bun:bun /work
+ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
 USER bun
 CMD ["bun", "dist/index.js"]
