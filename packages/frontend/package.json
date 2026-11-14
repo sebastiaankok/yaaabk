@@ -21,6 +21,7 @@
     "test": "bun run test:unit && bun run test:e2e"
   },
   "dependencies": {
+    "@yaaabk/agents": "workspace:*",
     "@yaaabk/github": "workspace:*",
     "@yaaabk/grill-me": "workspace:*",
     "@yaaabk/issues": "workspace:*",

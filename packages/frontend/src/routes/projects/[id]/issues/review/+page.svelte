@@ -180,7 +180,13 @@
 
     {#if approved}
       <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
-        Issues approved. The issue board arrives with #13.
+        Issues approved.
+        <a
+          href={resolve('/projects/[id]/issues', { id: project.id })}
+          class="font-medium underline"
+        >
+          Open the issue board</a
+        >.
       </p>
     {/if}
 

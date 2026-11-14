@@ -97,6 +97,7 @@
       "name": "@yaaabk/frontend",
       "version": "0.0.1",
       "dependencies": {
+        "@yaaabk/agents": "workspace:*",
         "@yaaabk/github": "workspace:*",
         "@yaaabk/grill-me": "workspace:*",
         "@yaaabk/issues": "workspace:*",

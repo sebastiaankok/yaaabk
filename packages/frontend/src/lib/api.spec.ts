@@ -4,8 +4,11 @@ import {
   deleteProject,
   getIssueSyncStatus,
   getStatus,
+  listIssueRuns,
+  listProjectRuns,
   listProjects,
   login,
+  spawnAgent,
   syncIssues,
 } from './api';
 
@@ -136,6 +139,58 @@ describe('issue sync', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p1\/issues\/sync$/),
       expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});
+
+describe('agent runs', () => {
+  it('lists the runs for an issue, unwrapping the envelope', async () => {
+    const run = { id: 'r1', issueId: 'i1', status: 'success' };
+    const fetchMock = vi.fn(async () => jsonResponse({ runs: [run] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listIssueRuns('p1', 'i 1')).resolves.toEqual([run]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/issues\/i%201\/runs$/),
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
+  it('spawns an agent without sending a key when none is given', async () => {
+    const run = { id: 'r1', issueId: 'i1', status: 'queued' };
+    const fetchMock = vi.fn(async () => jsonResponse(run, 202));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(spawnAgent('p1', 'i1')).resolves.toEqual(run);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/issues\/i1\/spawn$/),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({}) }),
+    );
+  });
+
+  it('spawns an agent with an OpenRouter key when given', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: 'r1' }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await spawnAgent('p1', 'i1', { openrouterApiKey: 'sk-or-abc' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/issues\/i1\/spawn$/),
+      expect.objectContaining({ body: JSON.stringify({ openrouterApiKey: 'sk-or-abc' }) }),
+    );
+  });
+
+  it('lists every run for a project', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ runs: [{ id: 'r1' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listProjectRuns('p1')).resolves.toEqual([{ id: 'r1' }]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/agent-runs$/),
+      expect.objectContaining({ credentials: 'include' }),
     );
   });
 });
