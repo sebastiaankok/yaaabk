@@ -29,6 +29,7 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     jobName: null,
     pvcName: null,
     openrouterSecretName: null,
+    branch: null,
     status: 'queued',
     prUrl: null,
     logs: null,

@@ -52,6 +52,12 @@ export interface AgentRun {
    * provisioned. The Job reads the key from the Secret by name.
    */
   openrouterSecretName: string | null;
+  /**
+   * The branch the attempt works on, when it is a fix attempt against an
+   * existing pull request rather than a fresh Issue's work. `null` means the
+   * agent branches from the default branch.
+   */
+  branch: string | null;
   status: AgentRunStatus;
   /** Pull request the attempt opened, once it reported one. */
   prUrl: string | null;
@@ -82,6 +88,12 @@ export interface SpawnOptions {
    * creates a per-attempt Secret the Job reads it from.
    */
   openrouterApiKey?: string;
+  /**
+   * Branch the attempt works on. Set for a fix attempt against an existing
+   * pull request, so the agent checks that branch out instead of branching
+   * fresh from the default branch.
+   */
+  branch?: string;
 }
 
 /** A snapshot of what the scheduler currently sees. */

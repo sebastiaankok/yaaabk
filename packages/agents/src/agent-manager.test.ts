@@ -195,6 +195,16 @@ describe('spawn', () => {
     ]);
   });
 
+  it("passes a fix attempt's branch to the Job", async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id, { branch: 'agent/issue-42' });
+
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
+  });
+
   it('refuses an Issue that has not been synced to GitHub', async () => {
     const { manager, issues } = await harness();
     const created = await issues.create({ projectId: 'project-1', title: 'Add login' });

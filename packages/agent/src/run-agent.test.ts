@@ -50,11 +50,14 @@ function fakes(
     async createBranch(directory, branch) {
       calls.push(`branch:${directory}:${branch}`);
     },
+    async checkoutBranch(directory, branch) {
+      calls.push(`checkout:${directory}:${branch}`);
+    },
     async commitAll(directory, message) {
       calls.push(`commit:${directory}:${message}`);
     },
-    async push(directory, branch) {
-      calls.push(`push:${directory}:${branch}`);
+    async push(directory, branch, options) {
+      calls.push(`push:${directory}:${branch}${options?.force === true ? ':force' : ''}`);
     },
   };
   const openCode: OpenCode = {
@@ -138,5 +141,24 @@ describe('runAgent', () => {
     expect(outcome).toMatchObject({ ok: false, reason: 'implementation-failed' });
     expect(calls).not.toContain('checks:/work/repo');
     expect(reports).toEqual([{ prUrl: null, logs: 'implemented' }]);
+  });
+
+  it('checks out the pull request branch for a fix attempt and force-pushes it', async () => {
+    const { deps, calls } = fakes();
+
+    const outcome = await runAgent({ ...CONFIG, branch: 'agent/issue-42' }, deps);
+
+    expect(calls).toEqual([
+      'fetch:42',
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout:/work/repo:agent/issue-42',
+      'implement:/work/repo',
+      'checks:/work/repo',
+      'commit:/work/repo:Add login (#42)',
+      'push:/work/repo:agent/issue-42:force',
+      `pr:agent/issue-42:${AUTOMERGE_LABEL}`,
+      'report',
+    ]);
+    expect(outcome).toMatchObject({ ok: true, branch: 'agent/issue-42' });
   });
 });

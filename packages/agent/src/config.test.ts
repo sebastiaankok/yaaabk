@@ -23,6 +23,11 @@ describe('loadAgentConfig', () => {
     expect(loadAgentConfig({ ...baseEnv, MAX_ATTEMPTS: '5' }).maxAttempts).toBe(5);
   });
 
+  it('reads the fix branch when the Job was given one', () => {
+    expect(loadAgentConfig({ ...baseEnv, BRANCH: 'agent/issue-42' }).branch).toBe('agent/issue-42');
+    expect(loadAgentConfig(baseEnv).branch).toBeUndefined();
+  });
+
   it('fails fast when a required variable is missing', () => {
     expect(() => loadAgentConfig({ ...baseEnv, GITHUB_TOKEN: undefined })).toThrow(/GITHUB_TOKEN/);
     expect(() => loadAgentConfig({ ...baseEnv, REPO_URL: '' })).toThrow(/REPO_URL/);

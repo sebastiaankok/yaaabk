@@ -18,6 +18,11 @@ export interface AgentConfig {
   runToken?: string;
   /** Base URL of the YAAABK API, when the Job was given one. */
   apiUrl?: string;
+  /**
+   * The branch to work on, when this is a fix attempt against an existing pull
+   * request. Absent for a fresh attempt, which branches from the default branch.
+   */
+  branch?: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -57,6 +62,7 @@ export function loadAgentConfig(env: Env): AgentConfig {
   const runId = optional(env, 'AGENT_RUN_ID');
   const runToken = optional(env, 'AGENT_RUN_TOKEN');
   const apiUrl = optional(env, 'YAAABK_API_URL');
+  const branch = optional(env, 'BRANCH');
   return {
     issueNumber: positiveInt(env, 'ISSUE_NUMBER'),
     repoUrl: require(env, 'REPO_URL'),
@@ -66,5 +72,6 @@ export function loadAgentConfig(env: Env): AgentConfig {
     ...(runId === undefined ? {} : { runId }),
     ...(runToken === undefined ? {} : { runToken }),
     ...(apiUrl === undefined ? {} : { apiUrl }),
+    ...(branch === undefined ? {} : { branch }),
   };
 }

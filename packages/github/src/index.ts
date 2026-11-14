@@ -4,3 +4,6 @@ export * from './metadata';
 export * from './github-issues-client';
 export * from './fake-github-issues';
 export * from './issue-sync';
+export * from './pulls';
+export * from './github-pulls-client';
+export * from './fake-github-pulls';

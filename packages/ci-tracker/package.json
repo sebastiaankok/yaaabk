@@ -1,0 +1,27 @@
+{
+  "name": "@yaaabk/ci-tracker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@yaaabk/agents": "workspace:*",
+    "@yaaabk/github": "workspace:*",
+    "@yaaabk/issues": "workspace:*",
+    "@yaaabk/projects": "workspace:*",
+    "@yaaabk/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@yaaabk/k8s": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

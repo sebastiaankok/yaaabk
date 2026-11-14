@@ -17,8 +17,10 @@ import {
 } from '@yaaabk/grill-me';
 import {
   createFakeGitHubIssues,
+  createFakeGitHubPulls,
   createIssueSyncModule,
   type FakeGitHubIssues,
+  type FakeGitHubPulls,
   type IssueSyncModule,
 } from '@yaaabk/github';
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
@@ -38,6 +40,7 @@ import {
   silentLogger as agentsLogger,
   type AgentManager,
 } from '@yaaabk/agents';
+import { createCiTracker, silentLogger as ciLogger, type CiTracker } from '@yaaabk/ci-tracker';
 import {
   createFakeGitBackend,
   createTemplateModule,
@@ -64,6 +67,8 @@ export interface TestContext {
   github: FakeGitHubIssues;
   grillMe: GrillMeModule;
   agents: AgentManager;
+  ciTracker: CiTracker;
+  pulls: FakeGitHubPulls;
   projectStore: ProjectStore;
   k8s: MockK8sClient;
   spawner: FakeSpawner;
@@ -173,6 +178,17 @@ export function createTestContext(
     logger: agentsLogger,
   });
 
+  const pulls = createFakeGitHubPulls();
+  const ciTracker = createCiTracker({
+    projects: projectStore,
+    issues,
+    agents,
+    pulls,
+    githubIssues: github,
+    clock: () => new Date(clock.ms),
+    logger: ciLogger,
+  });
+
   return {
     app: createApp({
       auth,
@@ -182,6 +198,7 @@ export function createTestContext(
       issueSync,
       grillMe,
       agents,
+      ciTracker,
       authRoutesOptions,
     }),
     auth,
@@ -192,6 +209,8 @@ export function createTestContext(
     github,
     grillMe,
     agents,
+    ciTracker,
+    pulls,
     projectStore,
     k8s,
     spawner,

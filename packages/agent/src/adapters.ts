@@ -35,12 +35,17 @@ export function createGit(): Git {
     async createBranch(directory, branch) {
       await Bun.$`git -C ${directory} checkout -B ${branch}`.quiet();
     },
+    async checkoutBranch(directory, branch) {
+      await Bun.$`git -C ${directory} fetch origin ${branch}`.quiet();
+      await Bun.$`git -C ${directory} checkout ${branch}`.quiet();
+    },
     async commitAll(directory, message) {
       await Bun.$`git -C ${directory} add -A`.quiet();
       await Bun.$`git -C ${directory} -c user.name=yaaabk -c user.email=agent@yaaabk.io commit -m ${message}`.quiet();
     },
-    async push(directory, branch) {
-      await Bun.$`git -C ${directory} push -u origin ${branch}`.quiet();
+    async push(directory, branch, options) {
+      const flags = options?.force === true ? ['--force-with-lease'] : [];
+      await Bun.$`git -C ${directory} push -u origin ${branch} ${flags}`.quiet();
     },
   };
 }

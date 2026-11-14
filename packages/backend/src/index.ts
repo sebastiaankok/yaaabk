@@ -12,11 +12,14 @@ import {
   createTotp,
   MIN_SECRET_LENGTH,
 } from '@yaaabk/auth';
+import { createCiTracker } from '@yaaabk/ci-tracker';
 import { createGrillMeModule } from '@yaaabk/grill-me';
 import {
   createGitHubIssuesClient,
+  createGitHubPullsClient,
   createIssueSyncModule,
   type GitHubIssues,
+  type GitHubPulls,
   type GitHubResult,
 } from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
@@ -100,6 +103,28 @@ function resolveGitHubIssues(): GitHubIssues {
   };
 }
 
+/**
+ * Resolves the GitHub Pulls port the CI Tracker drives. Until the Settings
+ * credential store exists, credentials come from the environment; without them
+ * every poll fails with a clear typed error rather than breaking startup.
+ */
+function resolveGitHubPulls(): GitHubPulls {
+  const token = process.env.YAAABK_GITHUB_TOKEN;
+  if (token !== undefined && token !== '') {
+    return createGitHubPullsClient({ token });
+  }
+  const message = 'GitHub is not configured; set YAAABK_GITHUB_TOKEN to watch pull requests';
+  const fail = async (): Promise<GitHubResult<never>> => ({
+    ok: false,
+    error: { kind: 'unauthorized', operation: 'github', message },
+  });
+  return {
+    listPullRequests: fail,
+    checkState: fail,
+    mergePullRequest: fail,
+  };
+}
+
 const dataDir = process.env.YAAABK_DATA_DIR ?? './data';
 mkdirSync(dataDir, { recursive: true });
 
@@ -145,6 +170,19 @@ const agents = createAgentManager({
   ...(process.env.YAAABK_API_URL !== undefined ? { apiUrl: process.env.YAAABK_API_URL } : {}),
 });
 
+const ciTracker = createCiTracker({
+  projects: projectStore,
+  issues,
+  agents,
+  pulls: resolveGitHubPulls(),
+  githubIssues: resolveGitHubIssues(),
+  ...(process.env.YAAABK_CI_POLL_MS !== undefined &&
+  Number.isFinite(Number(process.env.YAAABK_CI_POLL_MS)) &&
+  Number(process.env.YAAABK_CI_POLL_MS) > 0
+    ? { intervalMs: Number(process.env.YAAABK_CI_POLL_MS) }
+    : {}),
+});
+
 const app = createApp({
   auth,
   projects,
@@ -153,6 +191,7 @@ const app = createApp({
   issueSync,
   grillMe,
   agents,
+  ciTracker,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
 });
@@ -172,6 +211,14 @@ if (Number.isFinite(agentPollMs) && agentPollMs > 0) {
     });
   }, agentPollMs);
 }
+
+/**
+ * Starts the CI Tracker's polling loop: it watches the pull requests YAAABK's
+ * Agents open, merging the passing ones and spawning fix attempts on the
+ * failing ones. The loop can be disabled or retimed at runtime through
+ * `PATCH /api/admin/ci/config`.
+ */
+ciTracker.start();
 
 export default {
   port: Number(process.env.PORT ?? 3000),
