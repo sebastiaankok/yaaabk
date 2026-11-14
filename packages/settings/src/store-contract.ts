@@ -20,11 +20,11 @@ export interface StoreTestApi {
 /** A complete {@link SettingsRecord}, overridable per test. */
 export function settingsRecord(overrides: Partial<SettingsRecord> = {}): SettingsRecord {
   return {
-    githubAppId: 'enc-app-id',
-    githubPrivateKey: 'enc-private-key',
-    githubInstallationId: 'enc-installation-id',
-    githubPat: 'enc-pat',
-    openrouterManagementKey: 'enc-management-key',
+    githubAppId: { ciphertext: 'enc-app-id', hint: '…p-id' },
+    githubPrivateKey: { ciphertext: 'enc-private-key', hint: '…-key' },
+    githubInstallationId: { ciphertext: 'enc-installation-id', hint: '…n-id' },
+    githubPat: { ciphertext: 'enc-pat', hint: '…c-pat' },
+    openrouterManagementKey: { ciphertext: 'enc-management-key', hint: '…1c96' },
     defaultIssueBudgetCents: 50,
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -55,10 +55,10 @@ export function settingsStoreContract(api: StoreTestApi, createStore: () => Sett
     it('overwrites the record on a later save', () => {
       const store = createStore();
       store.save(settingsRecord());
-      store.save(settingsRecord({ githubPat: 'enc-new-pat', updatedAt: '2026-01-02T00:00:00.000Z' }));
+      store.save(settingsRecord({ githubPat: { ciphertext: 'enc-new-pat', hint: '…-pat' }, updatedAt: '2026-01-02T00:00:00.000Z' }));
 
       expect(store.load()).toEqual(
-        settingsRecord({ githubPat: 'enc-new-pat', updatedAt: '2026-01-02T00:00:00.000Z' }),
+        settingsRecord({ githubPat: { ciphertext: 'enc-new-pat', hint: '…-pat' }, updatedAt: '2026-01-02T00:00:00.000Z' }),
       );
     });
   });

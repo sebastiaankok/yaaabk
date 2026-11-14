@@ -1,4 +1,4 @@
-import type { SettingsRecord, SettingsStore } from './types';
+import type { CredentialValue, SettingsRecord, SettingsStore } from './types';
 
 /**
  * The slice of a SQLite driver the store uses.
@@ -28,6 +28,14 @@ interface SettingsRow {
   updated_at: string;
 }
 
+const CREDENTIAL_COLUMNS = [
+  ['github_app_id', 'githubAppId'],
+  ['github_private_key', 'githubPrivateKey'],
+  ['github_installation_id', 'githubInstallationId'],
+  ['github_pat', 'githubPat'],
+  ['openrouter_management_key', 'openrouterManagementKey'],
+] as const;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -41,13 +49,13 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
-const CIPHER_COLUMNS = [
-  'github_app_id',
-  'github_private_key',
-  'github_installation_id',
-  'github_pat',
-  'openrouter_management_key',
-] as const;
+function encodeCredential(value: CredentialValue): string {
+  return JSON.stringify(value);
+}
+
+function decodeCredential(json: string): CredentialValue {
+  return JSON.parse(json) as CredentialValue;
+}
 
 /** SQLite-backed {@link SettingsStore}; YAAABK keeps a single settings row. */
 export function createSqliteSettingsStore(db: SqliteDatabase): SettingsStore {
@@ -55,12 +63,11 @@ export function createSqliteSettingsStore(db: SqliteDatabase): SettingsStore {
 
   function rowToRecord(row: SettingsRow): SettingsRecord {
     const record: SettingsRecord = { updatedAt: row.updated_at };
-    if (row.github_app_id !== null) record.githubAppId = row.github_app_id;
-    if (row.github_private_key !== null) record.githubPrivateKey = row.github_private_key;
-    if (row.github_installation_id !== null) record.githubInstallationId = row.github_installation_id;
-    if (row.github_pat !== null) record.githubPat = row.github_pat;
-    if (row.openrouter_management_key !== null) {
-      record.openrouterManagementKey = row.openrouter_management_key;
+    for (const [column, field] of CREDENTIAL_COLUMNS) {
+      const json = row[column];
+      if (json !== null) {
+        record[field] = decodeCredential(json);
+      }
     }
     if (row.default_issue_budget_cents !== null) {
       record.defaultIssueBudgetCents = row.default_issue_budget_cents;
@@ -88,11 +95,10 @@ export function createSqliteSettingsStore(db: SqliteDatabase): SettingsStore {
           default_issue_budget_cents = excluded.default_issue_budget_cents,
           updated_at = excluded.updated_at`,
       ).run(
-        record.githubAppId ?? null,
-        record.githubPrivateKey ?? null,
-        record.githubInstallationId ?? null,
-        record.githubPat ?? null,
-        record.openrouterManagementKey ?? null,
+        ...CREDENTIAL_COLUMNS.map(([, field]) => {
+          const value = record[field];
+          return value === undefined ? null : encodeCredential(value);
+        }),
         record.defaultIssueBudgetCents ?? null,
         record.updatedAt,
       );

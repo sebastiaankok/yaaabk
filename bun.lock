@@ -226,6 +226,9 @@
     "packages/settings": {
       "name": "@yaaabk/settings",
       "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/cost-control": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "^1.3.13",
         "@types/node": "^24.0.0",

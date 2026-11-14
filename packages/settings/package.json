@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@yaaabk/cost-control": "workspace:*"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "test:unit": "vitest run",
