@@ -200,6 +200,27 @@ describe('update', () => {
     expect(store.get('project-1', created.id)).toEqual(result.value);
   });
 
+  it('advances the agent attempt count', async () => {
+    const { store, issues } = setup();
+    const created = await create(issues);
+
+    const result = await issues.update('project-1', created.id, { attemptCount: 2 });
+
+    expect(result.ok && result.value.attemptCount).toBe(2);
+    expect(store.get('project-1', created.id)?.attemptCount).toBe(2);
+  });
+
+  it('rejects a negative attempt count', async () => {
+    const { issues } = setup();
+    const created = await create(issues);
+
+    const result = await issues.update('project-1', created.id, { attemptCount: -1 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
+  });
+
   it('rejects an unknown label', async () => {
     const { issues } = setup();
     const created = await create(issues);
