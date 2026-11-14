@@ -13,3 +13,9 @@ data
 *.db
 *.log
 *.md
+# Local env files must not enter the image build context: .env carries secrets
+# (e.g. OPENROUTER_MANAGEMENT_KEY) that would land in build layers, and runtime
+# env belongs to the Deployment, not the image.
+.env
+.env.*
+

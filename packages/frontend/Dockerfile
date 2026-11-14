@@ -6,11 +6,9 @@
 FROM --platform=$BUILDPLATFORM oven/bun:1.4-alpine AS build
 WORKDIR /app
 COPY . .
-# PUBLIC_API_BASE_URL is inlined into the client bundle at build time, so the
-# deploy value must be set here; the repository .env (copied above) must not
-# win. Process env takes precedence over .env files.
-ARG PUBLIC_API_BASE_URL=http://localhost:3000
-ENV PUBLIC_API_BASE_URL=$PUBLIC_API_BASE_URL
+# PUBLIC_API_BASE_URL is NOT inlined here: SvelteKit resolves `$app/env/public`
+# from the server process env at startup (src/env.ts holds the dev fallback),
+# so the deploy value belongs in the frontend Deployment's env (deploy/frontend.yaml).
 RUN bun install --frozen-lockfile
 RUN bun run --filter '@yaaabk/frontend' build
 
