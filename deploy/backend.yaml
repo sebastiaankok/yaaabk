@@ -1,0 +1,82 @@
+# SQLite on a RWO volume means exactly one replica and no rolling updates.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yaaabk-backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: yaaabk-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: yaaabk-backend
+    spec:
+      serviceAccountName: yaaabk-backend
+      containers:
+        - name: backend
+          image: ghcr.io/sebastiaankok/yaaabk-backend:0.1.0
+          # Tag is mutable (retagged on rebuild); always re-check the registry.
+          imagePullPolicy: Always
+          envFrom:
+            # Out-of-band Secret holding YAAABK_AUTH_SECRET and the optional
+            # credential fallbacks (YAAABK_GITHUB_TOKEN, OPENROUTER_MANAGEMENT_KEY,
+            # ...). Created separately so values never enter git.
+            - secretRef:
+                name: yaaabk-env
+                optional: true
+          env:
+            - name: PORT
+              value: '3000'
+            - name: YAAABK_DATA_DIR
+              value: /data
+            - name: YAAABK_WEB_ORIGIN
+              value: https://yaaabk.otohgunga.nl
+            # Agent Jobs report back over the cluster-internal Service; browsers
+            # reach the API through the HTTPRoute instead.
+            - name: YAAABK_API_URL
+              value: http://yaaabk-backend.yaaabk.svc.cluster.local:3000
+            - name: YAAABK_AGENT_IMAGE
+              value: ghcr.io/sebastiaankok/yaaabk-agent:0.1.0
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: yaaabk-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yaaabk-backend
+spec:
+  selector:
+    app.kubernetes.io/name: yaaabk-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM oven/bun:1.3-alpine AS build
+# Build on the builder's native platform: the output is pure JS; only the
+# runtime stage targets the cluster's amd64 (see frontend Dockerfile).
+FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build
 WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile

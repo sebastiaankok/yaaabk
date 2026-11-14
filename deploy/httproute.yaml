@@ -1,0 +1,36 @@
+# House pattern: shared `internal` Gateway in kube-system terminates TLS for
+# *.otohgunga.nl; each app attaches an HTTPRoute in its own namespace.
+# /api and /health go to the backend, everything else to the frontend
+# (Gateway API matches the longest path prefix).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: yaaabk
+spec:
+  parentRefs:
+    - name: internal
+      namespace: kube-system
+  hostnames:
+    - yaaabk.otohgunga.nl
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: yaaabk-backend
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /health
+      backendRefs:
+        - name: yaaabk-backend
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: yaaabk-frontend
+          port: 80

@@ -1,0 +1,12 @@
+# SQLite database volume. local-path is node-local and single-node-only:
+# if the node is lost, the data is lost.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: yaaabk-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

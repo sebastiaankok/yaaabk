@@ -1,0 +1,53 @@
+# PUBLIC_API_BASE_URL is inlined into the client bundle at build time
+# (see packages/frontend/Dockerfile); it is https://yaaabk.otohgunga.nl for
+# this deployment and cannot be changed via env here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yaaabk-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: yaaabk-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: yaaabk-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/sebastiaankok/yaaabk-frontend:0.1.0
+          # Tag is mutable (retagged on rebuild); always re-check the registry.
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            # adapter-bun serves no health endpoint; a socket probe is enough.
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yaaabk-frontend
+spec:
+  selector:
+    app.kubernetes.io/name: yaaabk-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
