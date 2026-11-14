@@ -45,8 +45,7 @@ export function createOpenRouterVerifier(options: OpenRouterVerifierOptions = {}
 
       if (response.status === 401 || response.status === 403) {
         const body = (await response.json().catch(() => undefined)) as
-          | { error?: { message?: string } }
-          | undefined;
+          { error?: { message?: string } } | undefined;
         return {
           ok: false,
           kind: 'unauthorized',

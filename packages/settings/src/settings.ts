@@ -7,7 +7,8 @@ import type { CredentialField, CredentialValue, SettingsRecord, SettingsStore } 
 export const MIN_ISSUE_BUDGET_CENTS = 1;
 
 /** The kinds of failure a Settings command can report. */
-export type SettingsErrorKind = 'invalid-input' | 'unauthorized' | 'network' | 'server' | 'rate-limited';
+export type SettingsErrorKind =
+  'invalid-input' | 'unauthorized' | 'network' | 'server' | 'rate-limited';
 
 /** A typed failure, never thrown across the module boundary. */
 export interface SettingsError {
@@ -174,13 +175,17 @@ export function createSettingsModule({
   return {
     get: () => {
       const record = store.load();
-      return Promise.resolve(record === undefined ? { updatedAt: new Date(0).toISOString() } : viewOf(record));
+      return Promise.resolve(
+        record === undefined ? { updatedAt: new Date(0).toISOString() } : viewOf(record),
+      );
     },
     async update(update) {
       const budget = update.defaultIssueBudgetCents;
       if (
         budget !== undefined &&
-        (!Number.isInteger(budget) || budget < MIN_ISSUE_BUDGET_CENTS || budget > MAX_ISSUE_BUDGET_CENTS)
+        (!Number.isInteger(budget) ||
+          budget < MIN_ISSUE_BUDGET_CENTS ||
+          budget > MAX_ISSUE_BUDGET_CENTS)
       ) {
         return {
           ok: false,
@@ -227,10 +232,13 @@ export function createSettingsModule({
           },
         };
       }
-      return openRouterVerifier.verify(openrouterManagementKey).then(mapOutcome('verify-openrouter'));
+      return openRouterVerifier
+        .verify(openrouterManagementKey)
+        .then(mapOutcome('verify-openrouter'));
     },
     async verifyGitHub() {
-      const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } = await credentials();
+      const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } =
+        await credentials();
       if (githubAppId !== undefined && githubPrivateKey !== undefined) {
         return githubVerifier
           .verifyWithApp({

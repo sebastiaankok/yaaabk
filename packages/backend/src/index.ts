@@ -94,7 +94,10 @@ async function resolveGithubToken(settingsModule: SettingsModule): Promise<strin
   return fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined;
 }
 
-function unconfigured(operation: string, message: string): { ok: false; error: { kind: 'unauthorized'; operation: string; message: string } } {
+function unconfigured(
+  operation: string,
+  message: string,
+): { ok: false; error: { kind: 'unauthorized'; operation: string; message: string } } {
   return {
     ok: false,
     error: {
@@ -129,7 +132,9 @@ function resolveRepositories(settingsModule: SettingsModule): RepositoryProvider
       if (token === undefined) {
         return unconfigured('delete', GITHUB_UNCONFIGURED_MESSAGE);
       }
-      return createGitHubRepositoryProvider({ token, owner: owner ?? '', ownerType }).delete(fullName);
+      return createGitHubRepositoryProvider({ token, owner: owner ?? '', ownerType }).delete(
+        fullName,
+      );
     },
   };
 }
@@ -243,10 +248,12 @@ const grillMe = createGrillMeModule();
 const costControlConfig = loadCostControlConfig(process.env);
 createCostControlModule({
   api: createOpenRouterApi({
-    managementKey: bootstrapCredentials.openrouterManagementKey ?? costControlConfig.managementKey ?? '',
+    managementKey:
+      bootstrapCredentials.openrouterManagementKey ?? costControlConfig.managementKey ?? '',
   }),
   store: createInMemoryBudgetStore(),
-  defaultBudgetCents: bootstrapCredentials.defaultIssueBudgetCents ?? costControlConfig.defaultBudgetCents,
+  defaultBudgetCents:
+    bootstrapCredentials.defaultIssueBudgetCents ?? costControlConfig.defaultBudgetCents,
 });
 
 const agents = createAgentManager({

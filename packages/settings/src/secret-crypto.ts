@@ -35,16 +35,29 @@ export function createSecretCrypto({ secret }: { secret: string }): SecretCrypto
       const cipher = createCipheriv('aes-256-gcm', key, iv);
       const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
       const tag = cipher.getAuthTag();
-      return [VERSION, iv.toString('base64'), ciphertext.toString('base64'), tag.toString('base64')].join(':');
+      return [
+        VERSION,
+        iv.toString('base64'),
+        ciphertext.toString('base64'),
+        tag.toString('base64'),
+      ].join(':');
     },
     decrypt(ciphertext) {
       const [version, ivPart, dataPart, tagPart] = ciphertext.split(':');
-      if (version !== VERSION || ivPart === undefined || dataPart === undefined || tagPart === undefined) {
+      if (
+        version !== VERSION ||
+        ivPart === undefined ||
+        dataPart === undefined ||
+        tagPart === undefined
+      ) {
         throw new Error('Unrecognized secret ciphertext format');
       }
       const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivPart, 'base64'));
       decipher.setAuthTag(Buffer.from(tagPart, 'base64'));
-      return Buffer.concat([decipher.update(Buffer.from(dataPart, 'base64')), decipher.final()]).toString('utf8');
+      return Buffer.concat([
+        decipher.update(Buffer.from(dataPart, 'base64')),
+        decipher.final(),
+      ]).toString('utf8');
     },
   };
 }

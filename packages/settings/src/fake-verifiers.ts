@@ -29,7 +29,10 @@ export function createFakeOpenRouterVerifier(
  */
 export function createFakeGitHubVerifier(
   result: VerifyOutcome<GitHubAccount> = { ok: true, value: { kind: 'pat', account: 'octocat' } },
-): GitHubVerifier & { patCalls: string[]; appCalls: Array<{ appId: string; installationId?: string }> } {
+): GitHubVerifier & {
+  patCalls: string[];
+  appCalls: Array<{ appId: string; installationId?: string }>;
+} {
   const patCalls: string[] = [];
   const appCalls: Array<{ appId: string; installationId?: string }> = [];
   return {
@@ -40,7 +43,10 @@ export function createFakeGitHubVerifier(
       return result;
     },
     async verifyWithApp(app) {
-      appCalls.push({ appId: app.appId, ...(app.installationId === undefined ? {} : { installationId: app.installationId }) });
+      appCalls.push({
+        appId: app.appId,
+        ...(app.installationId === undefined ? {} : { installationId: app.installationId }),
+      });
       return result;
     },
   };

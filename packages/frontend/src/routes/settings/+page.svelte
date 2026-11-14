@@ -164,12 +164,15 @@
             bind:value={githubPrivateKey}
             rows="3"
             class="w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-xs"
-            placeholder={settings.githubPrivateKey !== undefined ? 'Configured — type to replace' : '-----BEGIN PRIVATE KEY-----'}
-          ></textarea>
+            placeholder={settings.githubPrivateKey !== undefined
+              ? 'Configured — type to replace'
+              : '-----BEGIN PRIVATE KEY-----'}></textarea>
         </div>
 
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium" for="github-installation-id">Installation ID (optional)</label>
+          <label class="text-sm font-medium" for="github-installation-id"
+            >Installation ID (optional)</label
+          >
           <input
             id="github-installation-id"
             bind:value={githubInstallationId}
@@ -189,7 +192,9 @@
             bind:value={githubPat}
             type="password"
             class="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            placeholder={settings.githubPat !== undefined ? 'Configured — type to replace' : 'ghp_…'}
+            placeholder={settings.githubPat !== undefined
+              ? 'Configured — type to replace'
+              : 'ghp_…'}
           />
           {#if settings.githubPat !== undefined && githubPat === ''}
             <p class="text-xs text-neutral-500">Configured: {settings.githubPat}</p>
@@ -207,7 +212,8 @@
         </button>
         {#if githubVerification !== null}
           <p class="text-sm text-green-700">
-            Verified: {githubVerification.kind === 'app' ? 'GitHub App' : 'account'} {githubVerification.account}
+            Verified: {githubVerification.kind === 'app' ? 'GitHub App' : 'account'}
+            {githubVerification.account}
           </p>
         {:else if githubVerifyError !== null}
           <p class="text-sm text-red-600">{githubVerifyError}</p>
@@ -235,7 +241,9 @@
       </div>
 
       <div class="flex flex-col gap-1">
-        <label class="text-sm font-medium" for="default-issue-budget">Default per-issue budget (USD)</label>
+        <label class="text-sm font-medium" for="default-issue-budget"
+          >Default per-issue budget (USD)</label
+        >
         <input
           id="default-issue-budget"
           bind:value={defaultIssueBudgetDollars}

@@ -79,7 +79,9 @@ describe('POST /api/settings/openrouter/verify', () => {
     const { context, session } = await signedIn();
     await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
 
-    const res = await request(context, session, '/api/settings/openrouter/verify', { method: 'POST' });
+    const res = await request(context, session, '/api/settings/openrouter/verify', {
+      method: 'POST',
+    });
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ ok: true, keys: 3 });
@@ -88,7 +90,9 @@ describe('POST /api/settings/openrouter/verify', () => {
   it('reports unauthorized instead of a 500 when no key is configured', async () => {
     const { context, session } = await signedIn();
 
-    const res = await request(context, session, '/api/settings/openrouter/verify', { method: 'POST' });
+    const res = await request(context, session, '/api/settings/openrouter/verify', {
+      method: 'POST',
+    });
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: 'unauthorized' });

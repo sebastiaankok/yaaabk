@@ -26,13 +26,20 @@ export interface GitHubCredentialVerifierOptions {
  */
 export function createGitHubCredentialVerifier(options: GitHubCredentialVerifierOptions = {}): {
   verifyWithPat(pat: string): Promise<GitHubVerifyResult>;
-  verifyWithApp(app: { appId: string; privateKey: string; installationId?: string }): Promise<GitHubVerifyResult>;
+  verifyWithApp(app: {
+    appId: string;
+    privateKey: string;
+    installationId?: string;
+  }): Promise<GitHubVerifyResult>;
 } {
   const apiBaseUrl = (options.apiBaseUrl ?? 'https://api.github.com').replace(/\/$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
 
-  async function getJson(path: string, authorization: string): Promise<
+  async function getJson(
+    path: string,
+    authorization: string,
+  ): Promise<
     | { ok: true; value: unknown }
     | { ok: false; kind: 'unauthorized' | 'network' | 'server'; message: string }
   > {
@@ -53,7 +60,11 @@ export function createGitHubCredentialVerifier(options: GitHubCredentialVerifier
       };
     }
     if (response.status === 401 || response.status === 403 || response.status === 404) {
-      return { ok: false, kind: 'unauthorized', message: `GitHub rejected the credentials (${response.status})` };
+      return {
+        ok: false,
+        kind: 'unauthorized',
+        message: `GitHub rejected the credentials (${response.status})`,
+      };
     }
     if (!response.ok) {
       return { ok: false, kind: 'server', message: `GitHub responded with ${response.status}` };
@@ -86,11 +97,18 @@ export function createGitHubCredentialVerifier(options: GitHubCredentialVerifier
       try {
         token = await appToken(appId, privateKey);
       } catch {
-        return { ok: false, kind: 'unauthorized', message: 'The GitHub App private key could not be read' };
+        return {
+          ok: false,
+          kind: 'unauthorized',
+          message: 'The GitHub App private key could not be read',
+        };
       }
       const authorization = `Bearer ${token}`;
       if (installationId !== undefined) {
-        const installation = await getJson(`/app/installations/${encodeURIComponent(installationId)}`, authorization);
+        const installation = await getJson(
+          `/app/installations/${encodeURIComponent(installationId)}`,
+          authorization,
+        );
         if (!installation.ok) {
           return installation;
         }

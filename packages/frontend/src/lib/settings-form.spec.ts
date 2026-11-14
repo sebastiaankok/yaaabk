@@ -45,7 +45,12 @@ describe('toSettingsUpdate', () => {
 
   it('clears the PAT when the App mode is active', () => {
     const update = toSettingsUpdate(
-      { githubMode: 'app', githubAppId: '12345', githubPrivateKey: 'key', githubInstallationId: '67890' },
+      {
+        githubMode: 'app',
+        githubAppId: '12345',
+        githubPrivateKey: 'key',
+        githubInstallationId: '67890',
+      },
       { githubPat: 'ghp_or…1234' },
     );
 
@@ -53,10 +58,7 @@ describe('toSettingsUpdate', () => {
   });
 
   it('sends nothing when nothing changed', () => {
-    const update = toSettingsUpdate(
-      { githubMode: 'pat' },
-      {},
-    );
+    const update = toSettingsUpdate({ githubMode: 'pat' }, {});
 
     expect(update).toEqual({});
   });

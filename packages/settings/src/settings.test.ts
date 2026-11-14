@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemorySettingsStore } from './in-memory-settings-store';
 import { createSecretCrypto } from './secret-crypto';
-import { createSettingsModule, type SettingsModule, type SettingsUpdate, type SettingsView } from './settings';
+import {
+  createSettingsModule,
+  type SettingsModule,
+  type SettingsUpdate,
+  type SettingsView,
+} from './settings';
 import { createFakeGitHubVerifier, createFakeOpenRouterVerifier } from './fake-verifiers';
 
 const SECRET = 'a'.repeat(32);
@@ -16,7 +21,10 @@ function createModule() {
 }
 
 /** Applies an update the test expects to succeed. */
-async function applyUpdate(settings: SettingsModule, update: SettingsUpdate): Promise<SettingsView> {
+async function applyUpdate(
+  settings: SettingsModule,
+  update: SettingsUpdate,
+): Promise<SettingsView> {
   const result = await settings.update(update);
   if (!result.ok) {
     throw new Error(`unexpected failure: ${result.error.kind} — ${result.error.message}`);
@@ -36,7 +44,10 @@ describe('SettingsModule', () => {
 
   it('leaves fields untouched when they are absent from an update', async () => {
     const settings = createModule();
-    await applyUpdate(settings, { githubPat: 'ghp_originalvalue1234', defaultIssueBudgetCents: 75 });
+    await applyUpdate(settings, {
+      githubPat: 'ghp_originalvalue1234',
+      defaultIssueBudgetCents: 75,
+    });
 
     await applyUpdate(settings, { openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
 
@@ -120,7 +131,10 @@ describe('SettingsModule', () => {
   });
 
   it('verifies GitHub through the App when App credentials are configured', async () => {
-    const githubVerifier = createFakeGitHubVerifier({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
+    const githubVerifier = createFakeGitHubVerifier({
+      ok: true,
+      value: { kind: 'app', account: 'yaaabk-app' },
+    });
     const settings = createSettingsModule({
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),

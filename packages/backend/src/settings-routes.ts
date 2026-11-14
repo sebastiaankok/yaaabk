@@ -1,4 +1,9 @@
-import type { SettingsError, SettingsErrorKind, SettingsModule, SettingsUpdate } from '@yaaabk/settings';
+import type {
+  SettingsError,
+  SettingsErrorKind,
+  SettingsModule,
+  SettingsUpdate,
+} from '@yaaabk/settings';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
@@ -51,7 +56,8 @@ export function settingsRoutes(settings: SettingsModule): Hono {
     return c.json(view);
   });
 
-  app.put('/api/settings', async (c) => {    const input = await body(c);
+  app.put('/api/settings', async (c) => {
+    const input = await body(c);
     const update: SettingsUpdate = {};
     for (const [wireKey, field] of CREDENTIAL_KEYS) {
       const value = input[wireKey];

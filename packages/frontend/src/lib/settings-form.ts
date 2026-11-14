@@ -94,7 +94,10 @@ export function toSettingsUpdate(
     update.openrouterManagementKey = input.openrouterManagementKey;
   }
 
-  if (input.defaultIssueBudgetDollars !== undefined && input.defaultIssueBudgetDollars.trim() !== '') {
+  if (
+    input.defaultIssueBudgetDollars !== undefined &&
+    input.defaultIssueBudgetDollars.trim() !== ''
+  ) {
     const cents = dollarsToCents(input.defaultIssueBudgetDollars);
     if (cents !== undefined) {
       update.defaultIssueBudgetCents = cents;
