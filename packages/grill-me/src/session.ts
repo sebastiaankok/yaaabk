@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isSkillLevel } from '@yaaabk/shared';
 import {
   DEFAULT_SESSION_TIMEOUT_MS,
+  buildIssuesPrompt,
   buildRefineMessage,
   buildSessionPrompt,
   defaultSkillPath,
@@ -18,6 +19,7 @@ import { createMarkerParser, type MarkerParser, type ParsedChunk } from './marke
 import { createOpenCodeSpawner } from './opencode-process';
 import type { OpenCodeProcess, OpenCodeProcessExit, OpenCodeSpawner } from './process';
 import type {
+  GeneratedIssue,
   GrillMeError,
   GrillMeEventMap,
   GrillMeEventName,
@@ -274,6 +276,111 @@ export function createGrillMeModule(options: GrillMeModuleOptions = {}): GrillMe
         const session = requireActive(sessionId);
         endSession(session, 'cancelled');
         await session.process.stop();
+      });
+    },
+
+    async generateIssues(projectId, plan, skillLevel, options = {}) {
+      return guard('generateIssues', { projectId, skillLevel }, async () => {
+        if (typeof projectId !== 'string' || projectId.trim() === '') {
+          throw grillMeError('invalid-input', 'A project id is required');
+        }
+        if (typeof plan !== 'string' || plan.trim() === '') {
+          throw grillMeError('invalid-input', 'A plan is required');
+        }
+        if (!isSkillLevel(skillLevel)) {
+          throw grillMeError('invalid-input', `"${String(skillLevel)}" is not a valid skill level`);
+        }
+
+        const sessionId = randomUUID();
+        const parser = createMarkerParser();
+        // The spawner's `onOutput` is wired before the promise below exists, so
+        // it reaches the handler through a ref filled in once the spawn resolves.
+        const handler: { current?: (parsed: ParsedChunk) => void } = {};
+
+        const child = await spawnerOf()
+          .spawn({
+            sessionId,
+            projectId,
+            idea: plan,
+            skillLevel,
+            skillPath,
+            prompt: buildIssuesPrompt({
+              projectId,
+              plan,
+              skillLevel,
+              skillPath,
+              ...(options.feedback === undefined ? {} : { feedback: options.feedback }),
+            }),
+            onOutput: (chunk) => {
+              for (const parsed of parser.push(chunk)) {
+                handler.current?.(parsed);
+              }
+            },
+            onError: (chunk) => {
+              logger.error('grill-me process stderr', { sessionId, message: chunk.trim() });
+            },
+          })
+          .catch((error: unknown) => {
+            throw grillMeError('spawn-failed', 'Could not start the OpenCode session', error);
+          });
+
+        return await new Promise<GeneratedIssue[]>((resolve, reject) => {
+          let settled = false;
+          const deadline: { timer?: ReturnType<typeof setTimeout> } = {};
+
+          function finish(settle: () => void): void {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            if (deadline.timer !== undefined) {
+              clearTimeout(deadline.timer);
+            }
+            settle();
+          }
+
+          function onParsed(parsed: ParsedChunk): void {
+            if (parsed.kind !== 'block' || parsed.type !== 'ISSUES') {
+              return;
+            }
+            try {
+              const issues = parseGeneratedIssues(parsed.content);
+              finish(() => {
+                void child.stop();
+                resolve(issues);
+              });
+            } catch (error) {
+              finish(() => {
+                void child.stop();
+                reject(grillMeError('invalid-issues', messageOf(error), error));
+              });
+            }
+          }
+
+          handler.current = onParsed;
+
+          deadline.timer = setTimeout(() => {
+            finish(() => {
+              void child.stop();
+              reject(grillMeError('timeout', `The issue generation exceeded ${timeoutMs} ms`));
+            });
+          }, timeoutMs);
+          void child.exited.then((exit) => {
+            for (const parsed of parser.flush()) {
+              onParsed(parsed);
+            }
+            finish(() => {
+              reject(
+                exit.code !== 0
+                  ? grillMeError(
+                      'process-failed',
+                      `The OpenCode process exited with code ${exit.code ?? 'null'}`,
+                    )
+                  : grillMeError('invalid-issues', 'The agent produced no issues'),
+              );
+            });
+          });
+        });
       });
     },
 

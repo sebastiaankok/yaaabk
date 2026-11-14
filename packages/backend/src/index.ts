@@ -12,6 +12,7 @@ import {
   MIN_SECRET_LENGTH,
 } from '@yaaabk/auth';
 import { createGrillMeModule } from '@yaaabk/grill-me';
+import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
 import { createK8sClient, detectK8sConnection } from '@yaaabk/k8s';
 import { createPlansModule, createSqlitePlanStore } from '@yaaabk/plans';
 import {
@@ -91,12 +92,19 @@ const projects = createProjectsModule({
 });
 
 const plans = createPlansModule({ store: createSqlitePlanStore(database) });
+const issues = createIssuesModule({
+  store: createSqliteIssueStore(database),
+  ...(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS !== undefined
+    ? { defaultBudgetCents: Number(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS) }
+    : {}),
+});
 const grillMe = createGrillMeModule();
 
 const app = createApp({
   auth,
   projects,
   plans,
+  issues,
   grillMe,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },

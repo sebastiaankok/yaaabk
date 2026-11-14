@@ -16,6 +16,7 @@ import {
   type GrillMeModule,
 } from '@yaaabk/grill-me';
 import { createMockK8sClient } from '@yaaabk/k8s';
+import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createInMemoryPlanStore, createPlansModule, type PlansModule } from '@yaaabk/plans';
 import {
   createFakeRepositoryProvider,
@@ -45,6 +46,7 @@ export interface TestContext {
   auth: AuthModule;
   projects: ProjectsModule;
   plans: PlansModule;
+  issues: IssuesModule;
   grillMe: GrillMeModule;
   spawner: FakeSpawner;
   store: AuthStore;
@@ -67,6 +69,13 @@ let planSequence = 0;
 function nextPlanId(): string {
   planSequence += 1;
   return `plan-${planSequence.toString(16).padStart(8, '0')}`;
+}
+
+/** Hands out distinct Issue ids within a test run. */
+let issueSequence = 0;
+function nextIssueId(): string {
+  issueSequence += 1;
+  return `issue-${issueSequence.toString(16).padStart(8, '0')}`;
 }
 
 /** Builds an app whose modules run on fakes and in-memory stores. */
@@ -111,6 +120,13 @@ export function createTestContext(
     logger: silent,
   });
 
+  const issues = createIssuesModule({
+    store: createInMemoryIssueStore(),
+    ids: nextIssueId,
+    clock: () => new Date(clock.ms),
+    logger: silent,
+  });
+
   const spawner = createFakeSpawner();
   const grillMe = createGrillMeModule({
     spawner,
@@ -119,10 +135,11 @@ export function createTestContext(
   });
 
   return {
-    app: createApp({ auth, projects, plans, grillMe, authRoutesOptions }),
+    app: createApp({ auth, projects, plans, issues, grillMe, authRoutesOptions }),
     auth,
     projects,
     plans,
+    issues,
     grillMe,
     spawner,
     store,
