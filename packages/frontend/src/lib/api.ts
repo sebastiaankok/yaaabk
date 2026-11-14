@@ -246,6 +246,25 @@ export function deleteProject(id: string): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+/**
+ * Transfers the Project's repository to the Developer's GitHub account and
+ * repoints ArgoCD at the new location. An empty `repoName` keeps the Project
+ * name.
+ */
+export function exportProject(
+  id: string,
+  input: { owner: string; repoName?: string },
+): Promise<Project> {
+  const body: Record<string, string> = { owner: input.owner };
+  if (input.repoName !== undefined && input.repoName.trim() !== '') {
+    body.repoName = input.repoName.trim();
+  }
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}/export`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 /** The range the stats dashboard is filtered to, as ISO-8601 instants. */
 export interface StatsRange {
   from?: string;

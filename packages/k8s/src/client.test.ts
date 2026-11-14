@@ -682,4 +682,93 @@ describe('argocd applications', () => {
     });
     expect((await client.applications.get('project-a', 'todo-app')).ok).toBe(false);
   });
+
+  it('updates an Application in place without losing its status', async () => {
+    const objectApi = createInMemoryObjectApi([
+      {
+        apiVersion: 'argoproj.io/v1alpha1',
+        kind: 'Application',
+        metadata: { name: 'todo-app', namespace: 'project-a' },
+        spec: {
+          project: 'todo-app',
+          source: { repoURL: 'https://github.com/octocat/todo', path: 'deploy' },
+          destination: { server: 'https://kubernetes.default.svc', namespace: 'project-a' },
+        },
+        status: { sync: { status: 'Synced' }, health: { status: 'Healthy' } },
+      },
+    ]);
+    const client = createK8sClient({ objectApi, logger: silentLogger });
+
+    const result = await client.applications.update('project-a', 'todo-app', {
+      project: 'todo-app',
+      source: { repoURL: 'https://github.com/dev/todo', path: 'deploy', targetRevision: 'main' },
+      destination: { server: 'https://kubernetes.default.svc', namespace: 'project-a' },
+      syncPolicy: { automated: { prune: true, selfHeal: true } },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        name: 'todo-app',
+        namespace: 'project-a',
+        labels: {},
+        syncStatus: 'Synced',
+        healthStatus: 'Healthy',
+      },
+    });
+    const stored = await objectApi.read({
+      apiVersion: 'argoproj.io/v1alpha1',
+      kind: 'Application',
+      metadata: { name: 'todo-app', namespace: 'project-a' },
+    });
+    expect(stored.spec).toMatchObject({
+      source: { repoURL: 'https://github.com/dev/todo', path: 'deploy', targetRevision: 'main' },
+    });
+  });
+});
+
+describe('argocd projects', () => {
+  it('creates a cluster-scoped AppProject restricted to the project repo, cluster and namespace', async () => {
+    const objectApi = createInMemoryObjectApi();
+    const client = createK8sClient({ objectApi, logger: silentLogger });
+
+    const result = await client.argoProjects.create('todo-app', {
+      sourceRepos: ['https://github.com/octocat/todo'],
+      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+      namespaceResources: [
+        { group: 'apps', kind: 'Deployment' },
+        { group: '', kind: 'Service' },
+      ],
+      syncPolicy: { automated: { prune: true, selfHeal: true } },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        name: 'todo-app',
+        labels: {},
+        sourceRepos: ['https://github.com/octocat/todo'],
+        destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+        namespaceResources: [
+          { group: 'apps', kind: 'Deployment' },
+          { group: '', kind: 'Service' },
+        ],
+      },
+    });
+
+    const stored = await objectApi.read({
+      apiVersion: 'argoproj.io/v1alpha1',
+      kind: 'AppProject',
+      metadata: { name: 'todo-app' },
+    });
+    expect(stored.spec).toEqual({
+      sourceRepos: ['https://github.com/octocat/todo'],
+      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+      namespaceResourceWhitelist: [
+        { group: 'apps', kind: 'Deployment' },
+        { group: '', kind: 'Service' },
+      ],
+      syncPolicy: { automated: { prune: true, selfHeal: true } },
+    });
+  });
 });

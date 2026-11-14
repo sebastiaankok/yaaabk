@@ -126,6 +126,12 @@ describe('create', () => {
       'yaaabk.io/project-name': 'todo-app',
     });
 
+    expect(namespace.ok && namespace.value.labels).toMatchObject({
+      'pod-security.kubernetes.io/enforce': 'restricted',
+      'pod-security.kubernetes.io/audit': 'restricted',
+      'pod-security.kubernetes.io/warn': 'restricted',
+    });
+
     const serviceAccount = await k8s.serviceAccounts.get(project.namespace, 'yaaabk-agent');
     expect(serviceAccount.ok).toBe(true);
 
@@ -140,6 +146,26 @@ describe('create', () => {
 
     const application = await k8s.applications.get(project.namespace, 'todo-app');
     expect(application.ok).toBe(true);
+
+    const argoProject = await k8s.argoProjects.get('todo-app');
+    expect(argoProject.ok && argoProject.value).toMatchObject({
+      sourceRepos: ['https://github.com/acme/todo-app'],
+      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+      namespaceResources: [
+        { group: 'apps', kind: 'Deployment' },
+        { group: '', kind: 'Service' },
+        { group: 'networking.k8s.io', kind: 'Ingress' },
+        { group: '', kind: 'ConfigMap' },
+        { group: '', kind: 'Secret' },
+      ],
+    });
+
+    const storedApplication = await k8s.objectApi.read({
+      apiVersion: 'argoproj.io/v1alpha1',
+      kind: 'Application',
+      metadata: { name: 'todo-app', namespace: 'project-a1b2c3d4' },
+    });
+    expect(storedApplication.spec).toMatchObject({ project: 'todo-app' });
 
     expect(git.calls).toContainEqual({
       op: 'push',
@@ -313,6 +339,93 @@ describe('update', () => {
   });
 });
 
+describe('export', () => {
+  it('transfers the repository and repoints the ArgoCD Application and AppProject', async () => {
+    const { module, store, k8s, repositories, clock } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+    clock.now = new Date('2026-02-01T00:00:00.000Z');
+
+    const result = await module.export(created.value.id, { owner: 'dev', repoName: 'todo' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      repoFullName: 'dev/todo',
+      repoUrl: 'https://github.com/dev/todo',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+    });
+    expect(store.get(created.value.id)).toEqual(result.value);
+
+    expect(repositories.calls).toContainEqual({
+      op: 'add-collaborator',
+      fullName: 'acme/todo-app',
+      username: 'dev',
+    });
+    expect(repositories.calls).toContainEqual({
+      op: 'transfer',
+      fullName: 'acme/todo-app',
+      newOwner: 'dev',
+      repoName: 'todo',
+    });
+
+    const storedApplication = await k8s.objectApi.read({
+      apiVersion: 'argoproj.io/v1alpha1',
+      kind: 'Application',
+      metadata: { name: 'todo-app', namespace: 'project-a1b2c3d4' },
+    });
+    expect(storedApplication.spec).toMatchObject({
+      source: { repoURL: 'https://github.com/dev/todo' },
+    });
+
+    const argoProject = await k8s.argoProjects.get('todo-app');
+    expect(argoProject.ok && argoProject.value.sourceRepos).toEqual([
+      'https://github.com/dev/todo',
+    ]);
+  });
+
+  it('defaults the target repo name to the project name', async () => {
+    const { module, repositories } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.export(created.value.id, { owner: 'dev' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.repoFullName).toBe('dev/todo-app');
+    expect(repositories.calls).toContainEqual({
+      op: 'transfer',
+      fullName: 'acme/todo-app',
+      newOwner: 'dev',
+      repoName: 'todo-app',
+    });
+  });
+
+  it('reports not-found for an unknown id', async () => {
+    const { module } = harness();
+
+    const result = await module.export('missing', { owner: 'dev' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-found');
+  });
+
+  it('rejects an invalid owner without touching the repository', async () => {
+    const { module, repositories } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.export(created.value.id, { owner: 'Dev_O!' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
+    expect(repositories.calls).toHaveLength(1); // only the original create
+  });
+});
+
 describe('remove', () => {
   it('tears down the repository and cluster resources, then forgets the project', async () => {
     const { module, store, k8s, repositories } = harness();
@@ -324,6 +437,7 @@ describe('remove', () => {
     expect(result.ok).toBe(true);
     expect(store.get(created.value.id)).toBeUndefined();
     expect((await k8s.namespaces.get(created.value.namespace)).ok).toBe(false);
+    expect((await k8s.argoProjects.get(created.value.name)).ok).toBe(false);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 

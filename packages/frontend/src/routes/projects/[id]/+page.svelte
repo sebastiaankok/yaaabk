@@ -3,7 +3,8 @@
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import type { Project } from '@yaaabk/projects';
-  import { ApiError, deleteProject, getProject } from '#lib/api.js';
+  import { ApiError, deleteProject, exportProject, getProject } from '#lib/api.js';
+  import { hasErrors, validateExportTarget, type ExportTargetErrors } from '#lib/export-project.js';
 
   const projectId = $derived(page.params.id);
 
@@ -11,6 +12,12 @@
   let error = $state<string | null>(null);
   let confirming = $state(false);
   let busy = $state(false);
+
+  let exportOwner = $state('');
+  let exportRepoName = $state('');
+  let exportErrors = $state<ExportTargetErrors>({});
+  let exporting = $state(false);
+  let exportSuccess = $state<string | null>(null);
 
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
@@ -33,6 +40,27 @@
       cancelled = true;
     };
   });
+
+  async function transferProject(): Promise<void> {
+    if (projectId === undefined || exporting) return;
+    const target = { owner: exportOwner, repoName: exportRepoName };
+    exportErrors = validateExportTarget(target);
+    if (hasErrors(exportErrors)) return;
+    exporting = true;
+    error = null;
+    exportSuccess = null;
+    try {
+      const updated = await exportProject(projectId, target);
+      project = updated;
+      exportSuccess = `Project exported to ${updated.repoFullName}`;
+      exportOwner = '';
+      exportRepoName = '';
+    } catch (cause) {
+      error = describe(cause);
+    } finally {
+      exporting = false;
+    }
+  }
 
   async function remove(): Promise<void> {
     if (projectId === undefined || busy) return;
@@ -124,6 +152,54 @@
         >
           Stats
         </a>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="export-heading">
+      <h2 id="export-heading" class="mb-1 text-sm font-semibold">Export project</h2>
+      <p class="mb-3 text-sm text-neutral-600">
+        Transfer this repository to your own GitHub account. YAAABK grants you access, moves the
+        repository and repoints ArgoCD so deployments keep flowing.
+      </p>
+      {#if exportSuccess !== null}
+        <p class="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
+          {exportSuccess}
+        </p>
+      {/if}
+      <div class="flex flex-wrap items-start gap-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-neutral-500">GitHub username</span>
+          <input
+            type="text"
+            bind:value={exportOwner}
+            aria-label="GitHub username"
+            class="w-48 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          {#if exportErrors.owner !== undefined}
+            <span class="text-xs text-red-600">{exportErrors.owner}</span>
+          {/if}
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-neutral-500">Repository name (optional)</span>
+          <input
+            type="text"
+            bind:value={exportRepoName}
+            aria-label="Repository name"
+            placeholder={project.name}
+            class="w-48 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          {#if exportErrors.repoName !== undefined}
+            <span class="text-xs text-red-600">{exportErrors.repoName}</span>
+          {/if}
+        </label>
+        <button
+          type="button"
+          onclick={() => void transferProject()}
+          disabled={exporting}
+          class="mt-5 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {exporting ? 'Transferring…' : 'Transfer'}
+        </button>
       </div>
     </section>
 

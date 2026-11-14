@@ -1,4 +1,5 @@
 import type {
+  ExportProjectInput,
   ProjectError,
   ProjectPatch,
   ProjectsModule,
@@ -135,6 +136,16 @@ export function projectRoutes(projects: ProjectsModule): Hono {
   app.delete('/api/projects/:id', async (c) => {
     const result = await projects.remove(c.req.param('id'));
     return result.ok ? c.json({ ok: true }) : fail(c, result.error);
+  });
+
+  app.post('/api/projects/:id/export', async (c) => {
+    const input = await body(c);
+    const exportInput: ExportProjectInput = { owner: asString(input.owner) };
+    if (input.repoName !== undefined) {
+      exportInput.repoName = asString(input.repoName);
+    }
+    const result = await projects.export(c.req.param('id'), exportInput);
+    return result.ok ? c.json(result.value) : fail(c, result.error);
   });
 
   return app;

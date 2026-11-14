@@ -2,8 +2,10 @@ import type { K8sConnectionConfig } from './config';
 import { consoleLogger, toK8sError, type K8sLogger } from './errors';
 import { createKubernetesObjectApi } from './kubernetes-adapter';
 import { KINDS, type K8sObject, type ObjectApi } from './object-api';
+import type { AppProjectDestination, AppProjectInfo, AppProjectSpec, GroupKind } from './types';
 import type {
   ApplicationInfo,
+  ApplicationSpec,
   JobInfo,
   JobPhase,
   JobSpec,
@@ -154,6 +156,64 @@ function toApplicationInfo(object: K8sObject): ApplicationInfo {
     labels: labelsOf(object.metadata),
     syncStatus: stringField(object, ['status', 'sync', 'status']) ?? 'Unknown',
     healthStatus: stringField(object, ['status', 'health', 'status']) ?? 'Unknown',
+  };
+}
+
+/** Reads an AppProject back into its summary, echoing the whitelists it enforces. */
+function toAppProjectInfo(object: K8sObject): AppProjectInfo {
+  const spec = (object.spec ?? {}) as Record<string, unknown>;
+  return {
+    name: object.metadata.name,
+    labels: labelsOf(object.metadata),
+    sourceRepos: (spec.sourceRepos as string[]) ?? [],
+    destinations: (spec.destinations as AppProjectDestination[]) ?? [],
+    namespaceResources: (spec.namespaceResourceWhitelist as GroupKind[]) ?? [],
+  };
+}
+
+/** Builds the Application manifest shared by `applications.create` and `update`. */
+function applicationManifest(
+  namespace: string,
+  name: string,
+  spec: ApplicationSpec,
+  action: 'create' | 'update',
+): K8sObject {
+  const metadata: K8sObject['metadata'] = { name, namespace };
+  // Only creations set labels; a patch must not reset them.
+  if (action === 'create') {
+    metadata.labels = spec.labels ?? {};
+  }
+  return {
+    ...KINDS.application,
+    metadata,
+    spec: {
+      project: spec.project ?? 'default',
+      source: spec.source,
+      destination: spec.destination,
+      ...(spec.syncPolicy !== undefined ? { syncPolicy: spec.syncPolicy } : {}),
+    },
+  };
+}
+
+/** Builds the AppProject manifest shared by `argoProjects.create` and `update`. */
+function appProjectManifest(
+  name: string,
+  spec: AppProjectSpec,
+  action: 'create' | 'update',
+): K8sObject {
+  const metadata: K8sObject['metadata'] = { name };
+  if (action === 'create') {
+    metadata.labels = spec.labels ?? {};
+  }
+  return {
+    ...KINDS.argoProject,
+    metadata,
+    spec: {
+      sourceRepos: spec.sourceRepos,
+      destinations: spec.destinations,
+      namespaceResourceWhitelist: spec.namespaceResources,
+      ...(spec.syncPolicy !== undefined ? { syncPolicy: spec.syncPolicy } : {}),
+    },
   };
 }
 
@@ -527,16 +587,7 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
             } satisfies ApplicationInfo;
           }
           return toApplicationInfo(
-            await objectApi().create({
-              ...KINDS.application,
-              metadata: { name, namespace, labels: spec.labels ?? {} },
-              spec: {
-                project: spec.project ?? 'default',
-                source: spec.source,
-                destination: spec.destination,
-                ...(spec.syncPolicy !== undefined ? { syncPolicy: spec.syncPolicy } : {}),
-              },
-            }),
+            await objectApi().create(applicationManifest(namespace, name, spec, 'create')),
           );
         }),
       get: (namespace, name) =>
@@ -554,12 +605,82 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
             await objectApi().read({ ...KINDS.application, metadata: { name, namespace } }),
           );
         }),
+      update: (namespace, name, spec) =>
+        guard('applications.update', { namespace, name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              namespace,
+              labels: {},
+              syncStatus: 'Unknown',
+              healthStatus: 'Unknown',
+            } satisfies ApplicationInfo;
+          }
+          return toApplicationInfo(
+            await objectApi().patch(applicationManifest(namespace, name, spec, 'update')),
+          );
+        }),
       delete: (namespace, name) =>
         guard('applications.delete', { namespace, name }, async () => {
           if (dryRun) {
             return undefined;
           }
           await objectApi().delete({ ...KINDS.application, metadata: { name, namespace } });
+          return undefined;
+        }),
+    },
+    argoProjects: {
+      create: (name, spec) =>
+        guard('argoProjects.create', { name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              labels: spec.labels ?? {},
+              sourceRepos: spec.sourceRepos,
+              destinations: spec.destinations,
+              namespaceResources: spec.namespaceResources,
+            } satisfies AppProjectInfo;
+          }
+          return toAppProjectInfo(
+            await objectApi().create(appProjectManifest(name, spec, 'create')),
+          );
+        }),
+      get: (name) =>
+        guard('argoProjects.get', { name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              labels: {},
+              sourceRepos: [],
+              destinations: [],
+              namespaceResources: [],
+            } satisfies AppProjectInfo;
+          }
+          return toAppProjectInfo(
+            await objectApi().read({ ...KINDS.argoProject, metadata: { name } }),
+          );
+        }),
+      update: (name, spec) =>
+        guard('argoProjects.update', { name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              labels: {},
+              sourceRepos: spec.sourceRepos,
+              destinations: spec.destinations,
+              namespaceResources: spec.namespaceResources,
+            } satisfies AppProjectInfo;
+          }
+          return toAppProjectInfo(
+            await objectApi().patch(appProjectManifest(name, spec, 'update')),
+          );
+        }),
+      delete: (name) =>
+        guard('argoProjects.delete', { name }, async () => {
+          if (dryRun) {
+            return undefined;
+          }
+          await objectApi().delete({ ...KINDS.argoProject, metadata: { name } });
           return undefined;
         }),
     },

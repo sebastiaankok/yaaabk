@@ -15,6 +15,7 @@ export interface GitHubRepositoryProviderOptions {
 }
 
 interface GitHubRepository {
+  name: string;
   full_name: string;
   clone_url: string;
   html_url: string;
@@ -95,6 +96,59 @@ export function createGitHubRepositoryProvider(
         return { ok: true, value: undefined };
       } catch (error) {
         return { ok: false, error: toRepositoryError('delete', error) };
+      }
+    },
+
+    async addCollaborator(fullName, username) {
+      try {
+        const response = await fetchImpl(
+          `${apiBaseUrl}/repos/${fullName}/collaborators/${username}`,
+          { method: 'PUT', headers: headers(), body: JSON.stringify({ permission: 'push' }) },
+        );
+        // 201: invitation created; 204: already a collaborator. Both are fine.
+        if (!response.ok) {
+          throw httpError(response.status, await errorMessage(response));
+        }
+        return { ok: true, value: undefined };
+      } catch (error) {
+        return { ok: false, error: toRepositoryError('addCollaborator', error) };
+      }
+    },
+
+    async transfer(fullName, target) {
+      try {
+        const response = await fetchImpl(`${apiBaseUrl}/repos/${fullName}/transfer`, {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ new_owner: target.newOwner }),
+        });
+        if (!response.ok) {
+          throw httpError(response.status, await errorMessage(response));
+        }
+        let body = (await response.json()) as GitHubRepository;
+
+        // The transfer API keeps the repository name; honouring an explicit
+        // target name takes a follow-up rename under the new owner.
+        if (target.repoName !== undefined && body.name !== target.repoName) {
+          const rename = await fetchImpl(`${apiBaseUrl}/repos/${body.full_name}`, {
+            method: 'PATCH',
+            headers: headers(),
+            body: JSON.stringify({ name: target.repoName }),
+          });
+          if (!rename.ok) {
+            throw httpError(rename.status, await errorMessage(rename));
+          }
+          body = (await rename.json()) as GitHubRepository;
+        }
+
+        const repository: Repository = {
+          fullName: body.full_name,
+          cloneUrl: body.clone_url,
+          url: body.html_url,
+        };
+        return { ok: true, value: repository };
+      } catch (error) {
+        return { ok: false, error: toRepositoryError('transfer', error) };
       }
     },
   };

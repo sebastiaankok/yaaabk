@@ -3,6 +3,7 @@ import {
   createProject,
   createProjectStream,
   deleteProject,
+  exportProject,
   getIssueSyncStatus,
   getProjectStats,
   getStatus,
@@ -103,6 +104,36 @@ describe('createProject', () => {
           skillLevel: 'expert',
         }),
       }),
+    );
+  });
+});
+
+describe('exportProject', () => {
+  it('POSTs the target owner and repo name and returns the updated project', async () => {
+    const updated = { id: 'p1', repoFullName: 'dev/todo' };
+    const fetchMock = vi.fn(async () => jsonResponse(updated));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(exportProject('p1', { owner: 'dev', repoName: 'todo' })).resolves.toEqual(updated);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/export$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ owner: 'dev', repoName: 'todo' }),
+      }),
+    );
+  });
+
+  it('omits the repo name when the project name is kept', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: 'p1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await exportProject('p1', { owner: 'dev', repoName: '' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ body: JSON.stringify({ owner: 'dev' }) }),
     );
   });
 });

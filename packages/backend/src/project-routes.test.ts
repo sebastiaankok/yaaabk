@@ -235,6 +235,62 @@ describe('PATCH /api/projects/:id', () => {
   });
 });
 
+describe('POST /api/projects/:id/export', () => {
+  it('rejects an unauthenticated request', async () => {
+    const { app } = createTestContext();
+
+    const res = await app.request('/api/projects/p-id/export', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ owner: 'dev' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('transfers the project and returns the updated project', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}/export`, {
+      method: 'POST',
+      body: JSON.stringify({ owner: 'dev', repoName: 'todo' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      repoFullName: 'dev/todo',
+      repoUrl: 'https://github.com/dev/todo',
+    });
+  });
+
+  it('returns 404 for an unknown id', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/projects/missing/export', {
+      method: 'POST',
+      body: JSON.stringify({ owner: 'dev' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects an invalid owner with 400', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}/export`, {
+      method: 'POST',
+      body: JSON.stringify({ owner: 'Dev_O!' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
+  });
+});
+
 describe('DELETE /api/projects/:id', () => {
   it('removes the project', async () => {
     const { context, session } = await signedIn();

@@ -136,6 +136,27 @@ function resolveRepositories(settingsModule: SettingsModule): RepositoryProvider
         fullName,
       );
     },
+    addCollaborator: async (fullName, username) => {
+      const token = await resolveGithubToken(settingsModule);
+      if (token === undefined) {
+        return unconfigured('addCollaborator', GITHUB_UNCONFIGURED_MESSAGE);
+      }
+      return createGitHubRepositoryProvider({
+        token,
+        owner: owner ?? '',
+        ownerType,
+      }).addCollaborator(fullName, username);
+    },
+    transfer: async (fullName, target) => {
+      const token = await resolveGithubToken(settingsModule);
+      if (token === undefined) {
+        return unconfigured('transfer', GITHUB_UNCONFIGURED_MESSAGE);
+      }
+      return createGitHubRepositoryProvider({ token, owner: owner ?? '', ownerType }).transfer(
+        fullName,
+        target,
+      );
+    },
   };
 }
 
