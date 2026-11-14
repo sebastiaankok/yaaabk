@@ -223,6 +223,16 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/settings": {
+      "name": "@yaaabk/settings",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "^1.3.13",
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
     "packages/shared": {
       "name": "@yaaabk/shared",
       "version": "0.0.0",
@@ -480,6 +490,8 @@
     "@yaaabk/plans": ["@yaaabk/plans@workspace:packages/plans"],
 
     "@yaaabk/projects": ["@yaaabk/projects@workspace:packages/projects"],
+
+    "@yaaabk/settings": ["@yaaabk/settings@workspace:packages/settings"],
 
     "@yaaabk/shared": ["@yaaabk/shared@workspace:packages/shared"],
 
