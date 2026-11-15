@@ -1,7 +1,7 @@
 # The shared AppProject every Project Application defers to.
 #
 # AppProjects are cluster-scoped, so this is deliberately NOT part of
-# deploy/kustomization.yaml (which force-namespaces everything into `yaaabk`).
+# deploy/kustomization.yaml (which deploys into the `yaaabk` namespace).
 # Apply it once out of band, e.g.:
 #
 #   kubectl --context k3s-home apply -f deploy/appproject.yaml
@@ -40,7 +40,3 @@ spec:
       kind: ConfigMap
     - group: ''
       kind: Secret
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
