@@ -48,6 +48,20 @@ kubectl --context k3s-home apply -k deploy
 kubectl --context k3s-home apply -f deploy/appproject.yaml
 ```
 
+## Deploy a release
+
+`scripts/deploy.sh` builds the backend, frontend and agent images for
+`linux/amd64`, pushes them to `ghcr.io`, and rolls them out:
+
+```sh
+scripts/deploy.sh 0.1.1
+```
+
+The tag is required, so a rollout is always deliberate. `SKIP_BUILD=1` re-applies
+the manifests and pins an already-pushed tag; `KUBE_CONTEXT` overrides the
+kubeconfig context. The script injects the tag at apply time, so the `0.1.0`
+values in `deploy/*.yaml` are a local baseline, not the running version.
+
 ## Verify
 
 ```sh
