@@ -65,7 +65,7 @@ describe('scaffold', () => {
 
     const readme = await readFile(join(result.value.directory, 'README.md'), 'utf8');
     expect(readme).toContain('# todo-app');
-    expect(readme).toContain('Namespace: project-a1b2c3d4');
+    expect(readme).toContain('Namespace: yaaabk-a1b2c3d4');
 
     const pkg = JSON.parse(await readFile(join(result.value.directory, 'package.json'), 'utf8'));
     expect(pkg.name).toBe('todo-app');
@@ -81,7 +81,7 @@ describe('scaffold', () => {
 
     const config = await readFile(join(result.value.directory, 'deploy/configmap.yaml'), 'utf8');
     expect(config).toContain('name: todo-app-config');
-    expect(config).toContain('namespace: project-a1b2c3d4');
+    expect(config).toContain('namespace: yaaabk-a1b2c3d4');
     expect(config).toContain("PORT: '3000'");
     expect(config).toContain(`PROJECT_ID: '${PROJECT_ID}'`);
 

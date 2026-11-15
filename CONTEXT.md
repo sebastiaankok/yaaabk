@@ -17,7 +17,7 @@ A software project created by a **Developer**, backed 1:1 by a GitHub (or future
 _Avoid_: App, workspace, application
 
 **Namespace (K8s)**:
-A Kubernetes namespace that hosts a **Project**'s deployed application and agent infrastructure. Named `project-<short-uuid>` where the short UUID is derived from the Project's internal ID. The namespace has a label `yaaabk.io/project-name: <project-name>` for human readability. Never renamed after creation.
+A Kubernetes namespace that hosts a **Project**'s deployed application and agent infrastructure. Named `yaaabk-<short-uuid>` where the short UUID is derived from the Project's internal ID. The namespace has a label `yaaabk.io/project-name: <project-name>` for human readability. Never renamed after creation.
 _Avoid_: project-<name>, <user>-<project>
 
 **Skill Level**:
@@ -67,6 +67,6 @@ _Avoid_: Bot, worker, runner
 > **Developer:** "I want to create a new project and brainstorm features for a todo app."
 > **Platform Admin:** "Great — I've installed YAAABK and configured the cluster policies. You can log in at https://yaaabk.mycompany.com and add your GitHub App and OpenRouter key in Settings."
 > **Developer:** "I created 'todo-app'. What namespace did it get?"
-> **Platform Admin:** "`project-a1b2c3d4` — check the label `yaaabk.io/project-name: todo-app` to confirm."
+> **Platform Admin:** "`yaaabk-a1b2c3d4` — check the label `yaaabk.io/project-name: todo-app` to confirm."
 > **Developer:** "I submitted my idea and started a grill-me session. It's asking me about authentication strategies now."
 > **Platform Admin:** "The skill adapts to your level — sounds like it's working."

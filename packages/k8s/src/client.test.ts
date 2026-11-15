@@ -30,14 +30,14 @@ describe('createK8sClient in dry-run mode', () => {
       logger: { info, error: vi.fn() },
     });
 
-    const result = await client.namespaces.create('project-a1b2c3d4', {
+    const result = await client.namespaces.create('yaaabk-a1b2c3d4', {
       labels: { 'yaaabk.io/project-name': 'todo' },
     });
 
     expect(result).toEqual({
       ok: true,
       value: {
-        name: 'project-a1b2c3d4',
+        name: 'yaaabk-a1b2c3d4',
         labels: { 'yaaabk.io/project-name': 'todo' },
         phase: 'Active',
       },
@@ -74,14 +74,14 @@ describe('namespaces.create', () => {
   it('creates the namespace with its labels and reports the result', async () => {
     const client = createK8sClient({ objectApi: createInMemoryObjectApi(), logger: silentLogger });
 
-    const result = await client.namespaces.create('project-a1b2c3d4', {
+    const result = await client.namespaces.create('yaaabk-a1b2c3d4', {
       labels: { 'yaaabk.io/project-name': 'todo' },
     });
 
     expect(result).toEqual({
       ok: true,
       value: {
-        name: 'project-a1b2c3d4',
+        name: 'yaaabk-a1b2c3d4',
         labels: { 'yaaabk.io/project-name': 'todo' },
         phase: 'Active',
       },
@@ -109,7 +109,7 @@ describe('typed error mapping', () => {
   ])('maps an HTTP %i response to a %s error', async (status, kind) => {
     const client = createK8sClient({ objectApi: createFailingWith(status), logger: silentLogger });
 
-    const result = await client.namespaces.create('project-a1b2c3d4');
+    const result = await client.namespaces.create('yaaabk-a1b2c3d4');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -133,7 +133,7 @@ describe('typed error mapping', () => {
     };
     const client = createK8sClient({ objectApi, logger: silentLogger });
 
-    const result = await client.namespaces.create('project-a1b2c3d4');
+    const result = await client.namespaces.create('yaaabk-a1b2c3d4');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -151,17 +151,17 @@ describe('namespaces', () => {
   it('reads back a namespace with its labels and phase', async () => {
     const objectApi = createInMemoryObjectApi([
       {
-        ...namespaceObject('project-a1b2c3d4', { team: 'core' }),
+        ...namespaceObject('yaaabk-a1b2c3d4', { team: 'core' }),
         status: { phase: 'Terminating' },
       },
     ]);
     const client = createK8sClient({ objectApi, logger: silentLogger });
 
-    const result = await client.namespaces.get('project-a1b2c3d4');
+    const result = await client.namespaces.get('yaaabk-a1b2c3d4');
 
     expect(result).toEqual({
       ok: true,
-      value: { name: 'project-a1b2c3d4', labels: { team: 'core' }, phase: 'Terminating' },
+      value: { name: 'yaaabk-a1b2c3d4', labels: { team: 'core' }, phase: 'Terminating' },
     });
   });
 
@@ -734,7 +734,7 @@ describe('argocd projects', () => {
 
     const result = await client.argoProjects.create('todo-app', {
       sourceRepos: ['https://github.com/octocat/todo'],
-      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'yaaabk-a1b2c3d4' }],
       namespaceResources: [
         { group: 'apps', kind: 'Deployment' },
         { group: '', kind: 'Service' },
@@ -748,7 +748,7 @@ describe('argocd projects', () => {
         name: 'todo-app',
         labels: {},
         sourceRepos: ['https://github.com/octocat/todo'],
-        destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+        destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'yaaabk-a1b2c3d4' }],
         namespaceResources: [
           { group: 'apps', kind: 'Deployment' },
           { group: '', kind: 'Service' },
@@ -763,7 +763,7 @@ describe('argocd projects', () => {
     });
     expect(stored.spec).toEqual({
       sourceRepos: ['https://github.com/octocat/todo'],
-      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'project-a1b2c3d4' }],
+      destinations: [{ server: 'https://kubernetes.default.svc', namespace: 'yaaabk-a1b2c3d4' }],
       namespaceResourceWhitelist: [
         { group: 'apps', kind: 'Deployment' },
         { group: '', kind: 'Service' },

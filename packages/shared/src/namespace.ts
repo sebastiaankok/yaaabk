@@ -1,5 +1,5 @@
 /** Prefix applied to every Kubernetes namespace that hosts a Project. */
-export const PROJECT_NAMESPACE_PREFIX = 'project-';
+export const PROJECT_NAMESPACE_PREFIX = 'yaaabk-';
 
 /** Number of hex characters taken from a Project id to form a namespace suffix. */
 const SHORT_ID_LENGTH = 8;
@@ -7,7 +7,7 @@ const SHORT_ID_LENGTH = 8;
 /**
  * Derives the Kubernetes namespace for a Project from its internal id.
  *
- * The namespace is `project-<short-uuid>`, where the short uuid is the first
+ * The namespace is `yaaabk-<short-uuid>`, where the short uuid is the first
  * eight hex characters of the id with separators removed.
  */
 export function projectNamespace(projectId: string): string {

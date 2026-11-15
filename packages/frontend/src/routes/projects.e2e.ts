@@ -7,7 +7,7 @@ const PROJECT = {
   skillLevel: 'expert',
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
-  namespace: 'project-a1b2c3d4',
+  namespace: 'yaaabk-a1b2c3d4',
   argoAppName: 'todo-app',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -83,7 +83,7 @@ test('lists every project with its key metadata', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
   await expect(page.getByText('expert')).toBeVisible();
-  await expect(page.getByText('project-a1b2c3d4')).toBeVisible();
+  await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
   await expect(page.getByText('1 open · 2 closed')).toBeVisible();
   await expect(page.getByText('Idle')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Issue board' })).toHaveAttribute(

@@ -30,7 +30,7 @@ function project(overrides: Partial<Project> = {}): Project {
     skillLevel: 'expert',
     repoUrl: `https://github.com/${REPO}`,
     repoFullName: REPO,
-    namespace: 'project-a1b2c3d4',
+    namespace: 'yaaabk-a1b2c3d4',
     argoAppName: 'todo-app',
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
