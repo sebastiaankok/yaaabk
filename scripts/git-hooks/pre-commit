@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook for yaaabk.
+#
+# Runs the same fast validations as CI (.github/workflows/ci.yml) plus a
+# gitleaks secret scan of the staged changes:
+#   - gitleaks (staged secrets)   - prettier format check
+#   - eslint                       - tsc/svelte-check typecheck
+#   - unit tests
+#
+# Integration tests, the production build, and Playwright end-to-end tests are
+# opt-in because they are slow. Enable them per-commit:
+#
+#   PRECOMMIT_FULL=1 git commit ...   # + build + SQLite integration tests
+#   PRECOMMIT_E2E=1  git commit ...   # + Playwright end-to-end tests
+#
+# Install once per clone:
+#   bun run hooks:install             # sets core.hooksPath to scripts/git-hooks
+#
+# Bypass with `git commit --no-verify` only when you know what you are doing.
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
+cd "$ROOT" || exit 1
+
+CONFIG="$ROOT/.gitleaks.toml"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+FAILED=()
+PIDS=()
+NAMES=()
+
+# --- Secret scan (staged changes only) -------------------------------------
+echo "▶ Secret scan (gitleaks, staged changes)"
+if command -v gitleaks >/dev/null 2>&1; then
+  if gitleaks git --staged --config "$CONFIG" --no-banner --redact >"$TMP/gitleaks.log" 2>&1; then
+    echo "✓ secret scan"
+  else
+    echo "✗ secret scan — potential credentials in staged changes:"
+    sed 's/^/    /' "$TMP/gitleaks.log"
+    FAILED+=("secret scan")
+  fi
+else
+  echo "⚠ gitleaks not installed — skipping secret scan."
+  echo "  Install: https://github.com/gitleaks/gitleaks#installing"
+fi
+
+# --- Validations (run concurrently) ----------------------------------------
+start() {
+  local name="$1"
+  shift
+  NAMES+=("$name")
+  ( "$@" ) >"$TMP/$name.log" 2>&1 &
+  PIDS+=("$!")
+}
+
+start format bun run format:check
+start lint bun run lint
+start typecheck bun run typecheck
+start test bun run test
+
+if [ "${PRECOMMIT_FULL:-0}" = "1" ]; then
+  start build bun run build
+  start integration-auth bun run --filter '@yaaabk/auth' test:integration
+  start integration-plans bun run --filter '@yaaabk/plans' test:integration
+  start integration-agents bun run --filter '@yaaabk/agents' test:integration
+fi
+
+if [ "${PRECOMMIT_E2E:-0}" = "1" ]; then
+  start e2e bun run test:e2e
+fi
+
+echo "▶ Running validations (format, lint, typecheck, unit tests)"
+for i in "${!PIDS[@]}"; do
+  pid="${PIDS[$i]}"
+  name="${NAMES[$i]}"
+  if wait "$pid"; then
+    echo "✓ $name"
+  else
+    echo "✗ $name"
+    sed 's/^/    /' "$TMP/$name.log"
+    FAILED+=("$name")
+  fi
+done
+
+# --- Result ----------------------------------------------------------------
+if [ "${#FAILED[@]}" -ne 0 ]; then
+  echo
+  echo "Pre-commit failed: ${FAILED[*]}"
+  echo "Fix the issues above, re-stage, and commit again."
+  echo "Bypass (not recommended): git commit --no-verify"
+  exit 1
+fi
+
+echo
+echo "Pre-commit checks passed."

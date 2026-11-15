@@ -1,0 +1,21 @@
+# Gitleaks configuration for yaaabk.
+#
+# Extends the built-in ruleset and allowlists known non-secret test fixtures so
+# the secret scan only flags real credentials. Keep this file at the repo root:
+# both the pre-commit hook (scripts/git-hooks/pre-commit) and CI read it.
+
+title = "yaaabk"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secret test fixtures and documentation placeholders"
+regexes = [
+  # RFC 6238 TOTP test vector — public reference value, not a secret.
+  '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+  # Fake OpenRouter management key used across unit tests.
+  '''sk-or-v1-abcdefgh1c96''',
+  # Fake GitHub personal access token used across unit tests.
+  '''ghp_originalvalue1234''',
+]
