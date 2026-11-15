@@ -172,6 +172,8 @@ describe('create', () => {
       directory: expect.any(String),
       url: 'https://github.com/acme/todo-app.git',
       branch: 'main',
+      // The scaffold authenticates its HTTPS push with the same credential.
+      token: 'gh-token',
     });
   });
 

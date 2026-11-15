@@ -181,6 +181,12 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
             repoUrl: repository.cloneUrl,
             argoAppName: name,
             branch,
+            // The scaffold pushes over the same HTTPS remote GitHub returned;
+            // authenticate it with the credential used to create the repository
+            // (empty for SSH remotes, where the agent's key takes over).
+            ...(options.githubToken === undefined || options.githubToken === ''
+              ? {}
+              : { token: options.githubToken }),
           });
           if (!result.ok) {
             throw projectError('scaffold', result.error.message);

@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import { copyTemplate } from './interpolate';
 import { templateError } from './errors';
-import type { GitAuthor, GitBackend, TemplateSource } from './git-backend';
+import type { GitAuthor, GitBackend, PushOptions, TemplateSource } from './git-backend';
 
 /** A recorded call to a {@link GitBackend} method. */
 export type GitOperation =
   | { op: 'fetch'; source: TemplateSource; directory: string }
   | { op: 'init'; directory: string }
   | { op: 'commit'; directory: string; message: string; author: GitAuthor }
-  | { op: 'push'; directory: string; url: string; branch: string };
+  | ({ op: 'push'; directory: string } & PushOptions);
 
 export interface FakeGitBackendOptions {
   /** Template directories keyed by git URL, used when a `git` source is fetched. */
@@ -60,8 +60,8 @@ export function createFakeGitBackend(options: FakeGitBackendOptions = {}): FakeG
       calls.push({ op: 'commit', directory, message, author });
     },
 
-    async push(directory, { url, branch }) {
-      calls.push({ op: 'push', directory, url, branch });
+    async push(directory, { url, branch, token }) {
+      calls.push({ op: 'push', directory, url, branch, ...(token === undefined ? {} : { token }) });
       if (options.pushError !== undefined) {
         throw templateError('push-failed', options.pushError);
       }

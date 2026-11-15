@@ -8,6 +8,48 @@ import { copyTemplate } from './interpolate';
 
 const exec = promisify(execFile);
 
+/**
+ * Builds a git credential helper that answers GitHub pushes from memory.
+ *
+ * The backend deploys as an image without a credential helper or SSH key, so
+ * pushing the scaffold to an `https://github.com` remote needs the token fed
+ * through git's credential protocol. The helper never touches disk (no
+ * `git credential-store`), and `GIT_TERMINAL_PROMPT=0` keeps git from falling
+ * back to an interactive prompt — without it the push dies with "could not
+ * read Username for 'https://github.com': No such device or address" the
+ * moment stdin is not a TTY. Returns `undefined` for remotes it should not
+ * handle (non-https GitHub URLs, other hosts, empty token).
+ */
+export function installCredentialHelper(url: string, token: string): string | undefined {
+  if (token === '') {
+    return undefined;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  if (hostname !== 'github.com' && !hostname.endsWith('.github.com')) {
+    return undefined;
+  }
+  process.env.GIT_TERMINAL_PROMPT = '0';
+  return `!f() { test "$1" = get && printf "username=x-access-token\\npassword=${token}\\n"; }; f`;
+}
+
+/** The remote URL without any embedded credentials, for `origin` and errors. */
+export function unauthenticatedRepoUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.username !== '' || parsed.password !== '') {
+      return `${parsed.protocol}//${parsed.hostname}${parsed.port === '' ? '' : `:${parsed.port}`}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 /** Runs `git` in `directory`, rejecting with the command's stderr on failure. */
 async function git(directory: string, args: string[]): Promise<void> {
   try {
@@ -69,12 +111,20 @@ export function createGitBackend(): GitBackend {
       ]);
     },
 
-    async push(directory, { url, branch }) {
+    async push(directory, { url, branch, token }) {
       try {
         // `remote add` fails if origin exists (e.g. a re-run); make it idempotent.
         await git(directory, ['remote', 'remove', 'origin']).catch(() => {});
-        await git(directory, ['remote', 'add', 'origin', url]);
-        await git(directory, ['push', '--set-upstream', 'origin', branch]);
+        await git(directory, ['remote', 'add', 'origin', unauthenticatedRepoUrl(url)]);
+        const helper = token === undefined ? undefined : installCredentialHelper(url, token);
+        const pushArgs = ['push', '--set-upstream', 'origin', branch];
+        if (helper !== undefined) {
+          // The helper authenticates the push; the remote itself stays
+          // token-free so a misconfigured helper cannot leak the token into
+          // `.git/config`.
+          pushArgs.unshift('-c', `credential.helper=${helper}`);
+        }
+        await git(directory, pushArgs);
       } catch (error) {
         throw templateError('push-failed', gitMessage(error), error);
       }
