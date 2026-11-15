@@ -62,6 +62,31 @@ test('confirms a save and reports the verification result', async ({ page }) => 
   await expect(page.getByText('Verified: 3 keys managed')).toBeVisible();
 });
 
+test('saves credentials without a budget, leaving the stored budget alone', async ({ page }) => {
+  const puts: string[] = [];
+  // Nothing configured yet: the budget field renders blank, as on a fresh
+  // instance, and no PAT is stored so the page starts in GitHub App mode.
+  const stored = { updatedAt: '2026-01-01T00:00:00.000Z' };
+  await mockSession(page);
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'GET') {
+      void route.fulfill({ json: stored });
+      return;
+    }
+    puts.push(route.request().postData() ?? '');
+    void route.fulfill({ json: stored });
+  });
+
+  await gotoHydrated(page, '/settings');
+
+  await page.getByLabel('App ID').fill('123456');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  expect(puts).toHaveLength(1);
+  expect(puts[0]).toContain('123456');
+});
+
 test('surfaces a bad management key as an inline error', async ({ page }) => {
   await mockSession(page);
   await page.route('**/api/settings', (route) => void route.fulfill({ json: CONFIGURED_SETTINGS }));
