@@ -18,7 +18,9 @@
     "typecheck": "bun run --filter '*' --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "hooks:install": "git config core.hooksPath scripts/git-hooks",
+    "hooks:uninstall": "git config --unset core.hooksPath"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

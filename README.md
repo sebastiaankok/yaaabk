@@ -70,6 +70,30 @@ bun run --filter '@yaaabk/backend' dev    # backend only
 bun run --filter '@yaaabk/frontend' dev   # frontend only
 ```
 
+## Git hooks
+
+A pre-commit hook runs the same fast validations as CI (Prettier, ESLint,
+typecheck, unit tests) plus a [`gitleaks`](https://github.com/gitleaks/gitleaks)
+secret scan of the staged changes. Enable it once per clone:
+
+```sh
+bun run hooks:install    # sets core.hooksPath to scripts/git-hooks
+```
+
+Install gitleaks so the secret scan runs locally (CI enforces it regardless):
+
+```sh
+# macOS (Homebrew) or see the gitleaks README for other platforms
+brew install gitleaks
+```
+
+The slower CI steps are opt-in per commit:
+
+```sh
+PRECOMMIT_FULL=1 git commit ...   # + build + SQLite integration tests
+PRECOMMIT_E2E=1  git commit ...   # + Playwright end-to-end tests
+```
+
 ## Repository layout
 
 This is a Bun workspace monorepo:
