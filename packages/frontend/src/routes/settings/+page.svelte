@@ -169,7 +169,10 @@
             class="w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-xs"
             placeholder={settings.githubPrivateKey !== undefined
               ? 'Configured — type to replace'
-              : '-----BEGIN PRIVATE KEY-----'}></textarea>
+              : '-----BEGIN RSA PRIVATE KEY-----'}></textarea>
+          <p class="text-xs text-neutral-500">
+            Paste the downloaded <code>.pem</code> file as-is — PKCS#1 and PKCS#8 are both accepted.
+          </p>
         </div>
 
         <div class="flex flex-col gap-1">

@@ -1,4 +1,5 @@
 import { importPKCS8, SignJWT } from 'jose';
+import { toPkcs8Pem } from './private-key';
 
 /** How the verified credentials authenticate; mirrors the Settings Module's port. */
 export type GitHubCredentialKind = 'pat' | 'app';
@@ -73,7 +74,7 @@ export function createGitHubCredentialVerifier(options: GitHubCredentialVerifier
   }
 
   async function appToken(appId: string, privateKey: string): Promise<string> {
-    const key = await importPKCS8(privateKey, 'RS256');
+    const key = await importPKCS8(toPkcs8Pem(privateKey), 'RS256');
     return new SignJWT({})
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuer(appId)
