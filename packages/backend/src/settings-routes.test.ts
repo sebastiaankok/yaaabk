@@ -61,6 +61,45 @@ describe('PUT /api/settings', () => {
     });
   });
 
+  it('stores a credential sent in the camelCase shape the browser sends', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      openrouterManagementKey: 'sk-or-…1c96',
+    });
+  });
+
+  it('stores the budget sent in camelCase', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ defaultIssueBudgetCents: 125 }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ defaultIssueBudgetCents: 125 });
+  });
+
+  it('clears fields named in camelCase', async () => {
+    const { context, session } = await signedIn();
+    await context.settings.update({ githubPat: 'ghp_originalvalue1234' });
+
+    const res = await request(context, session, '/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ clear: ['githubPat'] }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.not.toHaveProperty('githubPat');
+  });
+
   it('rejects an out-of-range default budget with 400', async () => {
     const { context, session } = await signedIn();
 
@@ -75,6 +114,21 @@ describe('PUT /api/settings', () => {
 });
 
 describe('POST /api/settings/openrouter/verify', () => {
+  it('verifies a key saved through the browser camelCase payload', async () => {
+    const { context, session } = await signedIn();
+
+    await request(context, session, '/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' }),
+    });
+    const res = await request(context, session, '/api/settings/openrouter/verify', {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true });
+  });
+
   it('reports the resolved account for the stored management key', async () => {
     const { context, session } = await signedIn();
     await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
