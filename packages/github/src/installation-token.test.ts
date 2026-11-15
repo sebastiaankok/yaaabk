@@ -8,6 +8,13 @@ const APP_PRIVATE_KEY = generateKeyPairSync('rsa', {
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 }).privateKey.toString();
 
+/** The format GitHub actually downloads: PKCS#1, not PKCS#8. */
+const GITHUB_DOWNLOADED_KEY = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+}).privateKey.toString();
+
 interface RecordedRequest {
   url: string;
   method: string | undefined;
@@ -62,6 +69,28 @@ describe('createInstallationTokenProvider', () => {
     expect(requests[0]!.url).toBe('https://api.github.com/app/installations/67890/access_tokens');
     expect(requests[0]!.method).toBe('POST');
     // The App JWT identifies the app, not the installation.
+    expect(requests[0]!.authorization).toMatch(/^Bearer /);
+  });
+
+  it('mints a token from the PKCS#1 key GitHub downloads', async () => {
+    const { fetch, requests } = recordingFetch([
+      {
+        status: 201,
+        body: { token: 'ghs_installation_token', expires_at: '2026-01-01T01:00:00Z' },
+      },
+    ]);
+    const provider = createInstallationTokenProvider({
+      appId: '12345',
+      privateKey: GITHUB_DOWNLOADED_KEY,
+      installationId: '67890',
+      fetch,
+      now: () => new Date('2026-01-01T00:00:00Z'),
+    });
+
+    const token = await provider.token();
+
+    expect(token).toBe('ghs_installation_token');
+    expect(requests).toHaveLength(1);
     expect(requests[0]!.authorization).toMatch(/^Bearer /);
   });
 

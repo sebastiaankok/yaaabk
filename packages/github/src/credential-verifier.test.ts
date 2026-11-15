@@ -8,6 +8,13 @@ const APP_PRIVATE_KEY = generateKeyPairSync('rsa', {
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 }).privateKey.toString();
 
+/** The format GitHub actually downloads: PKCS#1, not PKCS#8. */
+const GITHUB_DOWNLOADED_KEY = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+}).privateKey.toString();
+
 interface RecordedRequest {
   url: string;
   authorization: string | undefined;
@@ -72,6 +79,45 @@ describe('createGitHubCredentialVerifier', () => {
 
     expect(result).toEqual({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
     expect(requests[0]?.url).toContain('/app');
+  });
+
+  it('accepts the PKCS#1 key GitHub downloads', async () => {
+    const { fetch } = recordingFetch([{ status: 200, body: { slug: 'yaaabk-app' } }]);
+    const verifier = createGitHubCredentialVerifier({ fetch });
+
+    const result = await verifier.verifyWithApp({
+      appId: '12345',
+      privateKey: GITHUB_DOWNLOADED_KEY,
+    });
+
+    expect(result).toEqual({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
+  });
+
+  it('accepts a key pasted with escaped newlines', async () => {
+    const { fetch } = recordingFetch([{ status: 200, body: { slug: 'yaaabk-app' } }]);
+    const verifier = createGitHubCredentialVerifier({ fetch });
+
+    const result = await verifier.verifyWithApp({
+      appId: '12345',
+      privateKey: GITHUB_DOWNLOADED_KEY.replace(/\n/g, '\\n'),
+    });
+
+    expect(result).toEqual({ ok: true, value: { kind: 'app', account: 'yaaabk-app' } });
+  });
+
+  it('reports unauthorized when the private key cannot be read', async () => {
+    const { fetch, requests } = recordingFetch([{ status: 200, body: { slug: 'yaaabk-app' } }]);
+    const verifier = createGitHubCredentialVerifier({ fetch });
+
+    const result = await verifier.verifyWithApp({ appId: '12345', privateKey: 'not a key' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe('unauthorized');
+      expect(result.message).toBe('The GitHub App private key could not be read');
+    }
+    // A credential that never parsed must not reach GitHub.
+    expect(requests).toHaveLength(0);
   });
 
   it('reports unauthorized when GitHub rejects a PAT', async () => {

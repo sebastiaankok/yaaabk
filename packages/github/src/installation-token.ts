@@ -1,9 +1,10 @@
 import { importPKCS8, SignJWT } from 'jose';
+import { toPkcs8Pem } from './private-key';
 
 export interface InstallationTokenProviderOptions {
   /** GitHub App id. */
   appId: string;
-  /** PKCS#8 PEM private key belonging to the App. */
+  /** PEM private key belonging to the App, in PKCS#1 or PKCS#8 form. */
   privateKey: string;
   /** Installation the token is minted for. */
   installationId: string;
@@ -38,7 +39,7 @@ export function createInstallationTokenProvider(
 
   /** Signs the App JWT GitHub requires to act as the App itself. */
   async function appToken(): Promise<string> {
-    const key = await importPKCS8(options.privateKey, 'RS256');
+    const key = await importPKCS8(toPkcs8Pem(options.privateKey), 'RS256');
     return new SignJWT({})
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuer(options.appId)
