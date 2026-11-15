@@ -13,13 +13,27 @@ metadata:
   name: yaaabk-backend
 rules:
   - apiGroups: ['']
-    resources: [namespaces, secrets, serviceaccounts, rolebindings]
+    resources: [namespaces, secrets, serviceaccounts]
     verbs: [create, get, list, watch, patch, update, delete]
+  # RoleBindings live in rbac.authorization.k8s.io, not the core group; a
+  # core-group rule for them is silently ignored and every Project fails at
+  # "Granting agent permissions" with a 403.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [create, get, list, watch, patch, update, delete]
+  # Project agents are bound to the built-in `edit` ClusterRole, and RBAC's
+  # privilege-escalation check refuses a binding whose roleRef the granter
+  # does not already hold. The yaaabk-backend-edit ClusterRoleBinding below
+  # grants it; this rule covers the binding management itself.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    verbs: [bind]
+    resourceNames: [edit]
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [create, get, list, watch, patch, update, delete]
   - apiGroups: [argoproj.io]
-    resources: [applications]
+    resources: [applications, appprojects]
     verbs: [create, get, list, watch, patch, update, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -30,6 +44,22 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: yaaabk-backend
+subjects:
+  - kind: ServiceAccount
+    name: yaaabk-backend
+---
+# Project agents are bound to the built-in `edit` ClusterRole, and RBAC's
+# privilege-escalation check refuses a binding whose roleRef the granter does
+# not already hold. Holding `edit` makes the grant possible; it is a superset
+# of the yaaabk-backend role above.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: yaaabk-backend-edit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
 subjects:
   - kind: ServiceAccount
     name: yaaabk-backend

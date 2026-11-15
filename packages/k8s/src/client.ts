@@ -298,6 +298,9 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
         ...fields,
         kind: mapped.kind,
         statusCode: mapped.statusCode,
+        // The mapped kind alone hides the cause (e.g. "self signed certificate
+        // in certificate chain" surfaced only as kind: unknown); keep it.
+        error: mapped.message,
       });
       return { ok: false, error: mapped };
     }

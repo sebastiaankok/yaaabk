@@ -44,6 +44,13 @@ spec:
             # The scaffold templates bundled into the image (see backend Dockerfile).
             - name: YAAABK_TEMPLATE_DIR
               value: /app/templates
+            # Trust the in-cluster API server's CA in Node's TLS stack: Bun's
+            # undici ignores the CA @kubernetes/client-node loads, so every
+            # in-cluster call fails with "self signed certificate in
+            # certificate chain" without this (see ensureInClusterCaTrusted,
+            # which is a no-op when this is already set).
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           ports:
             - name: http
               containerPort: 3000
