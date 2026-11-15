@@ -31,7 +31,7 @@ interface HarnessOverrides {
   /** Objects the in-memory cluster starts with, e.g. to force a conflict. */
   seed?: K8sObject[];
   /** Overrides the GitHub token; `null` omits it entirely. */
-  githubToken?: string | null;
+  githubToken?: string | null | (() => Promise<string | undefined>);
   /** Project ids handed out by successive `create` calls. */
   ids?: string[];
 }
@@ -151,6 +151,22 @@ describe('create', () => {
       // The scaffold authenticates its HTTPS push with the same credential.
       token: 'gh-token',
     });
+  });
+
+  it('resolves the scaffold token per create rather than snapshotting it', async () => {
+    const tokens = ['first-token', 'second-token'];
+    const { module, git } = harness({
+      githubToken: () => Promise.resolve(tokens.shift()),
+      ids: ['aaaaaaaa-1111', 'bbbbbbbb-2222'],
+    });
+
+    await module.create(INPUT);
+    await module.create({ ...INPUT, name: 'todo-app-2' });
+
+    const pushTokens = git.calls
+      .filter((call) => call.op === 'push')
+      .map((call) => (call.op === 'push' ? call.token : undefined));
+    expect(pushTokens).toEqual(['first-token', 'second-token']);
   });
 
   it('rejects an invalid project without touching any external system', async () => {

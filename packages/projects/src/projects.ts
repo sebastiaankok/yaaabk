@@ -34,10 +34,12 @@ export interface ProjectsModuleOptions {
   templates: TemplateModule;
   repositories: RepositoryProvider;
   /**
-   * GitHub token copied into each new namespace so the agent can reach the
-   * repository. When omitted the Secret step is skipped (e.g. local dev).
+   * Credential the scaffold authenticates its HTTPS push with, e.g. a GitHub
+   * token. A resolver is evaluated per `create`, so a credential entered in
+   * Settings takes effect without a restart; a plain string is used as-is.
+   * When omitted or empty the push is unauthenticated (local dev only).
    */
-  githubToken?: string;
+  githubToken?: string | (() => Promise<string | undefined>);
   /** Branch the scaffold pushes and ArgoCD tracks. Defaults to `main`. */
   branch?: string;
   /** ArgoCD destination server. Defaults to the in-cluster API server. */
@@ -132,6 +134,13 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
     }
   }
 
+  /** Resolves the scaffold push credential, supporting a per-call resolver. */
+  async function scaffoldToken(): Promise<string | undefined> {
+    const configured = options.githubToken;
+    const token = typeof configured === 'function' ? await configured() : configured;
+    return token === undefined || token === '' ? undefined : token;
+  }
+
   async function create(
     input: NewProject,
     createOptions: CreateProjectOptions = {},
@@ -176,6 +185,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         );
 
         await step('scaffold', async () => {
+          const token = await scaffoldToken();
           const result = await templates.scaffold({
             id,
             name,
@@ -183,11 +193,9 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
             argoAppName: name,
             branch,
             // The scaffold pushes over the same HTTPS remote GitHub returned;
-            // authenticate it with the credential used to create the repository
-            // (empty for SSH remotes, where the agent's key takes over).
-            ...(options.githubToken === undefined || options.githubToken === ''
-              ? {}
-              : { token: options.githubToken }),
+            // authenticate it with the configured credential (empty for SSH
+            // remotes, where the agent's key takes over).
+            ...(token === undefined ? {} : { token }),
           });
           if (!result.ok) {
             throw projectError('scaffold', result.error.message);

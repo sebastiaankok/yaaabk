@@ -306,6 +306,10 @@ const projects = createProjectsModule({
   k8s,
   templates: createTemplateModule(),
   repositories: resolveRepositories(settings),
+  // Resolved per create so a credential entered in Settings takes effect
+  // without a restart, and a short-lived App installation token is minted
+  // fresh for the scaffold push rather than snapshotted at startup.
+  githubToken: resolveGithubTokenForAgents,
 });
 
 const plans = createPlansModule({ store: createSqlitePlanStore(database) });
