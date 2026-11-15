@@ -126,7 +126,11 @@ export function createTemplateModule(options: TemplateModuleOptions = {}): Templ
           message: `chore: scaffold ${project.name} from the YAAABK template`,
           author,
         });
-        await backend.push(directory, { url: project.repoUrl, branch });
+        await backend.push(directory, {
+          url: project.repoUrl,
+          branch,
+          ...(project.token === undefined ? {} : { token: project.token }),
+        });
 
         return result;
       });

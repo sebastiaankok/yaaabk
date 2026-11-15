@@ -99,7 +99,13 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
       return { ok: true, value };
     } catch (error) {
       const mapped = toProjectError(operation, error);
-      logger.error(`projects ${operation} failed`, { ...fields, kind: mapped.kind });
+      logger.error(`projects ${operation} failed`, {
+        ...fields,
+        kind: mapped.kind,
+        // The mapped kind alone hides the cause (e.g. a scaffold push failing
+        // with git's "could not read Username"); keep the message.
+        error: mapped.message,
+      });
       return { ok: false, error: mapped };
     }
   }
@@ -181,6 +187,12 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
             repoUrl: repository.cloneUrl,
             argoAppName: name,
             branch,
+            // The scaffold pushes over the same HTTPS remote GitHub returned;
+            // authenticate it with the credential used to create the repository
+            // (empty for SSH remotes, where the agent's key takes over).
+            ...(options.githubToken === undefined || options.githubToken === ''
+              ? {}
+              : { token: options.githubToken }),
           });
           if (!result.ok) {
             throw projectError('scaffold', result.error.message);

@@ -1,6 +1,7 @@
-# PUBLIC_API_BASE_URL is inlined into the client bundle at build time
-# (see packages/frontend/Dockerfile); it is https://yaaabk.otohgunga.nl for
-# this deployment and cannot be changed via env here.
+# The browser reads the API base from the SSR'd payload, which the adapter-bun
+# server resolves from process.env at startup (src/env.ts holds the dev
+# fallback). Deploy the real URL here; the same-origin HTTPRoute sends /api to
+# the backend.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +21,9 @@ spec:
           image: ghcr.io/sebastiaankok/yaaabk-frontend:0.1.0
           # Tag is mutable (retagged on rebuild); always re-check the registry.
           imagePullPolicy: Always
+          env:
+            - name: PUBLIC_API_BASE_URL
+              value: https://yaaabk.otohgunga.nl
           ports:
             - name: http
               containerPort: 3000

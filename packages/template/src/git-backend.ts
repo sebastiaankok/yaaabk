@@ -14,6 +14,20 @@ export interface GitAuthor {
   email: string;
 }
 
+/** Options for {@link GitBackend.push}. */
+export interface PushOptions {
+  /** Remote URL the branch is pushed to. */
+  url: string;
+  /** Branch to push. */
+  branch: string;
+  /**
+   * Credential (e.g. a GitHub token) the adapter feeds to git for an
+   * `https://github.com` remote. Omitted for remotes that authenticate another
+   * way (SSH, local paths).
+   */
+  token?: string;
+}
+
 /**
  * The low-level port the Template Module is built on.
  *
@@ -32,6 +46,6 @@ export interface GitBackend {
   initRepository(directory: string): Promise<void>;
   /** Stages every file and records a single commit. */
   commitAll(directory: string, options: { message: string; author: GitAuthor }): Promise<void>;
-  /** Points `origin` at `url` and pushes `branch`. */
-  push(directory: string, options: { url: string; branch: string }): Promise<void>;
+  /** Points `origin` at `url` and pushes `branch`, authenticating with `token` if given. */
+  push(directory: string, options: PushOptions): Promise<void>;
 }

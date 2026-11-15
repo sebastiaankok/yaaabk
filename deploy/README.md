@@ -15,15 +15,16 @@ Targets the `k3s-home` cluster (kubeconfig `~/.kube/configs/k3s.yaml`, context
      -t ghcr.io/sebastiaankok/yaaabk-backend:0.1.0 --push .
    docker buildx build --platform linux/amd64 \
      -f packages/frontend/Dockerfile \
-     --build-arg PUBLIC_API_BASE_URL=https://yaaabk.otohgunga.nl \
      -t ghcr.io/sebastiaankok/yaaabk-frontend:0.1.0 --push .
    docker buildx build --platform linux/amd64 \
      -f packages/agent/Dockerfile \
      -t ghcr.io/sebastiaankok/yaaabk-agent:0.1.0 --push .
    ```
 
-   `PUBLIC_API_BASE_URL` is inlined into the frontend client bundle at build
-   time — changing the hostname means rebuilding the frontend image.
+   The frontend's `PUBLIC_API_BASE_URL` is read from the server process env at
+   startup (SvelteKit resolves `$app/env/public` at runtime; the deploy value
+   lives in `deploy/frontend.yaml`), so changing the hostname does not require
+   rebuilding the frontend image.
 
 2. **Secret** — created out of band; values never enter git:
 

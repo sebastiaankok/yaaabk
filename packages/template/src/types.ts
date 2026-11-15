@@ -38,6 +38,11 @@ export interface TemplateProject {
   argoAppName?: string;
   /** Branch the scaffold is pushed to. Defaults to `main`. */
   branch?: string;
+  /**
+   * Credential used to push the scaffold. Omit for remotes that authenticate
+   * another way (SSH, local paths).
+   */
+  token?: string;
 }
 
 /** What a successful scaffold produced. */
