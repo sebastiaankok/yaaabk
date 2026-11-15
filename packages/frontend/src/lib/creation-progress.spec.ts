@@ -73,10 +73,6 @@ describe('applyProvisioningEvent', () => {
     expect(CREATION_STEPS.map((step) => step.id)).toEqual([
       'repository',
       'scaffold',
-      'namespace',
-      'service-account',
-      'role-binding',
-      'secret',
       'argocd',
       'persist',
     ]);

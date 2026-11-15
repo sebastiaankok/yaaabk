@@ -1,0 +1,46 @@
+# The shared AppProject every Project Application defers to.
+#
+# AppProjects are cluster-scoped, so this is deliberately NOT part of
+# deploy/kustomization.yaml (which force-namespaces everything into `yaaabk`).
+# Apply it once out of band, e.g.:
+#
+#   kubectl --context k3s-home apply -f deploy/appproject.yaml
+#
+# `sourceRepos: ['*']` is safe because only the backend (which only ever
+# creates Applications for repositories it just created) and GitOps can create
+# Applications against this project. `destinations` allows any namespace so
+# ArgoCD may create the Project namespaces the scaffold's Namespace manifest
+# declares; the whitelist pins exactly what a Project Application may manage.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: yaaabk
+  namespace: argocd
+spec:
+  description: YAAABK-managed Projects
+  sourceRepos:
+    - '*'
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+  # Namespace is cluster-scoped: ArgoCD needs it to create the Project
+  # namespace from the scaffold's manifest.
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  # Exactly what the Svelte+Bun template deploys.
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ''
+      kind: Service
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

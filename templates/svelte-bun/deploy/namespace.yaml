@@ -1,0 +1,17 @@
+# The Project namespace, created and deleted by ArgoCD together with the app.
+#
+# Managed here rather than by YAAABK so the backend needs no cluster-scoped
+# rights: deleting the ArgoCD Application prunes this manifest and the
+# namespace cascades with it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{namespace}}
+  labels:
+    yaaabk.io/project-name: {{projectName}}
+    # Pod Security Admission `restricted`: pods must run non-root with a
+    # dropped capability set.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -4,6 +4,8 @@ namespace: yaaabk
 resources:
   - namespace.yaml
   - rbac.yaml
+  # The shared AppProject is cluster-scoped and applied separately (it cannot
+  # go through this namespace-forcing kustomization): see appproject.yaml.
   - pvc.yaml
   - backend.yaml
   - frontend.yaml

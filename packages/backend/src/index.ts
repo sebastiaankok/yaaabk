@@ -25,10 +25,12 @@ import {
   createGitHubCredentialVerifier,
   createGitHubIssuesClient,
   createGitHubPullsClient,
+  createInstallationTokenProvider,
   createIssueSyncModule,
   type GitHubIssues,
   type GitHubPulls,
   type GitHubResult,
+  type InstallationTokenProvider,
 } from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
 import { createK8sClient, detectK8sConnection, ensureInClusterCaTrusted } from '@yaaabk/k8s';
@@ -84,13 +86,53 @@ const settings = createSettingsModule({
  */
 const bootstrapCredentials = await settings.credentials();
 
-/** The token a GitHub call should use: the stored PAT, else the environment. */
-async function resolveGithubToken(settingsModule: SettingsModule): Promise<string | undefined> {
-  const stored = (await settingsModule.credentials()).githubPat;
-  const fromEnv = process.env.YAAABK_GITHUB_TOKEN;
-  if (stored !== undefined && stored !== '') {
-    return stored;
+/**
+ * The GitHub App installation token provider for the currently configured App
+ * credentials, cached so its token is reused until it nears expiry.
+ */
+let installationTokens: InstallationTokenProvider | undefined;
+
+async function appInstallationToken(
+  credentials: Awaited<ReturnType<SettingsModule['credentials']>>,
+): Promise<string | undefined> {
+  const { githubAppId, githubPrivateKey, githubInstallationId } = credentials;
+  if (
+    githubAppId === undefined ||
+    githubAppId === '' ||
+    githubPrivateKey === undefined ||
+    githubPrivateKey === '' ||
+    githubInstallationId === undefined ||
+    githubInstallationId === ''
+  ) {
+    installationTokens = undefined;
+    return undefined;
   }
+  installationTokens ??= createInstallationTokenProvider({
+    appId: githubAppId,
+    privateKey: githubPrivateKey,
+    installationId: githubInstallationId,
+  });
+  return installationTokens.token();
+}
+
+/**
+ * The token a GitHub call should use.
+ *
+ * A configured GitHub App wins: its installation token is short-lived
+ * (roughly an hour) and scoped to the permissions the installation was
+ * granted, so nothing long-lived with broad repository access is ever used.
+ * The stored PAT and the environment variable remain fallbacks.
+ */
+async function resolveGithubToken(settingsModule: SettingsModule): Promise<string | undefined> {
+  const stored = await settingsModule.credentials();
+  const fromApp = await appInstallationToken(stored);
+  if (fromApp !== undefined) {
+    return fromApp;
+  }
+  if (stored.githubPat !== undefined && stored.githubPat !== '') {
+    return stored.githubPat;
+  }
+  const fromEnv = process.env.YAAABK_GITHUB_TOKEN;
   return fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined;
 }
 
@@ -237,19 +279,33 @@ const auth = createAuthModule({
   policy: createPasswordPolicy(),
 });
 
-const githubToken = bootstrapCredentials.githubPat ?? process.env.YAAABK_GITHUB_TOKEN;
 const projectStore = createSqliteProjectStore(database);
 // Must run before the first in-cluster TLS connection: Bun's undici ignores the
 // CA @kubernetes/client-node loads, so every API call fails with "self signed
 // certificate in certificate chain" without this.
 ensureInClusterCaTrusted();
 const k8s = createK8sClient({ connection: detectK8sConnection() });
+
+/**
+ * The GitHub token agent Jobs clone and push with, resolved per dispatch.
+ *
+ * Resolved per call so a credential entered in Settings takes effect without a
+ * restart; prefers a short-lived GitHub App installation token, which dies
+ * within the hour even if a run's Secret leaks.
+ */
+const resolveGithubTokenForAgents = async (): Promise<string | undefined> => {
+  try {
+    return await resolveGithubToken(settings);
+  } catch {
+    return undefined;
+  }
+};
+
 const projects = createProjectsModule({
   store: projectStore,
   k8s,
   templates: createTemplateModule(),
   repositories: resolveRepositories(settings),
-  ...(githubToken !== undefined && githubToken !== '' ? { githubToken } : {}),
 });
 
 const plans = createPlansModule({ store: createSqlitePlanStore(database) });
@@ -286,6 +342,7 @@ const agents = createAgentManager({
   issues,
   projects: projectStore,
   k8s,
+  githubToken: await resolveGithubTokenForAgents(),
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }
     : {}),
