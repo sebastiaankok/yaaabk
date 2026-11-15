@@ -57,7 +57,10 @@
 
   async function save(): Promise<void> {
     if (settings === null) return;
-    budgetError = validateBudgetDollars(defaultIssueBudgetDollars) ?? null;
+    // Blank means "leave the stored budget unchanged", like every other field
+    // on this page, so only validate what was actually typed.
+    const budget = defaultIssueBudgetDollars.trim();
+    budgetError = budget === '' ? null : (validateBudgetDollars(budget) ?? null);
     if (budgetError !== null) return;
 
     saveState = 'saving';
