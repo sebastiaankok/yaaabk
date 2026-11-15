@@ -24,7 +24,7 @@ export interface Project {
   repoUrl: string;
   /** Full repository name, e.g. `acme/todo-app`. */
   repoFullName: string;
-  /** Kubernetes namespace hosting the Project, `project-<short-uuid>`. */
+  /** Kubernetes namespace hosting the Project, `yaaabk-<short-uuid>`. */
   namespace: string;
   /** ArgoCD Application name. */
   argoAppName: string;

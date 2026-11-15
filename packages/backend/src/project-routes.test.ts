@@ -132,7 +132,7 @@ describe('POST /api/projects (streaming)', () => {
     const done = frames.find((frame) => frame.event === 'done');
     expect(done).toBeDefined();
     expect(done!.data).toMatchObject({ name: 'todo-app' });
-    expect(done!.data.namespace).toMatch(/^project-[0-9a-f]{8}$/);
+    expect(done!.data.namespace).toMatch(/^yaaabk-[0-9a-f]{8}$/);
 
     await expect(context.projects.list()).resolves.toMatchObject({
       ok: true,

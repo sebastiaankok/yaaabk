@@ -85,7 +85,7 @@ export interface ApplicationInfo extends ResourceMeta {
 export interface AppProjectDestination {
   /** API server URL; omitted means the local cluster. */
   server?: string;
-  /** Namespace the Application may sync into, e.g. `project-a1b2c3d4`. */
+  /** Namespace the Application may sync into, e.g. `yaaabk-a1b2c3d4`. */
   namespace: string;
 }
 

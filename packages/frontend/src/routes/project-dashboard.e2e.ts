@@ -7,7 +7,7 @@ const PROJECT = {
   skillLevel: 'expert',
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
-  namespace: 'project-a1b2c3d4',
+  namespace: 'yaaabk-a1b2c3d4',
   argoAppName: 'todo-app',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -44,7 +44,7 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'href',
     'https://github.com/acme/todo-app',
   );
-  await expect(page.getByText('project-a1b2c3d4')).toBeVisible();
+  await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
   await expect(page.getByText('ArgoCD application')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Grill-Me' })).toHaveAttribute(
     'href',

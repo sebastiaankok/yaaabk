@@ -113,7 +113,7 @@ describe('create', () => {
       skillLevel: 'expert',
       repoFullName: 'acme/todo-app',
       repoUrl: 'https://github.com/acme/todo-app',
-      namespace: 'project-a1b2c3d4',
+      namespace: 'yaaabk-a1b2c3d4',
       argoAppName: 'todo-app',
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),

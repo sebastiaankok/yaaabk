@@ -28,7 +28,7 @@ export function projectRecord(overrides: Partial<Project> = {}): Project {
     skillLevel: 'expert',
     repoUrl: 'https://github.com/acme/todo-app',
     repoFullName: 'acme/todo-app',
-    namespace: 'project-a1b2c3d4',
+    namespace: 'yaaabk-a1b2c3d4',
     argoAppName: 'todo-app',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',

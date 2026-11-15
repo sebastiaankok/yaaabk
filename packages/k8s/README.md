@@ -11,7 +11,7 @@ import { createK8sClient } from '@yaaabk/k8s';
 
 const k8s = createK8sClient();
 
-const created = await k8s.namespaces.create('project-a1b2c3d4', {
+const created = await k8s.namespaces.create('yaaabk-a1b2c3d4', {
   labels: { 'yaaabk.io/project-name': 'todo' },
 });
 if (!created.ok) {

@@ -169,7 +169,7 @@ Creating a Project runs a fixed sequence, reported to the caller through the
 1. **repository** — create the backing GitHub repository (the `Repository` port;
    a GitHub REST adapter ships with the module).
 2. **scaffold** — push the `templates/svelte-bun` template to it.
-3. **namespace** — create the `project-<short-uuid>` namespace, labelled
+3. **namespace** — create the `yaaabk-<short-uuid>` namespace, labelled
    `yaaabk.io/project-name`.
 4. **service-account** and **role-binding** — the `yaaabk-agent` ServiceAccount
    bound to the `edit` ClusterRole within that namespace only.

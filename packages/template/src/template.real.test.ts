@@ -94,7 +94,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
     expect(rootPkg.scripts.build).toContain('@todo-app/web');
 
     const namespaceManifest = await readFile(join(directory, 'deploy/namespace.yaml'), 'utf8');
-    expect(namespaceManifest).toContain('name: project-a1b2c3d4');
+    expect(namespaceManifest).toContain('name: yaaabk-a1b2c3d4');
     expect(namespaceManifest).toContain('yaaabk.io/project-name: todo-app');
     expect(namespaceManifest).toContain('pod-security.kubernetes.io/enforce: restricted');
 
