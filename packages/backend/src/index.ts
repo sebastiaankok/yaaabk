@@ -31,7 +31,7 @@ import {
   type GitHubResult,
 } from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
-import { createK8sClient, detectK8sConnection } from '@yaaabk/k8s';
+import { createK8sClient, detectK8sConnection, ensureInClusterCaTrusted } from '@yaaabk/k8s';
 import { createPlansModule, createSqlitePlanStore } from '@yaaabk/plans';
 import {
   createGitHubRepositoryProvider,
@@ -239,6 +239,10 @@ const auth = createAuthModule({
 
 const githubToken = bootstrapCredentials.githubPat ?? process.env.YAAABK_GITHUB_TOKEN;
 const projectStore = createSqliteProjectStore(database);
+// Must run before the first in-cluster TLS connection: Bun's undici ignores the
+// CA @kubernetes/client-node loads, so every API call fails with "self signed
+// certificate in certificate chain" without this.
+ensureInClusterCaTrusted();
 const k8s = createK8sClient({ connection: detectK8sConnection() });
 const projects = createProjectsModule({
   store: projectStore,
