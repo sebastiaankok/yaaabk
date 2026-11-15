@@ -1,65 +1,72 @@
-# Cluster-wide access for the backend: it provisions a Namespace, Secrets,
-# ServiceAccounts and RoleBindings per Project, spawns Agent Jobs in those
-# Namespaces, and creates ArgoCD Applications. The generic object API plus
-# Watches means the verb set covers list/get/watch/create/patch/delete.
+# Namespace-scoped access for the backend, nothing more.
+#
+# It provisions agent Jobs, PVCs and per-attempt Secrets in `yaaabk`, and
+# ArgoCD Applications in `yaaabk-apps`. No ClusterRoleBindings exist: the
+# backend can neither read other namespaces' Secrets nor escalate itself, and
+# everything cluster-scoped (namespaces, AppProjects) is managed by ArgoCD
+# from Git instead.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: yaaabk-backend
 ---
+# Agent execution: Jobs, their working PVCs and the per-attempt GitHub /
+# OpenRouter token Secrets. `secrets` appears twice (create/delete and the
+# get/list/watch the Secret informers need) because a single rule cannot mix
+# those verb sets without over-granting.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: yaaabk-backend
+  name: yaaabk-backend-agent
+  namespace: yaaabk
 rules:
   - apiGroups: ['']
-    resources: [namespaces, secrets, serviceaccounts]
-    verbs: [create, get, list, watch, patch, update, delete]
-  # RoleBindings live in rbac.authorization.k8s.io, not the core group; a
-  # core-group rule for them is silently ignored and every Project fails at
-  # "Granting agent permissions" with a 403.
-  - apiGroups: [rbac.authorization.k8s.io]
-    resources: [rolebindings]
-    verbs: [create, get, list, watch, patch, update, delete]
-  # Project agents are bound to the built-in `edit` ClusterRole, and RBAC's
-  # privilege-escalation check refuses a binding whose roleRef the granter
-  # does not already hold. The yaaabk-backend-edit ClusterRoleBinding below
-  # grants it; this rule covers the binding management itself.
-  - apiGroups: [rbac.authorization.k8s.io]
-    resources: [clusterroles]
-    verbs: [bind]
-    resourceNames: [edit]
+    resources: [secrets]
+    verbs: [create, get, list, watch, patch, delete]
+  - apiGroups: ['']
+    resources: [persistentvolumeclaims]
+    verbs: [create, get, list, watch, delete]
   - apiGroups: [batch]
     resources: [jobs]
-    verbs: [create, get, list, watch, patch, update, delete]
+    verbs: [create, get, list, watch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: yaaabk-backend-agent
+  namespace: yaaabk
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: yaaabk-backend-agent
+subjects:
+  - kind: ServiceAccount
+    name: yaaabk-backend
+    namespace: yaaabk
+---
+# ArgoCD Applications: every Project Application lives here and defers to the
+# shared, GitOps-managed AppProject. AppProjects themselves are cluster-scoped
+# and deliberately absent — YAAABK never creates or modifies one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: yaaabk-backend-argocd
+  namespace: yaaabk-apps
+rules:
   - apiGroups: [argoproj.io]
-    resources: [applications, appprojects]
+    resources: [applications]
     verbs: [create, get, list, watch, patch, update, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: yaaabk-backend
+  name: yaaabk-backend-argocd
+  namespace: yaaabk-apps
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: yaaabk-backend
+  kind: Role
+  name: yaaabk-backend-argocd
 subjects:
   - kind: ServiceAccount
     name: yaaabk-backend
----
-# Project agents are bound to the built-in `edit` ClusterRole, and RBAC's
-# privilege-escalation check refuses a binding whose roleRef the granter does
-# not already hold. Holding `edit` makes the grant possible; it is a superset
-# of the yaaabk-backend role above.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: yaaabk-backend-edit
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: edit
-subjects:
-  - kind: ServiceAccount
-    name: yaaabk-backend
+    namespace: yaaabk

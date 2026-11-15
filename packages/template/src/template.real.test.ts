@@ -55,7 +55,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
 
     for (const relative of [
       'Dockerfile',
-      'deploy/argo-app.yaml',
+      'deploy/namespace.yaml',
       'deploy/deployment.yaml',
       '.github/workflows/ci.yml',
       'server/src/app.ts',
@@ -63,6 +63,9 @@ describe('scaffold against the bundled svelte-bun template', () => {
     ]) {
       expect(files).toContain(relative);
     }
+    // The Application is created by the backend in yaaabk-apps; the scaffold
+    // must not carry its own.
+    expect(files).not.toContain('deploy/argo-app.yaml');
 
     for (const relative of files) {
       const contents = await readFile(join(directory, relative), 'utf8').catch(() => '');
@@ -90,10 +93,13 @@ describe('scaffold against the bundled svelte-bun template', () => {
     expect(rootPkg.name).toBe('todo-app');
     expect(rootPkg.scripts.build).toContain('@todo-app/web');
 
-    const argo = await readFile(join(directory, 'deploy/argo-app.yaml'), 'utf8');
-    expect(argo).toContain('name: todo-app');
-    expect(argo).toContain('repoURL: git@github.com:acme/todo-app.git');
-    expect(argo).toContain('namespace: project-a1b2c3d4');
+    const namespaceManifest = await readFile(
+      join(directory, 'deploy/namespace.yaml'),
+      'utf8',
+    );
+    expect(namespaceManifest).toContain('name: project-a1b2c3d4');
+    expect(namespaceManifest).toContain('yaaabk.io/project-name: todo-app');
+    expect(namespaceManifest).toContain('pod-security.kubernetes.io/enforce: restricted');
 
     const deployment = await readFile(join(directory, 'deploy/deployment.yaml'), 'utf8');
     expect(deployment).toContain('containerPort: 3000');

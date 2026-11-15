@@ -44,6 +44,8 @@ Targets the `k3s-home` cluster (kubeconfig `~/.kube/configs/k3s.yaml`, context
 
 ```sh
 kubectl --context k3s-home apply -k deploy
+# The shared AppProject is cluster-scoped and applied separately:
+kubectl --context k3s-home apply -f deploy/appproject.yaml
 ```
 
 ## Verify
@@ -51,15 +53,29 @@ kubectl --context k3s-home apply -k deploy
 ```sh
 kubectl --context k3s-home -n yaaabk get pods,svc,httproute
 curl https://yaaabk.otohgunga.nl/health
+# The backend holds only its two namespaced Roles, nothing cluster-wide:
+kubectl --context k3s-home auth can-i --list \
+  --as=system:serviceaccount:yaaabk:yaaabk-backend
 ```
 
 ## Notes
 
-- The backend talks to the cluster in-cluster (ServiceAccount
-  `yaaabk-backend`, ClusterRole `yaaabk-backend`): it creates the per-Project
-  Namespaces, Secrets, ServiceAccounts and RoleBindings, spawns Agent Jobs,
-  and creates ArgoCD Applications.
+- The backend talks to the cluster in-cluster as ServiceAccount
+  `yaaabk-backend` with exactly two namespaced RoleBindings: agent Jobs, PVCs
+  and per-attempt Secrets in `yaaabk`, and ArgoCD Applications in
+  `yaaabk-apps`. It holds **no** cluster-wide rights: namespaces and
+  AppProjects are managed by ArgoCD from Git, and the `yaaabk-agent`
+  ServiceAccount (deploy-managed) needs no Kubernetes API access at all.
 - Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
   (cluster-internal); browsers use `https://yaaabk.otohgunga.nl`.
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).
   Single backend replica, `Recreate` strategy — a lost node means lost data.
+- **GitHub credentials**: prefer a GitHub App (Settings page: app id, private
+  key, installation id). The backend mints short-lived installation tokens for
+  repository management, scaffold pushes and agent runs — no long-lived PAT is
+  used or copied around. The PAT/env fallbacks exist only for local dev.
+- **ArgoCD**: the controller must be configured to reconcile Applications in
+  `yaaabk-apps` (`application.namespaces: yaaabk-apps` in
+  `argocd-cmd-params-cm`) and to read the project repositories — replace any
+  PAT-based repository credential with a GitHub App installation token secret
+  in the `argocd` namespace.

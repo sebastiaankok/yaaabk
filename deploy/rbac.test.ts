@@ -8,91 +8,82 @@ interface Rule {
   verbs: string[];
 }
 
-interface ClusterRoleDoc {
+interface Doc {
   kind: string;
-  metadata: { name: string };
+  name: string;
+  namespace?: string;
   rules: Rule[];
+  roleRef?: string;
+  subject?: string;
 }
 
 /** Parses the single-document-per-`---` YAML closely enough for assertions. */
-function clusterRoleRules(): Rule[] {
+function documents(): Doc[] {
   const text = readFileSync(fileURLToPath(new URL('../deploy/rbac.yaml', import.meta.url)), 'utf8');
-  const doc = text
+  return text
     .split(/^---$/m)
     .map((part) => part.trim())
-    .filter((part) => part.startsWith('apiVersion:'))
-    .map(
-      (part) =>
-        ({
-          kind: /^kind:\s*(\S+)/m.exec(part)?.[1] ?? '',
-          metadata: { name: /^metadata:\n\s+name:\s*(\S+)/m.exec(part)?.[1] ?? '' },
-          rules: [
-            ...part.matchAll(
-              /- apiGroups: \[(.*?)\][\s\S]*?resources: \[(.*?)\][\s\S]*?verbs: \[(.*?)\]/g,
-            ),
-          ].map((m) => ({
-            apiGroups: m[1].split(',').map((s) => s.trim().replaceAll("'", '')),
-            resources: m[2].split(',').map((s) => s.trim()),
-            verbs: m[3].split(',').map((s) => s.trim()),
-          })),
-        }) satisfies ClusterRoleDoc,
-    )
-    .find(
-      (doc): doc is ClusterRoleDoc =>
-        doc.kind === 'ClusterRole' && doc.metadata.name === 'yaaabk-backend',
-    );
-  expect(doc, 'yaaabk-backend ClusterRole not found in deploy/rbac.yaml').toBeDefined();
-  return doc!.rules;
+    .filter((part) => /^apiVersion:/m.test(part))
+    .map((part) => ({
+      kind: /^kind:\s*(\S+)/m.exec(part)?.[1] ?? '',
+      name: /^metadata:\n(?: {2}\S.*\n)*? {2}name:\s*(\S+)/m.exec(part)?.[1] ?? '',
+      namespace: / {2}namespace:\s*(\S+)/m.exec(part)?.[1],
+      roleRef: /kind: Role\n {2}name: (\S+)/m.exec(part)?.[1] ?? /name: (\S+)\n {2}subjects/m.exec(part)?.[1],
+      subject: /^ {2}- kind: ServiceAccount\n {4}name: (\S+)$/m.exec(part)?.[1],
+      rules: [
+        ...part.matchAll(
+          /- apiGroups: \[(.*?)\][\s\S]*?resources: \[(.*?)\][\s\S]*?verbs: \[(.*?)\]/g,
+        ),
+      ].map((m) => ({
+        apiGroups: m[1].split(',').map((s) => s.trim().replaceAll("'", '')),
+        resources: m[2].split(',').map((s) => s.trim()),
+        verbs: m[3].split(',').map((s) => s.trim()),
+      })),
+    }));
 }
 
 describe('deploy/rbac.yaml', () => {
-  it('grants rolebindings in the rbac.authorization.k8s.io group', () => {
-    const rule = clusterRoleRules().find((r) => r.resources.includes('rolebindings'));
-    expect(rule).toBeDefined();
-    expect(rule!.apiGroups).toContain('rbac.authorization.k8s.io');
-    // RoleBindings in the core group were silently ignored by the API server,
-    // so every Project failed at "Granting agent permissions" with a 403.
-    expect(rule!.apiGroups).not.toContain('');
+  it('binds no ClusterRole to the backend at all', () => {
+    const clusterBindings = documents().filter((doc) => doc.kind === 'ClusterRoleBinding');
+    expect(clusterBindings).toHaveLength(0);
   });
 
-  it('still covers the core-group resources the backend provisions', () => {
-    const core = clusterRoleRules().find((r) => r.apiGroups.includes(''));
-    expect(core?.resources).toEqual(
-      expect.arrayContaining(['namespaces', 'secrets', 'serviceaccounts']),
+  it('limits agent Jobs, PVCs and Secrets to the yaaabk namespace', () => {
+    const role = documents().find(
+      (doc) =>
+        doc.kind === 'Role' &&
+        doc.name === 'yaaabk-backend-agent' &&
+        doc.namespace === 'yaaabk',
     );
+    expect(role, 'yaaabk-backend-agent Role in yaaabk not found').toBeDefined();
+
+    const rules = role!.rules;
+    expect(rules.find((r) => r.resources.includes('jobs'))?.apiGroups).toEqual(['batch']);
+    expect(rules.find((r) => r.resources.includes('persistentvolumeclaims'))?.apiGroups).toEqual([
+      '',
+    ]);
+    expect(rules.find((r) => r.resources.includes('secrets'))?.apiGroups).toEqual(['']);
+    // Nothing else: the backend must hold no other namespaced rights.
+    const resources = [...new Set(rules.flatMap((r) => r.resources))].sort();
+    expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
   });
 
-  it('covers the ArgoCD and batch resources', () => {
-    const rules = clusterRoleRules();
-    const argo = rules.find((r) => r.apiGroups.includes('argoproj.io'));
-    expect(argo?.resources).toContain('applications');
-    // AppProjects are cluster-scoped and the per-Project ArgoCD step creates
-    // one; without this the creation fails at "Configuring ArgoCD" with 403.
-    expect(argo?.resources).toContain('appprojects');
-    expect(rules.find((r) => r.apiGroups.includes('batch'))?.resources).toContain('jobs');
-  });
-
-  it('grants the backend the edit ClusterRole it delegates to agents', () => {
-    const text = readFileSync(
-      fileURLToPath(new URL('../deploy/rbac.yaml', import.meta.url)),
-      'utf8',
+  it('limits ArgoCD Applications to the yaaabk-apps namespace', () => {
+    const role = documents().find(
+      (doc) => doc.kind === 'Role' && doc.name === 'yaaabk-backend-argocd' && doc.namespace === 'yaaabk-apps',
     );
-    const binding = text
-      .split(/^---$/m)
-      .map((part) => part.trim())
-      .filter((part) => /^apiVersion:/m.test(part))
-      .map((part) => ({
-        kind: /^kind:\s*(\S+)/m.exec(part)?.[1] ?? '',
-        name: /^metadata:\n\s+name:\s*(\S+)/m.exec(part)?.[1] ?? '',
-        role: /kind: ClusterRole\n {2}name: (\S+)/.exec(part)?.[1] ?? '',
-        subject: /^ {2}- kind: ServiceAccount\n {4}name: (\S+)$/m.exec(part)?.[1] ?? '',
-      }))
-      .find(
-        (doc) =>
-          doc.kind === 'ClusterRoleBinding' &&
-          doc.role === 'edit' &&
-          doc.subject === 'yaaabk-backend',
-      );
-    expect(binding, 'edit binding for yaaabk-backend not found').toBeDefined();
+    expect(role, 'yaaabk-backend-argocd Role in yaaabk-apps not found').toBeDefined();
+    const argo = role!.rules.find((r) => r.apiGroups.includes('argoproj.io'));
+    expect(argo?.resources).toEqual(['applications']);
+    // AppProjects are cluster-scoped and GitOps-managed; the backend never
+    // touches them.
+    expect(argo?.resources).not.toContain('appprojects');
+  });
+
+  it('binds each Role only in its own namespace', () => {
+    const bindings = documents().filter((doc) => doc.kind === 'RoleBinding');
+    const subjects = bindings.map((doc) => `${doc.name}@${doc.namespace}->${doc.subject}`);
+    expect(subjects).toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');
+    expect(subjects).toContain('yaaabk-backend-argocd@yaaabk-apps->yaaabk-backend');
   });
 });

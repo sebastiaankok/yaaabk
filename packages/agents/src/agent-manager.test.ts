@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
-import { createInMemoryProjectStore, type Project } from '@yaaabk/projects';
+import {
+  AGENT_NAMESPACE,
+  createInMemoryProjectStore,
+  type Project,
+} from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import { DEFAULT_ACTIVE_DEADLINE_SECONDS } from './config';
 import { silentLogger } from './errors';
@@ -9,7 +13,8 @@ import { createInMemoryAgentStore } from './in-memory-agent-store';
 import type { AgentManager } from './types';
 
 const NOW = new Date('2026-01-01T12:00:00.000Z');
-const NS = 'project-a1b2c3d4';
+/** The namespace agent infrastructure lives in; no longer the Project's. */
+const NS = AGENT_NAMESPACE;
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -34,7 +39,12 @@ interface Harness {
 }
 
 async function harness(
-  options: { maxPerProject?: number; maxCluster?: number; projects?: Project[] } = {},
+  options: {
+    maxPerProject?: number;
+    maxCluster?: number;
+    projects?: Project[];
+    githubToken?: string;
+  } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
   for (const entry of options.projects ?? [project()]) {
@@ -62,6 +72,7 @@ async function harness(
     logger: silentLogger,
     ...(options.maxPerProject === undefined ? {} : { maxPerProject: options.maxPerProject }),
     ...(options.maxCluster === undefined ? {} : { maxCluster: options.maxCluster }),
+    ...(options.githubToken === undefined ? {} : { githubToken: options.githubToken }),
   };
   const k8s = managerOptions.k8s as MockK8sClient;
   const manager = createAgentManager(managerOptions);
@@ -167,7 +178,7 @@ describe('spawn', () => {
       name: 'REPO_URL',
       value: 'https://github.com/acme/todo-app',
     });
-    expect(container.envFrom).toEqual([{ secretRef: { name: 'yaaabk-github' } }]);
+    expect(container.envFrom).toEqual([]);
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
     expect(container.volumeMounts).toEqual([{ name: 'work', mountPath: '/work' }]);
     expect(spec.template.spec.volumes).toEqual([
@@ -189,10 +200,23 @@ describe('spawn', () => {
     const secret = await k8s.secrets.get(NS, 'agent-openrouter-issue-1-1');
     expect(secret.ok && secret.value.keys).toEqual(['OPENROUTER_API_KEY']);
     const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
-    expect(container.envFrom).toEqual([
-      { secretRef: { name: 'yaaabk-github' } },
-      { secretRef: { name: 'agent-openrouter-issue-1-1' } },
-    ]);
+    expect(container.envFrom).toEqual([{ secretRef: { name: 'agent-openrouter-issue-1-1' } }]);
+  });
+
+  it('provisions a per-attempt GitHub token Secret in the agent namespace', async () => {
+    const { manager, issues, k8s } = await harness({ githubToken: 'ghs_fresh_installation_token' });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The run's short-lived GitHub token rides in its own Secret, minted per
+    // dispatch, rather than a long-lived credential copied into every Project.
+    const secret = await k8s.secrets.get(NS, 'agent-github-issue-1-1');
+    expect(secret.ok && secret.value.keys).toEqual(['GITHUB_TOKEN']);
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.envFrom).toEqual([{ secretRef: { name: 'agent-github-issue-1-1' } }]);
   });
 
   it("passes a fix attempt's branch to the Job", async () => {

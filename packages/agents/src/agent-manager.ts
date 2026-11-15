@@ -1,11 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { K8sClient, JobSpec } from '@yaaabk/k8s';
-import {
-  PROJECT_AGENT_SERVICE_ACCOUNT,
-  PROJECT_GITHUB_SECRET,
-  type ProjectStore,
-} from '@yaaabk/projects';
+import { AGENT_NAMESPACE, PROJECT_AGENT_SERVICE_ACCOUNT, type ProjectStore } from '@yaaabk/projects';
 import {
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
@@ -15,6 +11,7 @@ import {
   OPENROUTER_SECRET_KEY,
   WORKSPACE_MOUNT_PATH,
   WORKSPACE_VOLUME_NAME,
+  githubTokenSecretName,
   jobName,
   openrouterSecretName,
   pvcName,
@@ -52,6 +49,12 @@ export interface AgentManagerOptions {
   activeDeadlineSeconds?: number;
   /** Base URL the Job reports back to, exposed to it as `YAAABK_API_URL`. */
   apiUrl?: string;
+  /**
+   * GitHub token each attempt clones and pushes with, written to a per-attempt
+   * Secret in the agent namespace. Prefer a short-lived App installation
+   * token; when omitted the Job simply gets no `GITHUB_TOKEN`.
+   */
+  githubToken?: string;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
@@ -171,7 +174,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         throw agentsError('not-found', `No project with id "${run.projectId}"`);
       }
       const issue = await requireIssue(run.projectId, run.issueId);
-      const namespace = project.namespace;
+      // All agent infrastructure lives in the shared agent namespace; the
+      // Project namespace is untouched.
+      const namespace = AGENT_NAMESPACE;
       const labels = runLabels(run);
       const pvc = pvcName(run.issueId, run.attemptNumber);
       const job = jobName(run.issueId, run.attemptNumber);
@@ -198,7 +203,19 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       if (run.branch !== null) {
         env.BRANCH = run.branch;
       }
-      const envFrom: JobSpec['envFrom'] = [{ secretRef: { name: PROJECT_GITHUB_SECRET } }];
+      const envFrom: JobSpec['envFrom'] = [];
+      if (options.githubToken !== undefined && options.githubToken !== '') {
+        // A fresh token per attempt, in its own short-lived Secret: nothing
+        // long-lived with repository access is ever copied around.
+        const githubSecret = githubTokenSecretName(run.issueId, run.attemptNumber);
+        const githubResult = await k8s.secrets.create(namespace, githubSecret, {
+          GITHUB_TOKEN: options.githubToken,
+        });
+        if (!githubResult.ok) {
+          throw agentsError('kubernetes', `secrets.create failed: ${githubResult.error.message}`);
+        }
+        envFrom.push({ secretRef: { name: githubSecret } });
+      }
       if (run.openrouterSecretName !== null) {
         envFrom.push({ secretRef: { name: run.openrouterSecretName } });
       }
@@ -284,7 +301,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     let secret: string | null = null;
     if (spawnOptions.openrouterApiKey !== undefined) {
       secret = openrouterSecretName(issueId, attemptNumber);
-      const secretResult = await k8s.secrets.create(project.namespace, secret, {
+      const secretResult = await k8s.secrets.create(AGENT_NAMESPACE, secret, {
         [OPENROUTER_SECRET_KEY]: spawnOptions.openrouterApiKey,
       });
       if (!secretResult.ok) {
@@ -352,7 +369,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           if (run.status !== 'running' || run.jobName === null) continue;
           const project = projects.get(run.projectId);
           if (project === undefined) continue;
-          const job = await k8s.jobs.get(project.namespace, run.jobName);
+          const job = await k8s.jobs.get(AGENT_NAMESPACE, run.jobName);
           if (!job.ok) {
             if (job.error.kind === 'not-found') {
               await failRun(run, summary);

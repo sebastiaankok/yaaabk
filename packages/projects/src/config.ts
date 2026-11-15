@@ -1,20 +1,14 @@
-import type { RoleRef } from '@yaaabk/k8s';
+/** Namespace agent Jobs, PVCs and agent Secrets are provisioned in. */
+export const AGENT_NAMESPACE = 'yaaabk';
 
-/** ServiceAccount the Project's agent Jobs run as. */
+/** Namespace every Project's ArgoCD Application is created in. */
+export const ARGOCD_APPS_NAMESPACE = 'yaaabk-apps';
+
+/** Shared AppProject every Project Application defers to, managed via GitOps. */
+export const ARGOCD_APP_PROJECT_NAME = 'yaaabk';
+
+/** ServiceAccount the Project's agent Jobs run as, created by deploy manifests. */
 export const PROJECT_AGENT_SERVICE_ACCOUNT = 'yaaabk-agent';
-
-/** RoleBinding granting that ServiceAccount its namespace-scoped access. */
-export const PROJECT_AGENT_ROLE_BINDING = 'yaaabk-agent';
-
-/** ClusterRole bound into each Project namespace, limiting the agent to it. */
-export const PROJECT_AGENT_ROLE_REF: RoleRef = {
-  apiGroup: 'rbac.authorization.k8s.io',
-  kind: 'ClusterRole',
-  name: 'edit',
-};
-
-/** Secret holding the GitHub token copied into each Project namespace. */
-export const PROJECT_GITHUB_SECRET = 'yaaabk-github';
 
 /**
  * Key the GitHub token is stored under in that Secret.

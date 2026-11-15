@@ -5,17 +5,12 @@ import { isSkillLevel, projectNamespace } from '@yaaabk/shared';
 import { isValidProjectName, type TemplateModule } from '@yaaabk/template';
 import {
   ARGO_DESTINATION_SERVER,
-  ARGO_NAMESPACE_RESOURCES,
   ARGO_SOURCE_PATH,
+  ARGOCD_APP_PROJECT_NAME,
+  ARGOCD_APPS_NAMESPACE,
   DEFAULT_BRANCH,
-  GITHUB_TOKEN_KEY,
   MAX_DESCRIPTION_LENGTH,
-  PROJECT_AGENT_ROLE_BINDING,
-  PROJECT_AGENT_ROLE_REF,
-  PROJECT_AGENT_SERVICE_ACCOUNT,
-  PROJECT_GITHUB_SECRET,
   PROJECT_NAME_LABEL,
-  PROJECT_PSA_LABELS,
 } from './config';
 import { consoleLogger, projectError, toProjectError, type ProjectsLogger } from './errors';
 import { DuplicateProjectNameError } from './in-memory-project-store';
@@ -200,69 +195,13 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           workingDirectory = result.value.directory;
         });
 
-        await step('namespace', async () => {
-          const result = await k8s.namespaces.create(namespace, {
-            labels: { [PROJECT_NAME_LABEL]: name, ...PROJECT_PSA_LABELS },
-          });
-          if (!result.ok) {
-            throw projectError('kubernetes', result.error.message);
-          }
-          // Deleting the namespace cascades to its ServiceAccount, RoleBinding,
-          // Secret and Application, so it is the single undo for cluster state.
-          undo.push(() =>
-            requireOk('kubernetes', 'namespaces.delete', () => k8s.namespaces.delete(namespace)),
-          );
-        });
-
-        await step('service-account', async () => {
-          const result = await k8s.serviceAccounts.create(namespace, PROJECT_AGENT_SERVICE_ACCOUNT);
-          if (!result.ok) {
-            throw projectError('kubernetes', result.error.message);
-          }
-        });
-
-        await step('role-binding', async () => {
-          const result = await k8s.roleBindings.create(namespace, PROJECT_AGENT_ROLE_BINDING, {
-            roleRef: PROJECT_AGENT_ROLE_REF,
-            subjects: [{ kind: 'ServiceAccount', name: PROJECT_AGENT_SERVICE_ACCOUNT, namespace }],
-          });
-          if (!result.ok) {
-            throw projectError('kubernetes', result.error.message);
-          }
-        });
-
-        if (options.githubToken !== undefined) {
-          const token = options.githubToken;
-          await step('secret', async () => {
-            const result = await k8s.secrets.create(namespace, PROJECT_GITHUB_SECRET, {
-              [GITHUB_TOKEN_KEY]: token,
-            });
-            if (!result.ok) {
-              throw projectError('kubernetes', result.error.message);
-            }
-          });
-        }
-
         await step('argocd', async () => {
-          // An AppProject per Project pins its Applications to this repo,
-          // cluster and namespace, and whitelists the resource kinds the
-          // template deploys. Cluster-scoped, so it is its own undo step.
-          const project = await k8s.argoProjects.create(name, {
-            sourceRepos: [repository.url],
-            destinations: [{ server: argoServer, namespace }],
-            namespaceResources: ARGO_NAMESPACE_RESOURCES,
-            syncPolicy: { automated: { prune: true, selfHeal: true } },
-            labels: { [PROJECT_NAME_LABEL]: name },
-          });
-          if (!project.ok) {
-            throw projectError('kubernetes', project.error.message);
-          }
-          undo.push(() =>
-            requireOk('kubernetes', 'argoProjects.delete', () => k8s.argoProjects.delete(name)),
-          );
-
-          const result = await k8s.applications.create(namespace, name, {
-            project: name,
+          // The Application lands in the dedicated apps namespace and defers
+          // to the shared, GitOps-managed AppProject; the destination is the
+          // Project namespace, which ArgoCD creates from the scaffold's
+          // Namespace manifest.
+          const result = await k8s.applications.create(ARGOCD_APPS_NAMESPACE, name, {
+            project: ARGOCD_APP_PROJECT_NAME,
             source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
             destination: { server: argoServer, namespace },
             syncPolicy: { automated: { prune: true, selfHeal: true } },
@@ -271,6 +210,14 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           if (!result.ok) {
             throw projectError('kubernetes', result.error.message);
           }
+          // Deleting the Application lets ArgoCD prune the scaffold — including
+          // its Namespace manifest — so it is the single undo for cluster
+          // state.
+          undo.push(() =>
+            requireOk('kubernetes', 'applications.delete', () =>
+              k8s.applications.delete(ARGOCD_APPS_NAMESPACE, name),
+            ),
+          );
         });
 
         const timestamp = now().toISOString();
@@ -399,19 +346,8 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         const repository = transferred.value;
 
         const syncPolicy = { automated: { prune: true, selfHeal: true } } as const;
-        const appProject = await k8s.argoProjects.update(project.name, {
-          sourceRepos: [repository.url],
-          destinations: [{ server: argoServer, namespace: project.namespace }],
-          namespaceResources: ARGO_NAMESPACE_RESOURCES,
-          syncPolicy,
-          labels: { [PROJECT_NAME_LABEL]: project.name },
-        });
-        if (!appProject.ok) {
-          throw projectError('kubernetes', appProject.error.message);
-        }
-
-        const application = await k8s.applications.update(project.namespace, project.argoAppName, {
-          project: project.name,
+        const application = await k8s.applications.update(ARGOCD_APPS_NAMESPACE, project.argoAppName, {
+          project: ARGOCD_APP_PROJECT_NAME,
           source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
           destination: { server: argoServer, namespace: project.namespace },
           syncPolicy,
@@ -439,14 +375,11 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           throw projectError('not-found', `No project with id "${id}"`);
         }
 
+        // Deleting the Application lets ArgoCD prune the scaffold, which
+        // includes the Project namespace manifest, so the namespace and its
+        // contents cascade away. YAAABK deletes nothing else cluster-side.
         await requireOk('kubernetes', 'applications.delete', () =>
-          k8s.applications.delete(project.namespace, project.argoAppName),
-        );
-        await requireOk('kubernetes', 'namespaces.delete', () =>
-          k8s.namespaces.delete(project.namespace),
-        );
-        await requireOk('kubernetes', 'argoProjects.delete', () =>
-          k8s.argoProjects.delete(project.name),
+          k8s.applications.delete(ARGOCD_APPS_NAMESPACE, project.argoAppName),
         );
         await requireOk('repository', 'repository.delete', () =>
           repositories.delete(project.repoFullName),

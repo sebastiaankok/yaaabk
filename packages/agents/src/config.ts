@@ -22,6 +22,9 @@ export const WORKSPACE_VOLUME_NAME = 'work';
 /** Key the OpenRouter key is stored under in a per-attempt Secret. */
 export const OPENROUTER_SECRET_KEY = 'OPENROUTER_API_KEY';
 
+/** Key a run's GitHub token is stored under in its per-attempt Secret. */
+export const GITHUB_TOKEN_SECRET_KEY = 'GITHUB_TOKEN';
+
 /** The Job name for an Issue's attempt. */
 export function jobName(issueId: string, attempt: number): string {
   return `agent-${issueId}-attempt-${attempt}`;
@@ -35,4 +38,9 @@ export function pvcName(issueId: string, attempt: number): string {
 /** The per-attempt Secret name holding the OpenRouter key, when one is used. */
 export function openrouterSecretName(issueId: string, attempt: number): string {
   return `agent-openrouter-${issueId}-${attempt}`;
+}
+
+/** The per-attempt Secret name holding the run's GitHub token. */
+export function githubTokenSecretName(issueId: string, attempt: number): string {
+  return `agent-github-${issueId}-${attempt}`;
 }

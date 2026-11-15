@@ -8,3 +8,4 @@ export * from './pulls';
 export * from './github-pulls-client';
 export * from './fake-github-pulls';
 export * from './credential-verifier';
+export * from './installation-token';
