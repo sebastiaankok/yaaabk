@@ -1,4 +1,5 @@
 import type {
+  CredentialField,
   SettingsError,
   SettingsErrorKind,
   SettingsModule,
@@ -30,22 +31,37 @@ async function body(c: Context): Promise<Record<string, unknown>> {
   }
 }
 
-/** Credential fields accepted on the wire, in wire (snake_case) and TS form. */
+/**
+ * Credential fields accepted on the wire, in wire (snake_case) and TS
+ * (camelCase) form. The browser sends the camelCase `SettingsUpdate` shape
+ * directly, so both spellings must resolve to the same field.
+ */
 const CREDENTIAL_KEYS: ReadonlyArray<readonly [string, keyof SettingsUpdate]> = [
   ['github_app_id', 'githubAppId'],
+  ['githubAppId', 'githubAppId'],
   ['github_private_key', 'githubPrivateKey'],
+  ['githubPrivateKey', 'githubPrivateKey'],
   ['github_installation_id', 'githubInstallationId'],
+  ['githubInstallationId', 'githubInstallationId'],
   ['github_pat', 'githubPat'],
+  ['githubPat', 'githubPat'],
   ['openrouter_management_key', 'openrouterManagementKey'],
+  ['openrouterManagementKey', 'openrouterManagementKey'],
 ];
 
-const CLEAR_FIELDS: ReadonlySet<string> = new Set([
-  'github_app_id',
-  'github_private_key',
-  'github_installation_id',
-  'github_pat',
-  'openrouter_management_key',
-]);
+/** Maps either wire spelling of a clearable field to its canonical TS name. */
+const CLEAR_FIELD_ALIASES: Readonly<Record<string, CredentialField>> = {
+  github_app_id: 'githubAppId',
+  githubAppId: 'githubAppId',
+  github_private_key: 'githubPrivateKey',
+  githubPrivateKey: 'githubPrivateKey',
+  github_installation_id: 'githubInstallationId',
+  githubInstallationId: 'githubInstallationId',
+  github_pat: 'githubPat',
+  githubPat: 'githubPat',
+  openrouter_management_key: 'openrouterManagementKey',
+  openrouterManagementKey: 'openrouterManagementKey',
+};
 
 /** Builds the `/api/settings*` routes. */
 export function settingsRoutes(settings: SettingsModule): Hono {
@@ -65,14 +81,18 @@ export function settingsRoutes(settings: SettingsModule): Hono {
         (update[field] as unknown) = value;
       }
     }
-    const budget = input.default_issue_budget_cents;
+    const budget = input.default_issue_budget_cents ?? input.defaultIssueBudgetCents;
     if (budget !== undefined) {
       update.defaultIssueBudgetCents = typeof budget === 'number' ? budget : Number.NaN;
     }
     if (Array.isArray(input.clear)) {
-      update.clear = input.clear.filter(
-        (field): field is string => typeof field === 'string' && CLEAR_FIELDS.has(field),
-      ) as SettingsUpdate['clear'];
+      const clear = input.clear
+        .filter((field): field is string => typeof field === 'string')
+        .map((field) => CLEAR_FIELD_ALIASES[field])
+        .filter((field): field is CredentialField => field !== undefined);
+      if (clear.length > 0) {
+        update.clear = clear;
+      }
     }
     const result = await settings.update(update);
     return result.ok ? c.json(result.value) : fail(c, result.error);

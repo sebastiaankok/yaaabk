@@ -65,7 +65,7 @@ export function createApp(options: AppOptions): Hono {
     cors({
       origin: options.webOrigin ?? DEFAULT_WEB_ORIGIN,
       credentials: true,
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type'],
     }),
   );
