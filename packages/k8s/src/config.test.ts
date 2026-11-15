@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  detectK8sConnection,
-  ensureInClusterCaTrusted,
-  IN_CLUSTER_CA_PATH,
-} from './config';
+import { detectK8sConnection, ensureInClusterCaTrusted, IN_CLUSTER_CA_PATH } from './config';
 
 describe('detectK8sConnection', () => {
   it('detects in-cluster config from the injected service host', () => {
