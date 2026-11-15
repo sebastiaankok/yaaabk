@@ -4,6 +4,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: yaaabk-data
+  namespace: yaaabk
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: local-path

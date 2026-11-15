@@ -9,6 +9,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: yaaabk-backend
+  namespace: yaaabk
 ---
 # Agent execution: Jobs, their working PVCs and the per-attempt GitHub /
 # OpenRouter token Secrets. `secrets` appears twice (create/delete and the

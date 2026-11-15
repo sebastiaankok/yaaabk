@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: yaaabk-backend
+  namespace: yaaabk
 spec:
   replicas: 1
   strategy:
@@ -15,10 +16,21 @@ spec:
       labels:
         app.kubernetes.io/name: yaaabk-backend
     spec:
+      # The yaaabk namespace enforces Pod Security "restricted".
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: yaaabk-backend
       containers:
         - name: backend
           image: ghcr.io/sebastiaankok/yaaabk-backend:0.1.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
           # Tag is mutable (retagged on rebuild); always re-check the registry.
           imagePullPolicy: Always
           envFrom:
@@ -86,6 +98,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: yaaabk-backend
+  namespace: yaaabk
 spec:
   selector:
     app.kubernetes.io/name: yaaabk-backend

@@ -76,5 +76,5 @@ echo "▶ waiting for rollout"
 kubectl --context "$CONTEXT" rollout status deployment/yaaabk-backend --timeout=5m
 kubectl --context "$CONTEXT" rollout status deployment/yaaabk-frontend --timeout=5m
 
-kubectl --context "$CONTEXT" -n yaaabk get pods -l app.kubernetes.io/part-of=yaaabk
+kubectl --context "$CONTEXT" -n yaaabk get pods
 echo "✓ deployed $TAG"
