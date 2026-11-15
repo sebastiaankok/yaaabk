@@ -1,7 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { K8sClient, JobSpec } from '@yaaabk/k8s';
-import { AGENT_NAMESPACE, PROJECT_AGENT_SERVICE_ACCOUNT, type ProjectStore } from '@yaaabk/projects';
+import {
+  AGENT_NAMESPACE,
+  PROJECT_AGENT_SERVICE_ACCOUNT,
+  type ProjectStore,
+} from '@yaaabk/projects';
 import {
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,

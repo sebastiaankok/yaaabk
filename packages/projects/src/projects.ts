@@ -346,13 +346,17 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         const repository = transferred.value;
 
         const syncPolicy = { automated: { prune: true, selfHeal: true } } as const;
-        const application = await k8s.applications.update(ARGOCD_APPS_NAMESPACE, project.argoAppName, {
-          project: ARGOCD_APP_PROJECT_NAME,
-          source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
-          destination: { server: argoServer, namespace: project.namespace },
-          syncPolicy,
-          labels: { [PROJECT_NAME_LABEL]: project.name },
-        });
+        const application = await k8s.applications.update(
+          ARGOCD_APPS_NAMESPACE,
+          project.argoAppName,
+          {
+            project: ARGOCD_APP_PROJECT_NAME,
+            source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
+            destination: { server: argoServer, namespace: project.namespace },
+            syncPolicy,
+            labels: { [PROJECT_NAME_LABEL]: project.name },
+          },
+        );
         if (!application.ok) {
           throw projectError('kubernetes', application.error.message);
         }

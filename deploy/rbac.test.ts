@@ -28,7 +28,9 @@ function documents(): Doc[] {
       kind: /^kind:\s*(\S+)/m.exec(part)?.[1] ?? '',
       name: /^metadata:\n(?: {2}\S.*\n)*? {2}name:\s*(\S+)/m.exec(part)?.[1] ?? '',
       namespace: / {2}namespace:\s*(\S+)/m.exec(part)?.[1],
-      roleRef: /kind: Role\n {2}name: (\S+)/m.exec(part)?.[1] ?? /name: (\S+)\n {2}subjects/m.exec(part)?.[1],
+      roleRef:
+        /kind: Role\n {2}name: (\S+)/m.exec(part)?.[1] ??
+        /name: (\S+)\n {2}subjects/m.exec(part)?.[1],
       subject: /^ {2}- kind: ServiceAccount\n {4}name: (\S+)$/m.exec(part)?.[1],
       rules: [
         ...part.matchAll(
@@ -51,9 +53,7 @@ describe('deploy/rbac.yaml', () => {
   it('limits agent Jobs, PVCs and Secrets to the yaaabk namespace', () => {
     const role = documents().find(
       (doc) =>
-        doc.kind === 'Role' &&
-        doc.name === 'yaaabk-backend-agent' &&
-        doc.namespace === 'yaaabk',
+        doc.kind === 'Role' && doc.name === 'yaaabk-backend-agent' && doc.namespace === 'yaaabk',
     );
     expect(role, 'yaaabk-backend-agent Role in yaaabk not found').toBeDefined();
 
@@ -70,7 +70,10 @@ describe('deploy/rbac.yaml', () => {
 
   it('limits ArgoCD Applications to the yaaabk-apps namespace', () => {
     const role = documents().find(
-      (doc) => doc.kind === 'Role' && doc.name === 'yaaabk-backend-argocd' && doc.namespace === 'yaaabk-apps',
+      (doc) =>
+        doc.kind === 'Role' &&
+        doc.name === 'yaaabk-backend-argocd' &&
+        doc.namespace === 'yaaabk-apps',
     );
     expect(role, 'yaaabk-backend-argocd Role in yaaabk-apps not found').toBeDefined();
     const argo = role!.rules.find((r) => r.apiGroups.includes('argoproj.io'));

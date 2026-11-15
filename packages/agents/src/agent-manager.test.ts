@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
-import {
-  AGENT_NAMESPACE,
-  createInMemoryProjectStore,
-  type Project,
-} from '@yaaabk/projects';
+import { AGENT_NAMESPACE, createInMemoryProjectStore, type Project } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import { DEFAULT_ACTIVE_DEADLINE_SECONDS } from './config';
 import { silentLogger } from './errors';
