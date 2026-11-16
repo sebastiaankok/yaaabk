@@ -6,7 +6,15 @@ const baseEnv = {
   REPO_URL: 'https://github.com/acme/demo',
   GITHUB_TOKEN: 'ghs_token',
   OPENROUTER_API_KEY: 'sk-or-key',
+  AGENT_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
 };
+
+/** A copy of the base environment with one variable removed. */
+function without(env: typeof baseEnv, name: keyof typeof baseEnv): Record<string, string> {
+  const copy: Record<string, string> = { ...env };
+  delete copy[name];
+  return copy;
+}
 
 describe('loadAgentConfig', () => {
   it('reads the issue the agent is scoped to', () => {
@@ -16,8 +24,26 @@ describe('loadAgentConfig', () => {
       repoUrl: 'https://github.com/acme/demo',
       githubToken: 'ghs_token',
       openrouterApiKey: 'sk-or-key',
+      model: 'openrouter/anthropic/claude-sonnet-4.5',
       maxAttempts: 3,
     });
+  });
+
+  it('requires the model the Agent invokes OpenCode with', () => {
+    expect(() => loadAgentConfig(without(baseEnv, 'AGENT_MODEL'))).toThrow(/AGENT_MODEL/);
+    expect(() => loadAgentConfig({ ...baseEnv, AGENT_MODEL: '' })).toThrow(/AGENT_MODEL/);
+  });
+
+  it('does not require a model for a deploy run that never invokes OpenCode', () => {
+    expect(
+      loadAgentConfig({
+        ...without(baseEnv, 'AGENT_MODEL'),
+        AGENT_RUN_KIND: 'deploy',
+        COMMIT_SHA: 'abc123',
+        DEPLOY_NAMESPACE: 'yaaabk-a1b2c3d4',
+        DEPLOYMENT_NAME: 'todo-app',
+      }).model,
+    ).toBeUndefined();
   });
 
   it('reads the review mode and the pull request it judges', () => {
@@ -98,6 +124,12 @@ describe('loadAgentConfig', () => {
         BRANCH: 'agent/issue-42',
       }),
     ).toThrow(/PULL_NUMBER/);
+  });
+
+  it('names the provider credential to configure when OpenRouter is missing', () => {
+    expect(() => loadAgentConfig(without(baseEnv, 'OPENROUTER_API_KEY'))).toThrow(
+      /OPENROUTER_API_KEY.*OpenRouter provider credential/,
+    );
   });
 
   it('rejects a review run without a branch to check out', () => {

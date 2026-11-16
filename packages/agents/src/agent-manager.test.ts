@@ -4,7 +4,7 @@ import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from 
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
-import { DEFAULT_ACTIVE_DEADLINE_SECONDS, REVIEW_SKILL_PATH } from './config';
+import { DEFAULT_ACTIVE_DEADLINE_SECONDS, DEFAULT_AGENT_MODEL, REVIEW_SKILL_PATH } from './config';
 import { silentLogger } from './errors';
 import { createInMemoryAgentStore } from './in-memory-agent-store';
 import type { AgentGithubTokenResolver, AgentManager } from './types';
@@ -48,6 +48,7 @@ async function harness(
     maxCluster?: number;
     projects?: Project[];
     githubToken?: string | AgentGithubTokenResolver;
+    model?: string;
   } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
@@ -88,6 +89,7 @@ async function harness(
     logger: silentLogger,
     ...(options.maxPerProject === undefined ? {} : { maxPerProject: options.maxPerProject }),
     ...(options.maxCluster === undefined ? {} : { maxCluster: options.maxCluster }),
+    ...(options.model === undefined ? {} : { model: options.model }),
     ...(githubToken === undefined ? {} : { githubToken }),
   };
   const k8s = managerOptions.k8s as MockK8sClient;
@@ -207,6 +209,42 @@ describe('spawn', () => {
     // Nothing is provisioned in the shared `yaaabk` namespace.
     const sharedPvc = await k8s.pvcs.get('yaaabk', 'agent-work-issue-1-1');
     expect(sharedPvc.ok).toBe(false);
+  });
+
+  it('gives implement and review Jobs the configured OpenCode model', async () => {
+    const { manager, issues, k8s } = await harness({ model: 'openrouter/agent-model' });
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id);
+    await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+
+    const implement = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(implement.container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/agent-model',
+    });
+    const review = await readJobContainer(k8s, NS, 'agent-review-issue-1-1');
+    expect(review.container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/agent-model',
+    });
+  });
+
+  it('falls back to the shared OpenCode model when none is configured', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id);
+
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: DEFAULT_AGENT_MODEL,
+    });
   });
 
   it('provisions a per-attempt OpenRouter Secret the Job reads from', async () => {

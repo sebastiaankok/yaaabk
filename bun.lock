@@ -35,6 +35,7 @@
         "@yaaabk/issues": "workspace:*",
         "@yaaabk/k8s": "workspace:*",
         "@yaaabk/projects": "workspace:*",
+        "@yaaabk/shared": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.3.13",

@@ -12,6 +12,7 @@ import {
 import {
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
+  DEFAULT_AGENT_MODEL,
   DEFAULT_MAX_CONCURRENT_CLUSTER,
   DEFAULT_MAX_CONCURRENT_PER_PROJECT,
   DEFAULT_PVC_STORAGE,
@@ -57,6 +58,12 @@ export interface AgentManagerOptions {
   githubIssues?: GitHubIssues;
   /** Agent container image. Defaults to {@link DEFAULT_AGENT_IMAGE}. */
   image?: string;
+  /**
+   * OpenCode model Agent Jobs invoke, in `provider/model` form. Defaults to
+   * {@link DEFAULT_AGENT_MODEL}; the backend passes the same model Grill-Me
+   * Sessions use so both share one configuration.
+   */
+  model?: string;
   /** Cap on Agents running for one Project. Defaults to 2. */
   maxPerProject?: number;
   /** Cap on Agents running cluster-wide. Defaults to 10. */
@@ -123,6 +130,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   const newId = options.ids ?? randomUUID;
   const newToken = options.newToken ?? (() => randomBytes(32).toString('hex'));
   const image = options.image ?? DEFAULT_AGENT_IMAGE;
+  const model = options.model?.trim() || DEFAULT_AGENT_MODEL;
   const maxPerProject = options.maxPerProject ?? DEFAULT_MAX_CONCURRENT_PER_PROJECT;
   const maxCluster = options.maxCluster ?? DEFAULT_MAX_CONCURRENT_CLUSTER;
   const pvcStorage = options.pvcStorage ?? DEFAULT_PVC_STORAGE;
@@ -291,6 +299,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         ...(isDeploy
           ? {}
           : {
+              AGENT_MODEL: model,
               YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
             }),
       };

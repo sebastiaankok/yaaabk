@@ -28,10 +28,11 @@ CMD ["bun", "dist/index.js"]
 # runtime instead and keeps them out of the backend image.
 FROM runtime AS dev
 ARG TARGETARCH
-ARG OPENCODE_VERSION=2.2.5
-ARG TTYD_VERSION=1.7.7
+# Read the same pinned OpenCode and ttyd versions the agent image uses.
+COPY --from=build /app/packages/agent/runtime-versions.env /tmp/runtime-versions.env
 USER root
-RUN apk add --no-cache ca-certificates && \
+RUN . /tmp/runtime-versions.env && \
+    apk add --no-cache ca-certificates && \
     case "${TARGETARCH}" in \
       amd64) TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
       arm64) TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \
@@ -42,7 +43,7 @@ RUN apk add --no-cache ca-certificates && \
     wget -qO /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OPENCODE_ARCH}-musl.tar.gz" && \
     tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode && \
     chmod +x /usr/local/bin/opencode && \
-    rm -f /tmp/opencode.tar.gz && \
+    rm -f /tmp/opencode.tar.gz /tmp/runtime-versions.env && \
     opencode --version
 # Image-baked grill skills, matching the agent runtime.
 COPY --from=build /app/packages/grill-me/skills/grill-me ./grill-skills/grill-me

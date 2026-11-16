@@ -1,4 +1,11 @@
 import type { AgentRunKind } from './types';
+import { DEFAULT_OPENCODE_MODEL } from '@yaaabk/shared';
+
+/**
+ * Model Agent Jobs invoke OpenCode with when the deployment configures none.
+ * Shared with the session runtime so the two cannot drift.
+ */
+export const DEFAULT_AGENT_MODEL = DEFAULT_OPENCODE_MODEL;
 
 /** Default cap on Agents running for one Project at a time. */
 export const DEFAULT_MAX_CONCURRENT_PER_PROJECT = 2;
