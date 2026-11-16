@@ -146,6 +146,12 @@
       </div>
 
       {#if githubMode === 'app'}
+        <p class="text-xs text-neutral-500">
+          The App needs <strong>Administration: read/write</strong>, plus read/write on Contents,
+          Issues, Pull requests, Workflows and Metadata. Workflows is required because every Project
+          ships a CI workflow — without it GitHub rejects the first push.
+        </p>
+
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium" for="github-app-id">App ID</label>
           <input

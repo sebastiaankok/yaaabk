@@ -73,7 +73,10 @@ required:
 
 1. Create the App at <https://github.com/settings/apps> and give it
    **Administration: read/write** (repository creation) plus Contents, Issues,
-   Pull requests and Metadata.
+   Pull requests, **Workflows** and Metadata. Workflows is required because the
+   scaffold ships a `.github/workflows/ci.yml`: without it GitHub rejects the
+   first push with "refusing to allow a GitHub App to create or update workflow
+   … without `workflows` permission".
 2. **Install** it on the account that will own the repositories, then copy the
    installation id from the confirmation URL — `.../installations/<id>`.
 3. Paste the App ID, private key and Installation ID into **Settings**.
