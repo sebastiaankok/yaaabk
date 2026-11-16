@@ -60,6 +60,29 @@ export interface IssuedBudget extends BudgetRecord {
   key: string;
 }
 
+/** What minting a key for a generic subject needs. */
+export interface MintKeyInput {
+  /** Stable subject, e.g. `session-s1`; becomes part of the key name. */
+  subject: string;
+  /** Spending cap in cents. Defaults to the module's default budget. */
+  budgetCents?: number;
+  /** Lifetime in milliseconds. Defaults to the module's key lifetime. */
+  ttlMs?: number;
+}
+
+/** A freshly minted key that is not tied to a persisted budget. */
+export interface MintedKey {
+  subject: string;
+  /** OpenRouter key hash, the handle later API calls use. */
+  keyHash: string;
+  /** The plaintext key, returned once at creation. */
+  key: string;
+  /** Spending cap in cents. */
+  budgetCents: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
 /** How much of an Issue's budget is left. */
 export interface BudgetStatus {
   issueId: string;
@@ -99,4 +122,11 @@ export interface CostControlModule {
   status(issueId: string): Promise<CostControlResult<BudgetStatus>>;
   /** Deletes the Issue's key and forgets its budget. A no-op when not open. */
   release(issueId: string): Promise<CostControlResult<void>>;
+  /**
+   * Creates a budgeted, expiring key for a generic subject, such as a
+   * Grill-Me Session. It records no budget; the caller owns the key hash.
+   */
+  mint(input: MintKeyInput): Promise<CostControlResult<MintedKey>>;
+  /** Deletes any key by hash. A key already gone at OpenRouter is a no-op. */
+  revoke(hash: string): Promise<CostControlResult<void>>;
 }

@@ -3,10 +3,10 @@ import { DEFAULT_ISSUE_BUDGET_CENTS, KEY_TTL_MS, MAX_ISSUE_BUDGET_CENTS } from '
 import {
   consoleLogger,
   costControlError,
-  OpenRouterApiError,
   toCostControlError,
   type CostControlLogger,
 } from './errors';
+import { mintKey, revokeKey, usdFromCents } from './keys';
 import type { OpenRouterApi } from './openrouter-api';
 import type { BudgetRecord, CostControlModule, CostControlResult } from './types';
 
@@ -27,11 +27,6 @@ export interface CostControlModuleOptions {
   /** Injected clock. Defaults to `() => new Date()`. */
   now?: () => Date;
   logger?: CostControlLogger;
-}
-
-/** Converts a cents budget to the USD float OpenRouter expects. */
-export function usdFromCents(cents: number): number {
-  return cents / 100;
 }
 
 /** Converts OpenRouter's USD float to whole cents, rounding to the nearest cent. */
@@ -97,24 +92,23 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
           throw costControlError('already-open', `Issue ${trimmed} already has an OpenRouter key`);
         }
 
-        const createdAt = now();
-        const expiresAt = new Date(createdAt.getTime() + keyTtlMs).toISOString();
-        const created = await api.createKey({
-          name: `yaaabk-issue-${trimmed}`,
-          limitUsd: usdFromCents(budgetCents),
-          limitReset: null,
-          expiresAt,
+        const minted = await mintKey(api, {
+          subject: `issue-${trimmed}`,
+          budgetCents,
+          ttlMs: keyTtlMs,
+          maxBudgetCents,
+          now,
         });
 
         const record: BudgetRecord = {
           issueId: trimmed,
-          keyHash: created.keyInfo.hash,
-          budgetCents,
-          expiresAt,
-          createdAt: createdAt.toISOString(),
+          keyHash: minted.keyHash,
+          budgetCents: minted.budgetCents,
+          expiresAt: minted.expiresAt,
+          createdAt: minted.createdAt,
         };
         store.save(record);
-        return { ...record, key: created.key };
+        return { ...record, key: minted.key };
       });
     },
     topUp: (issueId, budgetCents) => {
@@ -186,16 +180,30 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
           return;
         }
 
-        try {
-          await api.deleteKey(record.keyHash);
-        } catch (error) {
-          // The key is already gone, so only the local record is stale.
-          const alreadyDeleted = error instanceof OpenRouterApiError && error.statusCode === 404;
-          if (!alreadyDeleted) {
-            throw error;
-          }
-        }
+        // The key may already be gone, in which case only the local record is stale.
+        await revokeKey(api, record.keyHash);
         store.delete(trimmed);
+      });
+    },
+    mint: (input) => {
+      const subject = input.subject?.trim() ?? '';
+      return guard('mint', { subject }, () =>
+        mintKey(api, {
+          subject,
+          budgetCents: input.budgetCents ?? defaultBudgetCents,
+          ttlMs: input.ttlMs ?? keyTtlMs,
+          maxBudgetCents,
+          now,
+        }),
+      );
+    },
+    revoke: (hash) => {
+      const trimmed = hash?.trim() ?? '';
+      return guard('revoke', { keyHash: trimmed }, async () => {
+        if (trimmed === '') {
+          throw costControlError('invalid-input', 'A key hash is required');
+        }
+        await revokeKey(api, trimmed);
       });
     },
   };
