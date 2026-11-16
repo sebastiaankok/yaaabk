@@ -40,9 +40,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/packages/agent/dist ./dist
 # The agent skills and the image-baked grill skills. Sessions load their skill
-# from here rather than from the backend's filesystem.
+# from the grill-skills directory rather than from the backend's filesystem.
 COPY --from=build /app/packages/agent/skills ./skills
-COPY --from=build /app/packages/grill-me/skills ./skills
+COPY --from=build /app/packages/grill-me/skills/grill-me ./grill-skills/grill-me
+COPY --from=build /app/packages/grill-me/skills/to-prd ./grill-skills/to-prd
+COPY --from=build /app/packages/grill-me/skills/to-issues ./grill-skills/to-issues
 # The reporting MCP server OpenCode starts for a session. Sessions load their
 # OpenCode config through OPENCODE_CONFIG so Agent Jobs never register a server
 # whose report token they do not have.
