@@ -4,6 +4,7 @@ import {
   createProjectStream,
   deleteProject,
   exportProject,
+  finishGrill,
   getIssueSyncStatus,
   getProjectStats,
   getStatus,
@@ -338,6 +339,33 @@ describe('getProjectStats', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p1\/stats$/),
       expect.anything(),
+    );
+  });
+});
+
+describe('finishGrill', () => {
+  it('publishes the drafts and returns the Plan and Issues', async () => {
+    const published = { session: {}, plan: { id: 'v1' }, issues: [] };
+    const fetchMock = vi.fn(async () => jsonResponse(published));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(finishGrill('p 1', 's 1')).resolves.toEqual(published);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p%201\/grill\/s%201\/finish$/),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ force: false }) }),
+    );
+  });
+
+  it('asks for a forced publish when the caller overrides the guard', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await finishGrill('p1', 's1', { force: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/finish$/),
+      expect.objectContaining({ body: JSON.stringify({ force: true }) }),
     );
   });
 });

@@ -341,6 +341,29 @@ export function cancelGrill(projectId: string, sessionId: string): Promise<Grill
   );
 }
 
+/** The published Plan and Issues a finished session produced. */
+export interface GrillFinishResult {
+  session: GrillSessionView;
+  plan: Plan;
+  issues: Issue[];
+}
+
+/**
+ * Publishes a session's drafts. Without both a PRD and Issues the backend
+ * answers with a conflict naming what is missing; pass `force` to publish the
+ * drafts that exist.
+ */
+export function finishGrill(
+  projectId: string,
+  sessionId: string,
+  options: { force?: boolean } = {},
+): Promise<GrillFinishResult> {
+  return request<GrillFinishResult>(
+    `/api/projects/${encodeURIComponent(projectId)}/grill/${encodeURIComponent(sessionId)}/finish`,
+    { method: 'POST', body: JSON.stringify({ force: options.force === true }) },
+  );
+}
+
 /** The WebSocket URL for a session's terminal. */
 export function terminalWebSocketUrl(projectId: string, sessionId: string): string {
   const base = API_BASE.replace(/^http/, 'ws');
@@ -360,6 +383,8 @@ export interface GrillSessionView {
   endReason: 'finished' | 'cancelled' | 'replaced' | 'failed' | 'timeout' | null;
   error: string | null;
   terminalPath: string;
+  /** What the agent has reported but not yet published. */
+  draft: { hasPrd: boolean; issueCount: number };
 }
 
 // --- Issues -----------------------------------------------------------------

@@ -42,6 +42,13 @@ export interface SessionRuntimeSpec {
   prompt: string;
   /** The OpenCode model in `provider/model` form. */
   model: string;
+  /**
+   * Bearer token the session's reporting MCP server presents to the backend.
+   * Injected into the runtime only; it never appears in a session view.
+   */
+  reportToken?: string;
+  /** Backend base URL the session's reporting MCP server posts to. */
+  apiUrl?: string;
 }
 
 /** The result of inspecting a runtime. */

@@ -196,6 +196,8 @@ export function createTestContext(
   const sessionRuntime = createFakeSessionRuntime();
   const grillSessions = createGrillSessionsModule({
     runtime: sessionRuntime,
+    plans,
+    issues,
     defaultModel: 'openrouter/default-model',
     ids: () => `grill-${Math.random().toString(16).slice(2, 10)}`,
     clock: () => new Date(clock.ms),

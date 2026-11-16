@@ -87,6 +87,7 @@ export interface FakeLocalRuntime {
 export interface FakeLocalRuntimeOptions {
   model?: string;
   readinessTimeoutMs?: number;
+  opencodeConfig?: string;
 }
 
 /**
@@ -122,6 +123,7 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
     sleep: async () => {},
     cwd: '/tmp',
     credential: () => ({ username: 'yaaabk', token: 'test-token' }),
+    ...(options.opencodeConfig === undefined ? {} : { opencodeConfig: options.opencodeConfig }),
     logger: { info: () => {} },
   });
 
@@ -135,6 +137,8 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
       skillLevel: 'expert' satisfies SkillLevel,
       prompt: 'Build a todo app',
       model: options.model ?? 'openrouter/test-model',
+      reportToken: 'report-token',
+      apiUrl: 'http://backend:3000',
       ...overrides,
     };
   }

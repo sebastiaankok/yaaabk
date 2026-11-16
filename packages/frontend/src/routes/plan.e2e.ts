@@ -38,11 +38,34 @@ const SESSION = {
   endReason: null,
   error: null,
   terminalPath: '/api/projects/p1/grill/s1/terminal',
+  draft: { hasPrd: true, issueCount: 1 },
+};
+
+const ISSUE = {
+  id: 'i1',
+  projectId: 'p1',
+  planId: 'v1',
+  githubNumber: null,
+  githubSyncedAt: null,
+  title: 'Save a bookmark',
+  body: 'Persist a bookmark.',
+  status: 'open',
+  label: 'ready',
+  dependsOn: [],
+  attemptCount: 0,
+  maxAttempts: 3,
+  budgetCents: 50,
+  openrouterKeyHash: null,
+  closedAt: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
 };
 
 interface MockOptions {
   activeSession?: typeof SESSION | null;
   startFailure?: string;
+  /** The drafts the mocked session holds, defaulting to the complete SESSION. */
+  draft?: { hasPrd: boolean; issueCount: number };
+  issues?: (typeof ISSUE)[];
 }
 
 /** A signed-in session with a project, its plan and a scripted grill session API. */
@@ -57,8 +80,17 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
     route.fulfill({ json: { plans: [PLAN] } }),
   );
   await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
+  await page.route('**/api/projects/p1/issues', (route) =>
+    route.fulfill({ json: { issues: options.issues ?? [] } }),
+  );
 
-  let active = options.activeSession ?? null;
+  const draft = options.draft ?? SESSION.draft;
+  let active =
+    options.activeSession === null
+      ? null
+      : options.activeSession === undefined
+        ? null
+        : { ...SESSION, draft };
   await page.route('**/api/projects/p1/grill', async (route) => {
     if (route.request().method() === 'POST') {
       if (options.startFailure !== undefined) {
@@ -68,8 +100,8 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
         });
         return;
       }
-      active = SESSION;
-      await route.fulfill({ status: 201, json: SESSION });
+      active = { ...SESSION, draft };
+      await route.fulfill({ status: 201, json: active });
       return;
     }
     await route.fulfill(
@@ -80,9 +112,42 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
   });
   await page.route('**/api/projects/p1/grill/s1/cancel', (route) =>
     route.fulfill({
-      json: { ...SESSION, status: 'cancelled', endReason: 'cancelled' },
+      json: {
+        ...SESSION,
+        status: 'cancelled',
+        endReason: 'cancelled',
+        draft: { hasPrd: false, issueCount: 0 },
+      },
     }),
   );
+  await page.route('**/api/projects/p1/grill/s1/finish', async (route) => {
+    const body = (route.request().postDataJSON() ?? {}) as { force?: boolean };
+    const missing = [...(draft.hasPrd ? [] : ['prd']), ...(draft.issueCount > 0 ? [] : ['issues'])];
+    if (missing.length > 0 && body.force !== true) {
+      await route.fulfill({
+        status: 409,
+        json: {
+          error: 'incomplete',
+          message: `Cannot finish: ${missing.map((item) => (item === 'prd' ? 'a PRD' : 'an issue list')).join(' and ')} missing`,
+          missing,
+        },
+      });
+      return;
+    }
+    active = null;
+    await route.fulfill({
+      json: {
+        session: {
+          ...SESSION,
+          status: 'finished',
+          endReason: 'finished',
+          draft: { hasPrd: false, issueCount: 0 },
+        },
+        plan: { ...PLAN, contentMarkdown: '# Plan (PRD)' },
+        issues: options.issues ?? [],
+      },
+    });
+  });
 }
 
 /** Mocks the backend terminal socket and immediately marks the terminal live. */
@@ -99,7 +164,7 @@ test('shows the project and its active plan', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Active plan' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 });
 
@@ -129,7 +194,38 @@ test('reconnects to a running session after a refresh', async ({ page }) => {
 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+  await expect(page.getByText('PRD drafted · 1 issue drafted')).toBeVisible();
   expect(await page.locator('.xterm').count()).toBe(1);
+});
+
+test('finishes a session and shows the published Plan (PRD) and Issues', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION, issues: [ISSUE] });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+
+  await expect(page.getByText('Published Plan (PRD) v1 and 1 issue.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Issues' })).toBeVisible();
+  await expect(page.getByText('Save a bookmark')).toBeVisible();
+  await expect(page.getByLabel('Your idea')).toBeVisible();
+});
+
+test('warns before publishing an incomplete session and forces on request', async ({ page }) => {
+  await mockProject(page, {
+    activeSession: SESSION,
+    draft: { hasPrd: true, issueCount: 0 },
+  });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+
+  await expect(page.getByText('Cannot finish: an issue list missing')).toBeVisible();
+  await page.getByRole('button', { name: 'Publish anyway' }).click();
+
+  await expect(page.getByText(/Published Plan \(PRD\)/)).toBeVisible();
 });
 
 test('shows the reason a session could not start', async ({ page }) => {
@@ -167,5 +263,5 @@ test('activates an earlier plan version', async ({ page }) => {
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Activate' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Active plan' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
 });

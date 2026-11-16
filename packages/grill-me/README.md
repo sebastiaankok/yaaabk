@@ -46,6 +46,33 @@ one. Cancel stops the runtime and ends the session. The session view never
 contains the ttyd credential; only `terminal()` returns it, to the backend
 proxy.
 
+### Reporting and Finish
+
+The session's agent reports through `@yaaabk/grill-mcp`, authenticated by a
+per-session bearer token. The orchestrator mints the token, stores only its
+SHA-256 hash and injects the plaintext into the runtime. Reports become drafts:
+
+```ts
+await sessions.report(sessionId, reportToken, { prd: '# Plan (PRD)' });
+await sessions.report(sessionId, reportToken, { issues });
+```
+
+A report with Issues needs a PRD draft, first or in the same call. Repeated
+reports replace the drafts; they never create Plans or Issues. `finish` is the
+only publish point:
+
+```ts
+const published = await sessions.finish(projectId, sessionId);
+// { session, plan, issues }
+```
+
+Without a PRD and at least one Issue it resolves `{ ok: false }` with
+`kind: 'incomplete'` and `missing: ['prd', 'issues']`; `{ force: true }` publishes
+the drafts that exist. Finish creates one Plan version and replaces that Plan's
+Issues, then stops the runtime. It records the Plan as soon as it exists, so a
+retry after a failed Issue publish reuses that version, and finishing an already
+finished session returns the same Plan and Issues. Cancel discards the drafts.
+
 `createLocalSessionRuntime()` waits for ttyd readiness before resolving a start
 and reports the failing process's stderr on start failure. Host development uses
 `ttyd` and `opencode` from `PATH`; the agent image pins both.

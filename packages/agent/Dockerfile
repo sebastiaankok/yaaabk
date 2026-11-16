@@ -8,6 +8,7 @@ WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile
 RUN bun run --filter '@yaaabk/agent' build
+RUN bun run --filter '@yaaabk/grill-mcp' build
 
 FROM oven/bun:1.3-alpine AS runtime
 # Pin the terminal and agent runtime. Sessions and Agent Jobs share this image,
@@ -42,8 +43,14 @@ COPY --from=build /app/packages/agent/dist ./dist
 # from here rather than from the backend's filesystem.
 COPY --from=build /app/packages/agent/skills ./skills
 COPY --from=build /app/packages/grill-me/skills ./skills
+# The reporting MCP server OpenCode starts for a session. Sessions load their
+# OpenCode config through OPENCODE_CONFIG so Agent Jobs never register a server
+# whose report token they do not have.
+COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
+COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
 RUN mkdir -p /work && chown bun:bun /work
 ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
 ENV YAAABK_GRILL_SKILL_PATH=/app/skills/grill-me/SKILL.md
+ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 USER bun
 CMD ["bun", "dist/index.js"]

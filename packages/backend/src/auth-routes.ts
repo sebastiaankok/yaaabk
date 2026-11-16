@@ -172,7 +172,12 @@ export function authRoutes(auth: AuthModule, options: AuthRoutesOptions = {}): H
  */
 export function requireAuth(auth: AuthModule): MiddlewareHandler {
   return async (c, next) => {
-    if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/agent-runs/')) {
+    if (
+      c.req.path.startsWith('/api/auth/') ||
+      c.req.path.startsWith('/api/agent-runs/') ||
+      // Session reporting authenticates with its per-session bearer token.
+      c.req.path.startsWith('/api/grill-sessions/')
+    ) {
       await next();
       return;
     }
