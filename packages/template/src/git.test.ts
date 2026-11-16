@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTemplateModule } from './template';
+import { explainPushFailure } from './git';
 import type { TemplateProject } from './types';
 
 const exec = promisify(execFile);
@@ -83,5 +84,26 @@ describe.skipIf(!hasGit)('createGitBackend', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('push-failed');
+  });
+});
+
+describe('explainPushFailure', () => {
+  const GITHUB_WORKFLOWS_REFUSAL =
+    'remote: refusing to allow a GitHub App to create or update workflow ' +
+    '`.github/workflows/ci.yml` without `workflows` permission';
+
+  it("appends the Workflows-permission fix to GitHub's refusal", () => {
+    const explained = explainPushFailure(GITHUB_WORKFLOWS_REFUSAL);
+
+    // The original GitHub message is kept, not replaced.
+    expect(explained).toContain(GITHUB_WORKFLOWS_REFUSAL);
+    expect(explained).toMatch(/Workflows: Read and write/i);
+    expect(explained).toMatch(/Permissions & events/i);
+  });
+
+  it('leaves unrelated push failures untouched', () => {
+    const message = "fatal: could not read Username for 'https://github.com'";
+
+    expect(explainPushFailure(message)).toBe(message);
   });
 });

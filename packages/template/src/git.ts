@@ -50,6 +50,32 @@ export function unauthenticatedRepoUrl(url: string): string {
   }
 }
 
+/**
+ * Appends a remediation hint to a push failure GitHub rejects for a missing
+ * `workflows` permission.
+ *
+ * Every Project ships a `.github/workflows/ci.yml`, so the very first scaffold
+ * push creates a workflow file. GitHub refuses that push when the authenticating
+ * GitHub App was not granted the `workflows` permission, with a message that
+ * names the permission but not how to grant it. Pass the rest of git's stderr
+ * through untouched and only add the fix, so the Developer can act on it without
+ * leaving the error.
+ */
+export function explainPushFailure(message: string): string {
+  const missingWorkflows =
+    /refusing to allow a GitHub App to create or update workflow/i.test(message) ||
+    /without\s+`?workflows`?\s+permission/i.test(message);
+  if (!missingWorkflows) {
+    return message;
+  }
+  return (
+    `${message}\n\n` +
+    'The GitHub App is missing the Workflows permission. Grant "Workflows: Read and write" ' +
+    'to the App under Settings → Permissions & events, then reinstall it on the owner account. ' +
+    'YAAABK scaffolds a CI workflow, so every Project push needs it.'
+  );
+}
+
 /** Runs `git` in `directory`, rejecting with the command's stderr on failure. */
 async function git(directory: string, args: string[]): Promise<void> {
   try {
@@ -126,7 +152,7 @@ export function createGitBackend(): GitBackend {
         }
         await git(directory, pushArgs);
       } catch (error) {
-        throw templateError('push-failed', gitMessage(error), error);
+        throw templateError('push-failed', explainPushFailure(gitMessage(error)), error);
       }
     },
   };
