@@ -2,9 +2,12 @@ import { githubError, kindForStatus, messageOf, toGitHubError } from './errors';
 import {
   summarizeCheckRuns,
   type CheckRunSummaryInput,
+  type CreateReviewInput,
   type GitHubMergeMethod,
   type GitHubPullRequest,
   type GitHubPulls,
+  type GitHubReview,
+  type GitHubReviewEvent,
   type MergePullRequestInput,
   type MergePullRequestResult,
 } from './pulls';
@@ -34,6 +37,28 @@ interface RawCheckRuns {
 interface RawMerge {
   merged: boolean;
   sha: string | null;
+}
+
+interface RawReview {
+  id: number;
+  body: string | null;
+  state: string;
+  submitted_at: string;
+}
+
+/** GitHub's review states, mapped back to the port's verdicts. */
+const REVIEW_EVENTS: Readonly<Record<string, GitHubReviewEvent>> = {
+  APPROVE: 'approve',
+  REQUEST_CHANGES: 'request-changes',
+};
+
+function toReview(raw: RawReview, fallback: GitHubReviewEvent): GitHubReview {
+  return {
+    id: raw.id,
+    event: REVIEW_EVENTS[raw.state] ?? fallback,
+    body: raw.body ?? '',
+    submittedAt: raw.submitted_at,
+  };
 }
 
 function labelNames(labels: RawPull['labels']): string[] {
@@ -168,6 +193,24 @@ export function createGitHubPullsClient(options: GitHubPullsClientOptions): GitH
         return { ok: true, value };
       } catch (error) {
         return { ok: false, error: toGitHubError('merge-pull', error) };
+      }
+    },
+
+    async createReview(repo, number, input: CreateReviewInput) {
+      try {
+        const raw = await send<RawReview>('create-review', () =>
+          fetchImpl(`${apiBaseUrl}/repos/${repo}/pulls/${number}/reviews`, {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({
+              event: input.event === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES',
+              body: input.body,
+            }),
+          }),
+        );
+        return { ok: true, value: toReview(raw, input.event) };
+      } catch (error) {
+        return { ok: false, error: toGitHubError('create-review', error) };
       }
     },
   };

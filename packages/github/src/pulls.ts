@@ -36,6 +36,24 @@ export interface GitHubCheckSummary {
 /** The merge strategy to use. Defaults to the repository's own. */
 export type GitHubMergeMethod = 'merge' | 'squash' | 'rebase';
 
+/** A formal review verdict a reviewer may post on a pull request. */
+export type GitHubReviewEvent = 'approve' | 'request-changes';
+
+export interface CreateReviewInput {
+  /** The verdict to post. */
+  event: GitHubReviewEvent;
+  /** The reviewer's written summary. */
+  body: string;
+}
+
+/** A review as YAAABK sees it after posting. */
+export interface GitHubReview {
+  id: number;
+  event: string;
+  body: string;
+  submittedAt: string;
+}
+
 export interface MergePullRequestInput {
   method?: GitHubMergeMethod;
 }
@@ -61,6 +79,12 @@ export interface GitHubPulls {
     number: number,
     input?: MergePullRequestInput,
   ): Promise<GitHubResult<MergePullRequestResult>>;
+  /** Posts a formal review on a pull request. */
+  createReview(
+    repo: string,
+    number: number,
+    input: CreateReviewInput,
+  ): Promise<GitHubResult<GitHubReview>>;
 }
 
 /** A check run, reduced to the fields aggregation needs. */

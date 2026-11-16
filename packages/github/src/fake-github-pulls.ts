@@ -1,16 +1,19 @@
 import {
   summarizeCheckRuns,
   type CheckRunSummaryInput,
+  type CreateReviewInput,
   type GitHubCheckState,
   type GitHubCheckSummary,
   type GitHubPullRequest,
   type GitHubPulls,
+  type GitHubReview,
   type MergePullRequestResult,
 } from './pulls';
 import type { GitHubError, GitHubResult } from './types';
 
 /** The operations a fake can be told to fail. */
-export type FakeGitHubPullsOperation = 'list-pulls' | 'check-state' | 'merge-pull';
+export type FakeGitHubPullsOperation =
+  'list-pulls' | 'check-state' | 'merge-pull' | 'create-review';
 
 /** One recorded call, for assertions. */
 export interface FakeGitHubPullsCall {
@@ -51,6 +54,8 @@ export interface FakeGitHubPulls extends GitHubPulls {
   setCheckRuns(repo: string, ref: string, runs: CheckRunSummaryInput[]): void;
   /** Whether a pull request has been merged. */
   merged(repo: string, number: number): boolean;
+  /** Every review posted on a pull request, oldest first. */
+  reviews(repo: string, number: number): GitHubReview[];
   /** Makes the next call to `operation` fail with `error`. */
   failNext(operation: FakeGitHubPullsOperation, error: GitHubError): void;
 }
@@ -71,6 +76,8 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
   const pullsByRepo = new Map<string, GitHubPullRequest[]>();
   const checksByRef = new Map<string, GitHubCheckSummary>();
   const mergedKeys = new Set<string>();
+  const reviewsByPull = new Map<string, GitHubReview[]>();
+  let reviewSequence = 0;
   const calls: FakeGitHubPullsCall[] = [];
   const failures: QueuedFailure[] = [];
 
@@ -126,6 +133,10 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
       return mergedKeys.has(key(repo, number));
     },
 
+    reviews(repo, number) {
+      return [...(reviewsByPull.get(key(repo, number)) ?? [])];
+    },
+
     failNext(operation, error) {
       failures.push({ operation, error });
     },
@@ -162,6 +173,26 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
       if (failed !== undefined) return failed;
       mergedKeys.add(key(repo, number));
       return { ok: true, value: { merged: true, sha: `merge-${number}` } };
+    },
+
+    async createReview(
+      repo: string,
+      number: number,
+      input: CreateReviewInput,
+    ): Promise<GitHubResult<GitHubReview>> {
+      calls.push({ operation: 'create-review', repo, number });
+      const failed = fail<GitHubReview>('create-review');
+      if (failed !== undefined) return failed;
+      const review: GitHubReview = {
+        id: ++reviewSequence,
+        event: input.event,
+        body: input.body,
+        submittedAt: '2026-01-01T00:00:00.000Z',
+      };
+      const list = reviewsByPull.get(key(repo, number)) ?? [];
+      list.push(review);
+      reviewsByPull.set(key(repo, number), list);
+      return { ok: true, value: review };
     },
   };
 }
