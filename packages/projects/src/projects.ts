@@ -258,6 +258,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           repoUrl: repository.url,
           repoFullName: repository.fullName,
           namespace,
+          lastModel: null,
           deployedCommitSha: null,
           lastDeployStatus: null,
           lastDeployAt: null,
@@ -338,6 +339,26 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           ...project,
           description,
           skillLevel,
+          updatedAt: now().toISOString(),
+        };
+        store.update(updated);
+        return updated;
+      });
+    },
+
+    rememberModel(id, model) {
+      return guard('rememberModel', { id }, async () => {
+        const project = store.get(id);
+        if (project === undefined) {
+          throw projectError('not-found', `No project with id "${id}"`);
+        }
+        const trimmed = model.trim();
+        if (trimmed === '') {
+          throw projectError('invalid-input', 'A model is required');
+        }
+        const updated: Project = {
+          ...project,
+          lastModel: trimmed,
           updatedAt: now().toISOString(),
         };
         store.update(updated);

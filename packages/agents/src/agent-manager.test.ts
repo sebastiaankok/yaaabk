@@ -22,6 +22,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoUrl: 'https://github.com/acme/todo-app',
     repoFullName: 'acme/todo-app',
     namespace: NS,
+    lastModel: null,
     deployedCommitSha: null,
     lastDeployStatus: null,
     lastDeployAt: null,

@@ -28,6 +28,7 @@ interface ProjectRow {
   repo_url: string;
   repo_full_name: string;
   namespace: string;
+  last_model: string | null;
   deployed_commit_sha: string | null;
   last_deploy_status: string | null;
   last_deploy_at: string | null;
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS projects (
   repo_url           TEXT NOT NULL,
   repo_full_name     TEXT NOT NULL,
   namespace          TEXT NOT NULL,
+  last_model         TEXT,
   deployed_commit_sha TEXT,
   last_deploy_status TEXT,
   last_deploy_at     TEXT,
@@ -63,6 +65,7 @@ function toProject(row: ProjectRow): Project {
     repoUrl: row.repo_url,
     repoFullName: row.repo_full_name,
     namespace: row.namespace,
+    lastModel: row.last_model ?? null,
     deployedCommitSha: row.deployed_commit_sha ?? null,
     lastDeployStatus:
       row.last_deploy_status === 'success' || row.last_deploy_status === 'failed'
@@ -93,6 +96,9 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
   if (columns.some((col) => col.name === 'argo_app_name')) {
     database.exec('ALTER TABLE projects DROP COLUMN argo_app_name');
   }
+  if (!columns.some((col) => col.name === 'last_model')) {
+    database.exec('ALTER TABLE projects ADD COLUMN last_model TEXT');
+  }
   if (!columns.some((col) => col.name === 'deployed_commit_sha')) {
     database.exec('ALTER TABLE projects ADD COLUMN deployed_commit_sha TEXT');
   }
@@ -114,8 +120,8 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         database
           .prepare(
             `INSERT INTO projects
-               (id, name, description, skill_level, repo_url, repo_full_name, namespace, deployed_commit_sha, last_deploy_status, last_deploy_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, name, description, skill_level, repo_url, repo_full_name, namespace, last_model, deployed_commit_sha, last_deploy_status, last_deploy_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             project.id,
@@ -125,6 +131,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
             project.repoUrl,
             project.repoFullName,
             project.namespace,
+            project.lastModel,
             project.deployedCommitSha,
             project.lastDeployStatus,
             project.lastDeployAt,
@@ -163,7 +170,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         .prepare(
           `UPDATE projects
              SET name = ?, description = ?, skill_level = ?, repo_url = ?, repo_full_name = ?,
-                 namespace = ?, deployed_commit_sha = ?, last_deploy_status = ?, last_deploy_at = ?,
+                 namespace = ?, last_model = ?, deployed_commit_sha = ?, last_deploy_status = ?, last_deploy_at = ?,
                  created_at = ?, updated_at = ?
            WHERE id = ?`,
         )
@@ -174,6 +181,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
           project.repoUrl,
           project.repoFullName,
           project.namespace,
+          project.lastModel,
           project.deployedCommitSha,
           project.lastDeployStatus,
           project.lastDeployAt,

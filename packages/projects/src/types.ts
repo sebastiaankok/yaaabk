@@ -26,6 +26,11 @@ export interface Project {
   repoFullName: string;
   /** Kubernetes namespace hosting the Project, `yaaabk-<short-uuid>`. */
   namespace: string;
+  /**
+   * The model the Developer last started a Grill-Me Session with, in
+   * `provider/model` form. `null` until the first session.
+   */
+  lastModel: string | null;
   /** Commit SHA of the last successful deploy, or `null` if never deployed. */
   deployedCommitSha: string | null;
   /** How the last deploy ended, or `null` if the Project has never deployed. */
@@ -119,6 +124,8 @@ export interface ProjectsModule {
   get(id: string): Promise<ProjectsResult<Project>>;
   /** Updates the mutable metadata of a Project. */
   update(id: string, patch: ProjectPatch): Promise<ProjectsResult<Project>>;
+  /** Records the model the Project last used for a Grill-Me Session. */
+  rememberModel(id: string, model: string): Promise<ProjectsResult<Project>>;
   /** Tears down the Project's repository and cluster resources, then forgets it. */
   remove(id: string): Promise<ProjectsResult<void>>;
   /**
