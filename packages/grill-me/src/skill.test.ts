@@ -15,9 +15,9 @@ function issuesExample(): string {
   return block ?? '';
 }
 
-describe('grill-me skill', () => {
-  it('is bundled at the default path', () => {
-    expect(skillPath).toMatch(/skills\/grill-me\/SKILL\.md$/);
+describe('legacy grill-me skill', () => {
+  it('is bundled at the legacy path', () => {
+    expect(skillPath).toMatch(/skills\/legacy-grill-me\/SKILL\.md$/);
     expect(existsSync(skillPath)).toBe(true);
   });
 

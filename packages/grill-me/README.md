@@ -10,9 +10,27 @@ Kubernetes adapter will satisfy the same contract. `createTerminalBridge`
 translates the browser's JSON protocol to ttyd's `tty` frames, and
 `sessionRuntimeContract` is the shared suite every adapter runs.
 
+The opening prompt tells the agent to load the `grill-me` skill before anything
+else. That skill runs the interview, and three bundled skills carry the session
+from idea to report:
+
+| Skill | Role |
+| --- | --- |
+| `grill-me` | Interviews one question at a time, adapts to the Skill Level, explores the repository and cluster instead of asking answerable questions, confirms the settled plan and hands off. |
+| `to-prd` | Synthesises the PRD from the conversation, checks the module sketch with the Developer, writes the PRD template and calls `report_prd`. |
+| `to-issues` | Cuts the PRD into vertical slices, quizzes the Developer on granularity and dependencies, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`. |
+
+The skills live under [`skills/`](./skills) and are baked into the shared agent
+image. The session OpenCode config lists the image skills directory, so the
+model loads them through OpenCode's `skill` tool rather than pasted prompt text.
+The Developer can say "write the PRD now" at any point to skip the rest of the
+interview.
+
 **Marker stream (legacy).** `createGrillMeModule` spawns `opencode run` and
 parses `<QUESTION>`, `<PLAN>` and `<ISSUES>` markers. It remains only for the
-one-shot Issue generation endpoints until the legacy path is removed.
+one-shot Issue generation endpoints until the legacy path is removed; the
+interactive skills never emit markers. Its skill is
+[`skills/legacy-grill-me`](./skills/legacy-grill-me/SKILL.md).
 
 The legacy module is transport-free. It emits domain events; the backend adapts
 them to Server-Sent Events with `createSseStream`, and drives the conversation
@@ -155,12 +173,16 @@ leaking to the browser.
 
 ## Configuration
 
-- `YAAABK_GRILL_ME_SKILL` — path to the grill-me skill. Defaults to the bundled
-  [`skills/grill-me`](./skills/grill-me/SKILL.md).
-- `createOpenCodeSpawner({ command, args, env, cwd })` — the real `opencode`
-  invocation. The exact CLI invocation may need tuning against the installed
-  OpenCode version; the session context is passed both as the opening prompt and
-  as `YAAABK_*` environment variables.
+- `YAAABK_SESSION_OPENCODE_CONFIG` — the OpenCode config sessions load. The
+  image ships one that lists `/app/skills` and registers the reporting MCP
+  server; Agent Jobs do not load it. Without it, OpenCode only discovers skills
+  from the project's own `.opencode/skills`.
+- `YAAABK_GRILL_ME_SKILL` — path to the legacy marker-based skill. Defaults to
+  the bundled [`skills/legacy-grill-me`](./skills/legacy-grill-me/SKILL.md).
+  It does not affect interactive sessions.
+- `createOpenCodeSpawner({ command, args, env, cwd })` — the legacy `opencode`
+  invocation for the one-shot Issue generation endpoints. The session runtime
+  uses `createLocalSessionRuntime()` instead.
 
 ## Tests
 
@@ -170,4 +192,6 @@ bun run test:unit
 
 Covers the streaming marker parser, issue parsing, session lifecycle (events,
 timeout, cancellation, process exit), the SSE stream and the real spawner
-(exercised against a stand-in command), all without an LLM or a cluster.
+(exercised against a stand-in command), all without an LLM or a cluster. The
+interactive skills are contract-tested for their one-question, handoff, PRD
+template and vertical-slice rules.

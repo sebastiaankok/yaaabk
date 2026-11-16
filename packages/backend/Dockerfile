@@ -45,7 +45,9 @@ RUN apk add --no-cache ca-certificates && \
     rm -f /tmp/opencode.tar.gz && \
     opencode --version
 # Image-baked grill skills, matching the agent runtime.
-COPY --from=build /app/packages/grill-me/skills ./skills
+COPY --from=build /app/packages/grill-me/skills/grill-me ./grill-skills/grill-me
+COPY --from=build /app/packages/grill-me/skills/to-prd ./grill-skills/to-prd
+COPY --from=build /app/packages/grill-me/skills/to-issues ./grill-skills/to-issues
 # The reporting MCP server and the session OpenCode config. compose sessions
 # run on the loopback, so the MCP server reaches the backend at localhost.
 COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp

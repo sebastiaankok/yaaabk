@@ -5,16 +5,18 @@ import type { SkillLevel } from '@yaaabk/shared';
 export const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
- * The skill the agent must load: the in-repo `skills/grill-me`.
- * `YAAABK_GRILL_ME_SKILL` overrides it, so a deployment can point at a mounted
- * copy instead.
+ * The marker-based skill the legacy one-shot path must load: the in-repo
+ * `skills/legacy-grill-me`. `YAAABK_GRILL_ME_SKILL` overrides it, so a
+ * deployment can point at a mounted copy instead. The interactive session
+ * skills (`grill-me`, `to-prd`, `to-issues`) are separate and loaded by
+ * OpenCode's `skill` tool.
  */
 export function defaultSkillPath(): string {
   const override = process.env['YAAABK_GRILL_ME_SKILL'];
   if (override !== undefined && override !== '') {
     return override;
   }
-  return fileURLToPath(new URL('../skills/grill-me/SKILL.md', import.meta.url));
+  return fileURLToPath(new URL('../skills/legacy-grill-me/SKILL.md', import.meta.url));
 }
 
 /** How question depth changes with the Developer's skill level. */

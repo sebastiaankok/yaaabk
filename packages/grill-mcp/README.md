@@ -42,6 +42,8 @@ messages.
 
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
+  "skills": ["/app/grill-skills"],
   "mcp": {
     "servers": {
       "yaaabk": {
