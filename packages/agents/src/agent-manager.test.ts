@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
-import { AGENT_NAMESPACE, createInMemoryProjectStore, type Project } from '@yaaabk/projects';
+import { createInMemoryProjectStore, type Project } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import { DEFAULT_ACTIVE_DEADLINE_SECONDS, REVIEW_SKILL_PATH } from './config';
 import { silentLogger } from './errors';
@@ -9,8 +9,8 @@ import { createInMemoryAgentStore } from './in-memory-agent-store';
 import type { AgentGithubTokenResolver, AgentManager } from './types';
 
 const NOW = new Date('2026-01-01T12:00:00.000Z');
-/** The namespace agent infrastructure lives in; no longer the Project's. */
-const NS = AGENT_NAMESPACE;
+/** The Project's namespace, where its agent Jobs, PVCs and Secrets live. */
+const NS = 'yaaabk-a1b2c3d4';
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -195,6 +195,9 @@ describe('spawn', () => {
 
     const pvc = await k8s.pvcs.get(NS, 'agent-work-issue-1-1');
     expect(pvc.ok).toBe(true);
+    // Nothing is provisioned in the shared `yaaabk` namespace.
+    const sharedPvc = await k8s.pvcs.get('yaaabk', 'agent-work-issue-1-1');
+    expect(sharedPvc.ok).toBe(false);
   });
 
   it('provisions a per-attempt OpenRouter Secret the Job reads from', async () => {

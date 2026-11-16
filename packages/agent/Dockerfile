@@ -9,8 +9,13 @@ RUN bun install --frozen-lockfile
 RUN bun run --filter '@yaaabk/agent' build
 
 FROM oven/bun:1.3-alpine AS runtime
-# git and the GitHub CLI are required to clone, commit, and open pull requests.
-RUN apk add --no-cache git github-cli ca-certificates
+# git, the GitHub CLI and kubectl are required to clone, commit, open pull
+# requests, and debug the Project's running workloads via the mounted
+# `yaaabk-agent` ServiceAccount token.
+RUN apk add --no-cache git github-cli ca-certificates && \
+    KUBECTL_VERSION="$(wget -qO- https://dl.k8s.io/release/stable.txt)" && \
+    wget -qO /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/packages/agent/dist ./dist

@@ -15,7 +15,11 @@ request once you finish. Do not open a pull request yourself.
 - the **issue number, title and body** of the work to implement;
 - the **repository** you are working in, already on your branch;
 - an **OpenRouter key** scoped to a per-issue budget, exposed as
-  `OPENROUTER_API_KEY`.
+  `OPENROUTER_API_KEY`;
+- **`kubectl`** access to your **Project's Kubernetes namespace** as the
+  `yaaabk-agent` ServiceAccount, authenticated automatically by the mounted,
+  auto-rotating ServiceAccount token (no Secret values can be read and other
+  Projects' namespaces cannot be accessed).
 
 ## How to work
 
@@ -28,7 +32,15 @@ request once you finish. Do not open a pull request yourself.
 3. **Run the project's checks.** Run the pre-commit hooks — lint, type-check and
    tests — and iterate until they pass. A change that does not pass the checks
    will not be accepted; YAAABK fails the attempt and retries.
-4. **Leave the work committed.** Commit onto the branch you were given. YAAABK
+4. **Debug with kubectl when needed.** If you need to inspect the Project's
+   running workloads in Kubernetes, run `kubectl` from inside your Job:
+   - Inspect resources: `kubectl get pods,services,configmaps,events,deployments,httproutes`
+     (supports `get`, `list`, `watch`), `kubectl describe <resource> <name>`.
+   - Read container output: `kubectl logs <pod>` (`pods/log` read).
+   - Exec into a running container: `kubectl exec -it <pod> -- <command>`
+     (`pods/exec` create).
+   - Never try to read Secret values or touch any other namespace.
+5. **Leave the work committed.** Commit onto the branch you were given. YAAABK
    pushes the branch and opens the pull request.
 
 ## Budget

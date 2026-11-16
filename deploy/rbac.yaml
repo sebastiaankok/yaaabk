@@ -57,15 +57,16 @@ subjects:
     name: yaaabk-backend
     namespace: yaaabk
 ---
-# Agent execution: Jobs, their working PVCs and the per-attempt GitHub /
-# OpenRouter token Secrets. `secrets` appears twice (create/delete and the
-# get/list/watch the Secret informers need) because a single rule cannot mix
-# those verb sets without over-granting.
+# Agent execution: the backend manages Jobs, their working PVCs and the
+# per-attempt GitHub / OpenRouter token Secrets across arbitrary Project
+# Namespaces (`yaaabk-<short-uuid>`).
+# `secrets` appears twice (create/delete and the get/list/watch the Secret
+# informers need) because a single rule cannot mix those verb sets without
+# over-granting.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: yaaabk-backend-agent
-  namespace: yaaabk
 rules:
   - apiGroups: ['']
     resources: [secrets]
@@ -78,13 +79,12 @@ rules:
     verbs: [create, get, list, watch, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: yaaabk-backend-agent
-  namespace: yaaabk
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: yaaabk-backend-agent
 subjects:
   - kind: ServiceAccount

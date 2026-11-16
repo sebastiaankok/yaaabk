@@ -9,12 +9,3 @@ metadata:
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
----
-# The ServiceAccount every agent Job runs as, created once by deploy rather
-# than per Project: agent Jobs need no Kubernetes API access, so it holds no
-# RoleBindings at all.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: yaaabk-agent
-  namespace: yaaabk

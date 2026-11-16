@@ -16,6 +16,7 @@ export function buildImplementPrompt(issue: AgentIssue, config: AgentConfig): st
     'Use the implement-issue skill. Work in the checked-out repository:',
     '- Explore the codebase and implement the change the Issue describes.',
     '- Run the pre-commit hooks (lint, type-check, test) and fix any failures.',
+    "- Debug the Project's running workloads with `kubectl` if needed (as the `yaaabk-agent` ServiceAccount via the auto-mounted token; never read Secret values or touch other namespaces).",
     '- Do not open a pull request yourself; YAAABK does that once you finish.',
     '',
     `Repository: ${config.repoUrl}`,

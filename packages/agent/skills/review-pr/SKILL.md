@@ -16,7 +16,11 @@ reviewing, not implementing.
 - the **issue number, title and body** the change is meant to deliver;
 - the **pull request diff**;
 - an **OpenRouter key** scoped to a per-review budget, exposed as
-  `OPENROUTER_API_KEY`.
+  `OPENROUTER_API_KEY`;
+- **`kubectl`** read-only plus `pods/exec` access to your **Project's
+  Kubernetes namespace** as the `yaaabk-agent` ServiceAccount (via the
+  auto-mounted, auto-rotating ServiceAccount token) if you need to inspect
+  running workloads while judging the change.
 
 ## How to review
 

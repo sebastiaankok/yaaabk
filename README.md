@@ -288,15 +288,14 @@ over HTTP:
 | `GET /api/projects/:id/agent-runs` | A Project's attempts, newest first |
 | `POST /api/agent-runs/:runId/report` | An agent Job reports its result, authenticated by its per-run token |
 
-`spawn` creates the attempt's working PVC and Job (mounted at `/work`, with a
-30-minute deadline) and flips the Issue to `in_progress`. At most **two** agents
+`spawn` creates the attempt's working PVC, optional per-attempt credential Secrets, and Job inside the **Project's Namespace** (`yaaabk-<short-uuid>`) mounted at `/work` with a 30-minute deadline, running as the Project's `yaaabk-agent` ServiceAccount with an auto-mounted, auto-rotating ServiceAccount token so the Agent can debug its Project's running workloads with `kubectl` (get/list/watch on pods, services, configmaps, events, deployments, httproutes; read `pods/log`; create `pods/exec`) without any long-lived cluster credential. The spawn flips the Issue to `in_progress`. At most **two** agents
 run per Project and **ten** cluster-wide; an attempt that arrives over the limit
 is recorded `queued` and dispatched by the reconcile loop as slots free. The loop
 runs on a timer (`YAAABK_AGENT_POLL_MS`, default 15s) and, on a finished Job,
 marks the attempt `success` and records the pull request URL, or marks it
 `failed` and either schedules the next attempt or — once `maxAttempts` is reached
-— labels the Issue `needs-human`. Credentials reach the Job through `envFrom`
-Secret references, so YAAABK never reads their values.
+— labels the Issue `needs-human`. GitHub and OpenRouter credentials reach the Job through `envFrom`
+Secret references in the Project namespace, so YAAABK never reads their values.
 
 Concurrency is enforced by reserving an attempt's slot synchronously before the
 first cluster call, so two racing `spawn`s cannot both claim the last slot. The
@@ -308,7 +307,9 @@ bun run --filter '@yaaabk/agents' test:integration
 ```
 
 The `@yaaabk/agent` package is what the Job runs: it fetches the Issue, clones
-the repository, runs OpenCode with the bundled `implement-issue` skill, runs the
+the repository, runs OpenCode with the bundled `implement-issue` skill (which
+can inspect and debug the Project's running workloads in its own namespace via
+`kubectl` using the mounted `yaaabk-agent` ServiceAccount token), runs the
 project's checks, and opens a pull request labelled `automerge`. The clone →
 implement → checks → PR flow is driven through narrow ports, so it is
 unit-tested without a cluster, a repository or an LLM; the real adapters shell

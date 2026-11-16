@@ -50,4 +50,11 @@ describe('buildImplementPrompt', () => {
     expect(prompt).not.toContain('Reviewer feedback:');
     expect(prompt).not.toContain('A previous attempt was rejected.');
   });
+
+  it('includes Kubernetes debugging instructions using the mounted ServiceAccount token', () => {
+    const prompt = buildImplementPrompt(ISSUE, CONFIG);
+
+    expect(prompt).toContain('kubectl');
+    expect(prompt).toContain('yaaabk-agent');
+  });
 });
