@@ -12,15 +12,16 @@ RUN bun run --filter '@yaaabk/grill-mcp' build
 
 FROM oven/bun:1.3-alpine AS runtime
 # Pin the terminal and agent runtime. Sessions and Agent Jobs share this image,
-# so there is one OpenCode version to upgrade and verify.
+# so there is one OpenCode version to upgrade and verify. The versions live in
+# runtime-versions.env, which the backend's local session stage reads too.
 ARG TARGETARCH
-ARG OPENCODE_VERSION=2.2.5
-ARG TTYD_VERSION=1.7.7
+COPY --from=build /app/packages/agent/runtime-versions.env /tmp/runtime-versions.env
 # git, the GitHub CLI and kubectl are required to clone, commit, open pull
 # requests, and debug the Project's running workloads via the mounted
 # `yaaabk-agent` ServiceAccount token. ttyd owns the PTY for grill sessions.
 # OpenCode ships a musl build that runs on this Alpine image.
-RUN apk add --no-cache git github-cli ca-certificates && \
+RUN . /tmp/runtime-versions.env && \
+    apk add --no-cache git github-cli ca-certificates && \
     case "${TARGETARCH}" in \
       amd64) KUBECTL_ARCH=amd64; TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
       arm64) KUBECTL_ARCH=arm64; TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \
@@ -34,7 +35,7 @@ RUN apk add --no-cache git github-cli ca-certificates && \
     wget -qO /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OPENCODE_ARCH}-musl.tar.gz" && \
     tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode && \
     chmod +x /usr/local/bin/opencode && \
-    rm -f /tmp/opencode.tar.gz && \
+    rm -f /tmp/opencode.tar.gz /tmp/runtime-versions.env && \
     opencode --version
 WORKDIR /app
 ENV NODE_ENV=production
