@@ -38,6 +38,11 @@ export interface AgentConfig {
   branch?: string;
   /** The pull request a review judges, when the Job is a review run. */
   pullNumber?: number;
+  /**
+   * Base URL for OpenRouter's API, used to read the run's key usage. Defaults
+   * to `https://openrouter.ai/api/v1`; overridable for tests and proxies.
+   */
+  openrouterBaseUrl?: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -79,6 +84,7 @@ export function loadAgentConfig(env: Env): AgentConfig {
   const apiUrl = optional(env, 'YAAABK_API_URL');
   const branch = optional(env, 'BRANCH');
   const pullNumber = optional(env, 'PULL_NUMBER');
+  const openrouterBaseUrl = optional(env, 'OPENROUTER_BASE_URL');
   const rawKind = optional(env, 'AGENT_RUN_KIND') ?? 'implement-issue';
   if (!isAgentRunKind(rawKind)) {
     throw new Error(`AGENT_RUN_KIND must be one of ${AGENT_RUN_KINDS.join(', ')}`);
@@ -110,5 +116,6 @@ export function loadAgentConfig(env: Env): AgentConfig {
     ...(apiUrl === undefined ? {} : { apiUrl }),
     ...(branch === undefined ? {} : { branch }),
     ...(parsedPullNumber === undefined ? {} : { pullNumber: parsedPullNumber }),
+    ...(openrouterBaseUrl === undefined ? {} : { openrouterBaseUrl }),
   };
 }

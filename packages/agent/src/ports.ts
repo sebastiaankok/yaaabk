@@ -74,6 +74,20 @@ export interface OpenCode {
   }>;
 }
 
+/**
+ * Reads the run's OpenRouter key usage, in USD.
+ *
+ * The agent measures its LLM spend by reading this before and after the model
+ * call: OpenRouter reports a key's total spend, so the difference across one
+ * attempt is what that attempt cost. Reads are best-effort — a meter that
+ * cannot reach OpenRouter returns `undefined`, and the run then reports no
+ * cost rather than failing.
+ */
+export interface SpendMeter {
+  /** Total USD the run's OpenRouter key has spent, or `undefined` if unknown. */
+  usageUsd(): Promise<number | undefined>;
+}
+
 export interface Checks {
   /** Runs the project's pre-commit hooks; reports whether they passed. */
   run(directory: string): Promise<{ passed: boolean; output: string }>;
@@ -92,8 +106,12 @@ export interface GitHub {
 }
 
 export interface Reporter {
-  /** Reports the outcome back to YAAABK. */
-  report(input: { prUrl: string | null; logs: string }): Promise<void>;
+  /**
+   * Reports the outcome back to YAAABK. `costCents` is the run's LLM spend in
+   * whole cents, when the meter could measure it; omitting it leaves the run's
+   * cost unrecorded rather than zero.
+   */
+  report(input: { prUrl: string | null; logs: string; costCents?: number }): Promise<void>;
 }
 
 /** Everything the orchestrator needs, injected so it stays testable. */
@@ -103,6 +121,8 @@ export interface AgentDependencies {
   checks: Checks;
   github: GitHub;
   reporter: Reporter;
+  /** Reads the run's OpenRouter spend so a run can report what it cost. */
+  spend: SpendMeter;
   /** Working directory the repository is cloned into. Defaults to `/work/repo`. */
   directory?: string;
   /** Branch the agent pushes to. Defaults to `agent/issue-<number>`. */

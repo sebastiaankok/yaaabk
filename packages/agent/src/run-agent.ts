@@ -9,6 +9,30 @@ import {
 
 const DEFAULT_DIRECTORY = '/work/repo';
 
+/** Converts a USD amount to whole cents, rounding to the nearest cent. */
+function centsFromUsd(usd: number): number {
+  return Math.round(usd * 100);
+}
+
+/**
+ * Measures the LLM spend of one model call.
+ *
+ * Reads the run's OpenRouter key usage before and after `call`, returning the
+ * difference in whole cents. A meter that cannot read usage (before or after)
+ * yields `undefined`, so the run reports no cost rather than a wrong one.
+ */
+async function measureSpend<T>(
+  spend: AgentDependencies['spend'],
+  call: () => Promise<T>,
+): Promise<{ result: T; costCents: number | undefined }> {
+  const before = await spend.usageUsd();
+  const result = await call();
+  const after = await spend.usageUsd();
+  const costCents =
+    before === undefined || after === undefined ? undefined : centsFromUsd(after - before);
+  return { result, costCents };
+}
+
 /** The pull request a review run judges, validated by the config loader. */
 function requireReviewTarget(config: AgentConfig): { pullNumber: number; branch: string } {
   if (config.pullNumber === undefined || config.branch === undefined) {
@@ -48,17 +72,24 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     await deps.git.createBranch(directory, branch);
   }
 
-  const implemented = await deps.openCode.implement({
-    directory,
-    prompt: buildImplementPrompt(issue, config),
-  });
-  logs.push(implemented.output);
-  if (implemented.exitCode !== 0) {
-    await deps.reporter.report({ prUrl: null, logs: logs.join('\n') });
+  const implemented = await measureSpend(deps.spend, () =>
+    deps.openCode.implement({
+      directory,
+      prompt: buildImplementPrompt(issue, config),
+    }),
+  );
+  const { result, costCents } = implemented;
+  logs.push(result.output);
+  if (result.exitCode !== 0) {
+    await deps.reporter.report({
+      prUrl: null,
+      logs: logs.join('\n'),
+      ...(costCents === undefined ? {} : { costCents }),
+    });
     return {
       ok: false,
       reason: 'implementation-failed',
-      output: implemented.output,
+      output: result.output,
       branch,
     };
   }
@@ -66,7 +97,11 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
   const checks = await deps.checks.run(directory);
   logs.push(checks.output);
   if (!checks.passed) {
-    await deps.reporter.report({ prUrl: null, logs: logs.join('\n') });
+    await deps.reporter.report({
+      prUrl: null,
+      logs: logs.join('\n'),
+      ...(costCents === undefined ? {} : { costCents }),
+    });
     return { ok: false, reason: 'checks-failed', output: checks.output, branch };
   }
 
@@ -79,7 +114,11 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     labels: [AUTOMERGE_LABEL],
   });
 
-  await deps.reporter.report({ prUrl: pullRequest.url, logs: logs.join('\n') });
+  await deps.reporter.report({
+    prUrl: pullRequest.url,
+    logs: logs.join('\n'),
+    ...(costCents === undefined ? {} : { costCents }),
+  });
   return { ok: true, prUrl: pullRequest.url, branch };
 }
 
@@ -101,29 +140,40 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
   await deps.git.checkoutBranch(directory, branch);
 
   const diff = await deps.git.diff(directory);
-  const reviewed = await deps.openCode.review({
-    directory,
-    prompt: buildReviewPrompt(issue, { pullNumber, branch, diff }),
-  });
-  logs.push(reviewed.output);
-  if (reviewed.exitCode !== 0) {
-    await deps.reporter.report({ prUrl: null, logs: logs.join('\n') });
+  const reviewed = await measureSpend(deps.spend, () =>
+    deps.openCode.review({
+      directory,
+      prompt: buildReviewPrompt(issue, { pullNumber, branch, diff }),
+    }),
+  );
+  const { result, costCents } = reviewed;
+  logs.push(result.output);
+  if (result.exitCode !== 0) {
+    await deps.reporter.report({
+      prUrl: null,
+      logs: logs.join('\n'),
+      ...(costCents === undefined ? {} : { costCents }),
+    });
     return {
       ok: false,
       reason: 'review-failed',
-      output: reviewed.output,
+      output: result.output,
       branch,
     };
   }
 
   await deps.github.createReview({
     pullNumber,
-    event: reviewed.verdict.event,
-    body: reviewed.verdict.body,
+    event: result.verdict.event,
+    body: result.verdict.body,
   });
 
   const prUrl = pullRequestUrl(config.repoUrl, pullNumber);
-  await deps.reporter.report({ prUrl, logs: logs.join('\n') });
+  await deps.reporter.report({
+    prUrl,
+    logs: logs.join('\n'),
+    ...(costCents === undefined ? {} : { costCents }),
+  });
   return { ok: true, prUrl, branch };
 }
 

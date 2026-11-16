@@ -438,6 +438,31 @@ describe('review runs', () => {
     if (!result.ok) expect(result.error.kind).toBe('invalid-input');
   });
 
+  it('records the LLM spend a review run reports', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { container } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    expect(token).toBeDefined();
+
+    const reported = await manager.report(spawned.value.id, token!, {
+      prUrl: 'https://github.com/acme/todo-app/pull/7',
+      costCents: 10,
+    });
+
+    expect(reported.ok && reported.value).toMatchObject({ costCents: 10, kind: 'review' });
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value[0]).toMatchObject({ costCents: 10, kind: 'review' });
+  });
+
   it('retries a failed review without escalating the Issue', async () => {
     const { manager, issues, k8s } = await harness();
     const issue = await readyIssue(issues, { maxAttempts: 2 });
