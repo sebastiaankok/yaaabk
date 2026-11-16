@@ -75,6 +75,29 @@ describe('scaffold against the bundled svelte-bun template', () => {
     }
   });
 
+  it('scaffolds at the repository root when YAAABK_TEMPLATE_DIR points at a template', async () => {
+    // A deployment sets YAAABK_TEMPLATE_DIR; it must name the template
+    // directory itself. Pointing it at the parent (the directory *holding*
+    // svelte-bun) used to nest every file under `svelte-bun/`, leaving the
+    // repository with no `deploy/` at the root for ArgoCD to sync.
+    const source = defaultTemplateSource();
+    if (source.type !== 'directory') throw new Error('the default source is a directory');
+    const workDir = await makeWorkDir();
+    const module = createTemplateModule({
+      git: createFakeGitBackend(),
+      workDir,
+      source: { type: 'directory', path: source.path },
+      logger: silent,
+    });
+
+    const result = await module.scaffold(PROJECT);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.files).toContain('deploy/deployment.yaml');
+    expect(result.value.files).not.toContain('svelte-bun/deploy/deployment.yaml');
+  });
+
   it('interpolates the values the template and deploy manifests rely on', async () => {
     const workDir = await makeWorkDir();
     const module = createTemplateModule({
