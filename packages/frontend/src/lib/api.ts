@@ -9,7 +9,6 @@
 import { PUBLIC_API_BASE_URL } from '$app/env/public';
 import type { AgentRun } from '@yaaabk/agents';
 import type { PullSummary, PushSummary, IssueSyncStatus, SyncSummary } from '@yaaabk/github';
-import type { GeneratedIssue } from '@yaaabk/grill-me';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
 import type { Project, ProvisioningEvent } from '@yaaabk/projects';
@@ -306,75 +305,61 @@ export function activatePlan(projectId: string, planId: string): Promise<Plan> {
   );
 }
 
-export function startGrill(projectId: string, idea: string): Promise<{ sessionId: string }> {
-  return request<{ sessionId: string }>(`/api/projects/${encodeURIComponent(projectId)}/grill`, {
+export function startGrill(
+  projectId: string,
+  idea: string,
+  model?: string,
+): Promise<GrillSessionView> {
+  const body: Record<string, string> = { idea };
+  if (model !== undefined && model.trim() !== '') body.model = model.trim();
+  return request<GrillSessionView>(`/api/projects/${encodeURIComponent(projectId)}/grill`, {
     method: 'POST',
-    body: JSON.stringify({ idea }),
+    body: JSON.stringify(body),
   });
 }
 
-export function submitAnswer(
-  projectId: string,
-  sessionId: string,
-  answer: string,
-): Promise<{ ok: true }> {
-  return request<{ ok: true }>(
-    `/api/projects/${encodeURIComponent(projectId)}/grill/${encodeURIComponent(sessionId)}/answer`,
-    { method: 'POST', body: JSON.stringify({ answer }) },
+/** The live grill session for a Project, or `null` when none is running. */
+export async function getActiveGrillSession(projectId: string): Promise<GrillSessionView | null> {
+  try {
+    return await request<GrillSessionView>(`/api/projects/${encodeURIComponent(projectId)}/grill`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export function getGrillSession(projectId: string, sessionId: string): Promise<GrillSessionView> {
+  return request<GrillSessionView>(
+    `/api/projects/${encodeURIComponent(projectId)}/grill/${encodeURIComponent(sessionId)}`,
   );
 }
 
-export function cancelGrill(projectId: string, sessionId: string): Promise<{ ok: true }> {
-  return request<{ ok: true }>(
+export function cancelGrill(projectId: string, sessionId: string): Promise<GrillSessionView> {
+  return request<GrillSessionView>(
     `/api/projects/${encodeURIComponent(projectId)}/grill/${encodeURIComponent(sessionId)}/cancel`,
     { method: 'POST' },
   );
 }
 
-/**
- * Opens the SSE stream for a grill-me session.
- *
- * `EventSource` reconnects automatically and reports the last `id:` it received
- * as `Last-Event-ID`. The backend sends `id:` on every frame so a reconnecting
- * connection can identify where it left off; the current backend does not
- * replay missed events.
- */
-export function openGrillStream(projectId: string, sessionId: string): EventSource {
-  return new EventSource(
-    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/grill?sessionId=${encodeURIComponent(sessionId)}`,
-    { withCredentials: true },
-  );
+/** The WebSocket URL for a session's terminal. */
+export function terminalWebSocketUrl(projectId: string, sessionId: string): string {
+  const base = API_BASE.replace(/^http/, 'ws');
+  return `${base}/api/projects/${encodeURIComponent(projectId)}/grill/${encodeURIComponent(sessionId)}/terminal`;
 }
 
-/** The payloads the backend forwards on the grill-me SSE stream. */
-export interface GrillQuestionEvent {
-  sessionId: string;
-  question: string;
-}
-
-export interface GrillTokenEvent {
-  sessionId: string;
-  text: string;
-}
-
-export interface GrillPlanReadyEvent {
-  sessionId: string;
-  plan: string;
-}
-
-export interface GrillIssuesEvent {
-  sessionId: string;
-  issues: GeneratedIssue[];
-}
-
-export interface GrillErrorEvent {
-  sessionId: string;
-  error: { kind: string; message: string };
-}
-
-export interface GrillEndedEvent {
-  sessionId: string;
-  reason: 'completed' | 'failed' | 'cancelled' | 'timeout';
+/** A live interactive grill session, as the Plan page sees it. */
+export interface GrillSessionView {
+  id: string;
+  projectId: string;
+  status: 'starting' | 'active' | 'finished' | 'cancelled' | 'failed';
+  skillLevel: SkillLevel;
+  model: string;
+  startedAt: string;
+  lastActivityAt: string;
+  endedAt: string | null;
+  endReason: 'finished' | 'cancelled' | 'replaced' | 'failed' | 'timeout' | null;
+  error: string | null;
+  terminalPath: string;
 }
 
 // --- Issues -----------------------------------------------------------------

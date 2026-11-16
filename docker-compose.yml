@@ -12,10 +12,14 @@ services:
     build:
       context: .
       dockerfile: packages/backend/Dockerfile
+      target: dev
     environment:
       PORT: 3000
       YAAABK_DATA_DIR: /data
       YAAABK_WEB_ORIGIN: http://localhost:5173
+      # Local grill sessions run ttyd + OpenCode inside the backend container.
+      # Provider credential OpenCode uses for the session model.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       # Development-only default; set YAAABK_AUTH_SECRET to keep sessions.
       YAAABK_AUTH_SECRET: ${YAAABK_AUTH_SECRET:-dev-only-insecure-secret-change-me-0123456789}
     ports:
@@ -41,13 +45,8 @@ services:
       backend:
         condition: service_healthy
 
-  # OpenCode sidecar is introduced with the Grill-Me slice (issue #5); enable it
-  # here when that module lands.
-  # opencode:
-  #   build:
-  #     context: .
-  #     dockerfile: packages/opencode/Dockerfile
-  #   restart: unless-stopped
+  # Grill sessions run in the backend's dev stage as local ttyd + OpenCode
+  # child processes; see YAAABK_SESSION_RUNTIME above.
 
 volumes:
   yaaabk-data:

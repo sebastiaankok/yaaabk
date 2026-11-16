@@ -25,7 +25,7 @@ A per-Developer setting that controls the prompt depth of the YAAABK-specific gr
 _Avoid_: Experience level, difficulty
 
 **Grill-Me Session**:
-An interactive AI-driven conversation where a **Developer** refines an idea into a structured **Plan**. Powered by a YAAABK-specific OpenCode skill that asks questions, processes answers, and iterates until the plan is complete. The skill outputs structured markers (`<QUESTION>`, `<PLAN>`, `<ISSUES>`) that YAAABK parses.
+An interactive AI-driven conversation where a **Developer** refines an idea into a structured **Plan**. Runs `opencode mini` behind ttyd as a real terminal session, so the Developer sees the agent's output and types answers directly.
 _Avoid_: Chat, brainstorming session
 
 **Plan**:
