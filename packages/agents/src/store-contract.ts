@@ -25,7 +25,9 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     id: 'run-1',
     projectId: 'project-1',
     issueId: 'issue-1',
+    kind: 'implement-issue',
     attemptNumber: 1,
+    pullNumber: null,
     jobName: null,
     pvcName: null,
     openrouterSecretName: null,
@@ -65,6 +67,15 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       store.create(runRecord());
 
       expect(store.get('run-1')).toEqual(runRecord());
+    });
+
+    it('stores and reads back a review run with its pull number', () => {
+      const store = createStore();
+      const review = runRecord({ kind: 'review', pullNumber: 7, attemptNumber: 2 });
+
+      store.create(review);
+
+      expect(store.get('run-1')).toEqual(review);
     });
 
     it('lists a project\u2019s runs newest first', () => {

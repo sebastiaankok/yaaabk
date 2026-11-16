@@ -1,3 +1,5 @@
+import type { AgentRunKind } from './types';
+
 /** Default cap on Agents running for one Project at a time. */
 export const DEFAULT_MAX_CONCURRENT_PER_PROJECT = 2;
 
@@ -25,22 +27,49 @@ export const OPENROUTER_SECRET_KEY = 'OPENROUTER_API_KEY';
 /** Key a run's GitHub token is stored under in its per-attempt Secret. */
 export const GITHUB_TOKEN_SECRET_KEY = 'GITHUB_TOKEN';
 
-/** The Job name for an Issue's attempt. */
-export function jobName(issueId: string, attempt: number): string {
-  return `agent-${issueId}-attempt-${attempt}`;
+/** Skill the implement-issue Job loads. */
+export const IMPLEMENT_SKILL_PATH = '/app/skills/implement-issue/SKILL.md';
+
+/** Skill the review Job loads. */
+export const REVIEW_SKILL_PATH = '/app/skills/review-pr/SKILL.md';
+
+function prefix(kind: AgentRunKind): string {
+  return kind === 'review' ? 'agent-review' : 'agent';
 }
 
-/** The working PVC name for an Issue's attempt, retained after the Job ends. */
-export function pvcName(issueId: string, attempt: number): string {
-  return `agent-work-${issueId}-${attempt}`;
+/** The Job name for a run. */
+export function jobName(
+  issueId: string,
+  attempt: number,
+  kind: AgentRunKind = 'implement-issue',
+): string {
+  const base = `${prefix(kind)}-${issueId}`;
+  return kind === 'review' ? `${base}-${attempt}` : `${base}-attempt-${attempt}`;
+}
+
+/** The working PVC name for a run, retained after the Job ends. */
+export function pvcName(
+  issueId: string,
+  attempt: number,
+  kind: AgentRunKind = 'implement-issue',
+): string {
+  return `${prefix(kind)}-work-${issueId}-${attempt}`;
 }
 
 /** The per-attempt Secret name holding the OpenRouter key, when one is used. */
-export function openrouterSecretName(issueId: string, attempt: number): string {
-  return `agent-openrouter-${issueId}-${attempt}`;
+export function openrouterSecretName(
+  issueId: string,
+  attempt: number,
+  kind: AgentRunKind = 'implement-issue',
+): string {
+  return `${prefix(kind)}-openrouter-${issueId}-${attempt}`;
 }
 
 /** The per-attempt Secret name holding the run's GitHub token. */
-export function githubTokenSecretName(issueId: string, attempt: number): string {
-  return `agent-github-${issueId}-${attempt}`;
+export function githubTokenSecretName(
+  issueId: string,
+  attempt: number,
+  kind: AgentRunKind = 'implement-issue',
+): string {
+  return `${prefix(kind)}-github-${issueId}-${attempt}`;
 }

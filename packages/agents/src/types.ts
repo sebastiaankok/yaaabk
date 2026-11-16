@@ -14,6 +14,23 @@
 /** Where an Agent run is in its lifecycle. */
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed';
 
+/** What an Agent run is for. */
+export type AgentRunKind = 'implement-issue' | 'review';
+
+/** Every valid {@link AgentRunKind}, for validation and the UI. */
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review'];
+
+/** Narrows an unknown value to an {@link AgentRunKind}. */
+export function isAgentRunKind(value: unknown): value is AgentRunKind {
+  return typeof value === 'string' && (AGENT_RUN_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * The GitHub token scope a run needs. Kept distinct from {@link AgentRunKind}
+ * so a new kind can reuse an existing scope rather than minting a new one.
+ */
+export type AgentTokenScope = 'implement-issue' | 'review';
+
 /** Every valid {@link AgentRunStatus}, for validation and the UI. */
 export const AGENT_RUN_STATUSES: readonly AgentRunStatus[] = [
   'queued',
@@ -41,8 +58,16 @@ export interface AgentRun {
   id: string;
   projectId: string;
   issueId: string;
-  /** 1-based attempt number, matching the Issue's attempt count at scheduling. */
+  /** What the run is for: implementing the Issue, or reviewing a pull request. */
+  kind: AgentRunKind;
+  /**
+   * 1-based sequence within the run's kind for this Issue. For an
+   * implement-issue run this is the Issue's attempt number; a review run does
+   * not consume the implement-attempt budget, so its sequence counts reviews.
+   */
   attemptNumber: number;
+  /** The pull request a review run judges, once dispatched. */
+  pullNumber: number | null;
   /** The Kubernetes Job name, once the attempt has been dispatched. */
   jobName: string | null;
   /** The PersistentVolumeClaim holding the attempt's working tree, once dispatched. */
@@ -84,6 +109,13 @@ export interface StoredAgentRun extends AgentRun {
 /** What a caller may tune when spawning an attempt. */
 export interface SpawnOptions {
   /**
+   * What the run is for. Defaults to `implement-issue`; `review` judges a pull
+   * request instead of implementing the Issue, and requires `pullNumber`.
+   */
+  kind?: AgentRunKind;
+  /** The pull request a review run judges. Required when `kind` is `review`. */
+  pullNumber?: number;
+  /**
    * OpenRouter key the Job uses for its LLM calls. When given, the module
    * creates a per-attempt Secret the Job reads it from.
    */
@@ -95,6 +127,13 @@ export interface SpawnOptions {
    */
   branch?: string;
 }
+
+/**
+ * Resolves the short-lived GitHub token a run's Job gets, scoped to what that
+ * kind of run needs. Implement-issue runs push and open pull requests; review
+ * runs only clone and post a review.
+ */
+export type AgentGithubTokenResolver = (scope: AgentTokenScope) => Promise<string | undefined>;
 
 /** A snapshot of what the scheduler currently sees. */
 export interface Capacity {
@@ -148,9 +187,12 @@ export type AgentsResult<T> = { ok: true; value: T } | { ok: false; error: Agent
 /** The Agent Manager's public contract. */
 export interface AgentManager {
   /**
-   * Schedules an attempt for an Issue. When the concurrency limits leave room
-   * the attempt is dispatched immediately; otherwise it is queued and a later
+   * Schedules a run for an Issue. When the concurrency limits leave room the
+   * run is dispatched immediately; otherwise it is queued and a later
    * {@link reconcile} dispatches it.
+   *
+   * A `review` run judges the pull request identified by `pullNumber` and does
+   * not consume the Issue's implement-attempt budget.
    */
   spawn(
     projectId: string,

@@ -30,7 +30,9 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
   return {
     projectId: 'project-1',
     issueId: 'schema',
+    kind: 'implement-issue',
     attemptNumber: 1,
+    pullNumber: null,
     jobName: null,
     pvcName: null,
     openrouterSecretName: null,
