@@ -59,7 +59,7 @@ cp .env.example .env
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per Issue and Grill-Me Session |
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
-| `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model used when neither the start request nor the Project's last-used choice supplies one |
+| `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model Grill-Me Sessions and Agent Jobs run when no explicit choice supplies one |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
 | `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
@@ -368,7 +368,10 @@ The `@yaaabk/agent` package is what the Job runs: it fetches the Issue, clones
 the repository, runs OpenCode with the bundled `implement-issue` skill (which
 can inspect and debug the Project's running workloads in its own namespace via
 `kubectl` using the mounted `yaaabk-agent` ServiceAccount token), runs the
-project's checks, and opens a pull request labelled `automerge`. The clone →
+project's checks, and opens a pull request labelled `automerge`. OpenCode is
+invoked with the Agent Manager's configured model and automatic approvals, so a
+Job never waits on a permission prompt no human can answer; a missing model or
+OpenRouter key fails the run with the setting to configure. The clone →
 implement → checks → PR flow is driven through narrow ports, so it is
 unit-tested without a cluster, a repository or an LLM; the real adapters shell
 out to `git`, OpenCode and the GitHub API.

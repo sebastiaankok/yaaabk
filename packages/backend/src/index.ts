@@ -470,6 +470,8 @@ const agents = createAgentManager({
   k8s,
   githubIssues: resolveGitHubIssues(settings),
   githubToken: resolveGithubTokenForAgents,
+  // Sessions and Agent Jobs share one model configuration.
+  model: defaultModel,
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }
     : {}),
