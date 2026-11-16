@@ -85,9 +85,15 @@ kubectl --context k3s-home auth can-i --list \
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).
   Single backend replica, `Recreate` strategy — a lost node means lost data.
 - **GitHub credentials**: prefer a GitHub App (Settings page: app id, private
-  key, installation id). The backend mints short-lived installation tokens for
-  repository management, scaffold pushes and agent runs — no long-lived PAT is
-  used or copied around. The PAT/env fallbacks exist only for local dev.
+  key, installation id — all three are required). The backend mints short-lived
+  installation tokens for repository management, scaffold pushes and agent runs
+  — no long-lived PAT is used or copied around. The PAT/env fallbacks exist only
+  for local dev. Note that registering an App is not installing it: create one at
+  <https://github.com/settings/apps>, install it on the `yaaabk` org, then copy
+  the installation id from the install confirmation URL into Settings. Until
+  then every create fails with "configured without an Installation ID", and
+  `YAAABK_GITHUB_OWNER` must still name the account repos are created under
+  (`yaaabk`).
 - **ArgoCD**: the controller must be configured to reconcile Applications in
   `yaaabk-apps` (`application.namespaces: yaaabk-apps` in
   `argocd-cmd-params-cm`) and to read the project repositories — replace any

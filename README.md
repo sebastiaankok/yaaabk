@@ -47,8 +47,8 @@ cp .env.example .env
 | `YAAABK_DATA_DIR` | `./data` | Directory holding the SQLite database file |
 | `YAAABK_AUTH_SECRET` | _generated_ | HS256 secret for session cookies; required in production |
 | `YAAABK_WEB_ORIGIN` | `http://localhost:5173` | Frontend origin allowed to call the API with credentials |
-| `YAAABK_GITHUB_TOKEN` | _unset_ | Token used to create Project repositories (`repo` scope, or a GitHub App with `administration:write`) |
-| `YAAABK_GITHUB_OWNER` | _unset_ | Account new Project repositories are created under |
+| `YAAABK_GITHUB_TOKEN` | _unset_ | Fallback token used to create Project repositories (`repo` scope, or a GitHub App with `administration:write` / `repository_creation:write`) |
+| `YAAABK_GITHUB_OWNER` | _unset_ | **Required**: account new Project repositories are created under. For a GitHub App, the account it is installed on. |
 | `YAAABK_GITHUB_OWNER_TYPE` | `org` | Whether that account is an `org` or the authenticated `user` |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per issue |
@@ -62,6 +62,26 @@ A single root `.env` configures every package: the backend loads it via
 `--env-file`, and Vite loads it via `envDir`. Only variables prefixed with
 `PUBLIC_` are exposed to browser code. You can also override a value for one
 command without editing the file, e.g. `PORT=4000 bun run dev`.
+
+### Connecting GitHub
+
+Create a Project needs two things: an **account to create repositories under**
+(`YAAABK_GITHUB_OWNER`) and **credentials**. Registering a GitHub App is not the
+same as installing it — an App only holds a token for the installation it was
+granted, so all three of App ID, private key and **Installation ID** are
+required:
+
+1. Create the App at <https://github.com/settings/apps> and give it
+   **Administration: read/write** (repository creation) plus Contents, Issues,
+   Pull requests and Metadata.
+2. **Install** it on the account that will own the repositories, then copy the
+   installation id from the confirmation URL — `.../installations/<id>`.
+3. Paste the App ID, private key and Installation ID into **Settings**.
+
+The Settings page reports what is missing rather than failing later: an App
+without an Installation ID is called out by name, since it can never mint a
+token. `YAAABK_GITHUB_TOKEN` (a PAT with the `repo` scope) remains a fallback
+for local development.
 
 To work on one package at a time:
 
