@@ -1,15 +1,14 @@
-import type { SkillLevel } from '@yaaabk/shared';
+import { DEFAULT_OPENCODE_MODEL, resolveOpenCodeModel, type SkillLevel } from '@yaaabk/shared';
 
 /** Default OpenCode model when neither the request nor the Project chooses one. */
-export const DEFAULT_GRILL_MODEL = 'openrouter/anthropic/claude-sonnet-4.5';
+export const DEFAULT_GRILL_MODEL = DEFAULT_OPENCODE_MODEL;
 
 /** Resolves the model a session should use. */
 export function resolveSessionModel(
   requested: string | undefined,
   fallback: string = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL,
 ): string {
-  const trimmed = requested?.trim();
-  return trimmed !== undefined && trimmed !== '' ? trimmed : fallback;
+  return resolveOpenCodeModel(requested, fallback);
 }
 
 /** How question depth changes with the Developer's skill level. */
