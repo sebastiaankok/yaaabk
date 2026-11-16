@@ -166,10 +166,24 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/grill-mcp": {
+      "name": "@yaaabk/grill-mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@yaaabk/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+      },
+    },
     "packages/grill-me": {
       "name": "@yaaabk/grill-me",
       "version": "0.0.0",
       "dependencies": {
+        "@yaaabk/issues": "workspace:*",
+        "@yaaabk/plans": "workspace:*",
         "@yaaabk/shared": "workspace:*",
       },
       "devDependencies": {
@@ -508,6 +522,8 @@
     "@yaaabk/frontend": ["@yaaabk/frontend@workspace:packages/frontend"],
 
     "@yaaabk/github": ["@yaaabk/github@workspace:packages/github"],
+
+    "@yaaabk/grill-mcp": ["@yaaabk/grill-mcp@workspace:packages/grill-mcp"],
 
     "@yaaabk/grill-me": ["@yaaabk/grill-me@workspace:packages/grill-me"],
 

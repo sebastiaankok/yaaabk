@@ -135,7 +135,8 @@ This is a Bun workspace monorepo:
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/plans` | `packages/plans` | Versioned Plans (`createPlansModule`) and the `PlanStore` port |
-| `@yaaabk/grill-me` | `packages/grill-me` | Grill-Me terminal sessions, the `SessionRuntime` port and local adapter, and the terminal protocol |
+| `@yaaabk/grill-me` | `packages/grill-me` | Grill-Me terminal sessions, reporting drafts, Plan/Issue publishing, the `SessionRuntime` port and local adapter, and the terminal protocol |
+| `@yaaabk/grill-mcp` | `packages/grill-mcp` | The stdio MCP server a Grill-Me Session runs next to OpenCode (`report_prd`, `report_issues`, `session_status`) |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
 | `@yaaabk/stats` | `packages/stats` | Pure Project statistics (`computeProjectStats`): issue counts, velocity, agent success, cost and durations |
@@ -219,6 +220,37 @@ against `bun:sqlite` under `bun test`:
 bun run --filter '@yaaabk/projects' test:integration
 ```
 
+## Grill-Me sessions
+
+A Grill-Me Session runs `opencode mini` behind ttyd in a session runtime, and the
+Plan page hosts an xterm.js terminal for it. The agent hands its work back
+through the reporting MCP server the image ships, not through stdout markers:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/projects/:id/grill` | Start a session, replacing the Project's previous one |
+| `GET /api/projects/:id/grill` | The live session, or 404 when none is running |
+| `GET /api/projects/:id/grill/:sessionId/terminal` | Upgrade to the terminal WebSocket |
+| `POST /api/grill-sessions/:sessionId/report` | Store a PRD and/or Issue list as drafts (session bearer token) |
+| `GET /api/grill-sessions/:sessionId/status` | Read the status and draft counts (session bearer token) |
+| `POST /api/projects/:id/grill/:sessionId/finish` | Publish the drafts as one Plan version and its Issues |
+| `POST /api/projects/:id/grill/:sessionId/cancel` | Discard the drafts and stop the session |
+
+Reporting never touches Plans or Issues. **Finish** is the only publish point:
+it creates one Plan (labelled "Plan (PRD)" in the UI), then replaces that Plan's
+Issues. Without a PRD and at least one Issue it answers `409` with the missing
+drafts, and a `force` request publishes what exists. The session remembers the
+Plan it created, so retrying Finish after a failed Issue publish reuses that
+version instead of creating another. Cancel leaves no trace.
+
+The session runtime injects `YAAABK_API_URL`, `YAAABK_SESSION_ID` and a
+per-session `YAAABK_REPORT_TOKEN`; the report routes accept that bearer token
+instead of the Developer's cookie. `packages/grill-mcp` exposes `report_prd`,
+`report_issues` and `session_status` over stdio, and the image's session OpenCode
+config registers it with `codemode: false` so the model calls those tools
+directly. `YAAABK_SESSION_OPENCODE_CONFIG` scopes the config to sessions, so
+Agent Jobs never register a server they have no token for.
+
 ## Issues
 
 The `@yaaabk/issues` package owns Issues: the local mirror of the GitHub Issues a
@@ -243,8 +275,8 @@ Plan generates. The backend exposes it over HTTP:
 The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
 the generated Issues grouped by wave (with label pills, dependency tags and any
 circular-dependency warning), a "Refine with prompt" box, and "Approve & Create".
-The one-shot generate/refine endpoints remain until the legacy marker path is
-removed; new grill sessions publish through Finish in a later slice.
+New grill sessions publish their Plan and Issues through Finish; the one-shot
+generate/refine endpoints remain until the legacy marker path is removed.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency

@@ -339,6 +339,206 @@ describe('POST /api/projects/:id/grill/:sessionId/cancel', () => {
   });
 });
 
+describe('POST /api/grill-sessions/:sessionId/report', () => {
+  function bearer(token: string | undefined): Record<string, string> {
+    return token === undefined ? {} : { authorization: `Bearer ${token}` };
+  }
+
+  it('needs no Developer cookie but rejects a missing or wrong token', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+
+    const without = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prd: '# PRD' }),
+    });
+    const wrong = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...bearer('not-the-token'),
+      },
+      body: JSON.stringify({ prd: '# PRD' }),
+    });
+
+    expect(without.status).toBe(401);
+    expect(wrong.status).toBe(401);
+  });
+
+  it('stores a draft without creating Plan or Issue records', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    const token = context.sessionRuntime.requests.at(-1)?.reportToken ?? '';
+
+    const reported = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...bearer(token) },
+      body: JSON.stringify({ prd: '# PRD' }),
+    });
+
+    expect(reported.status).toBe(200);
+    await expect(reported.json()).resolves.toMatchObject({
+      draft: { hasPrd: true, issueCount: 0 },
+    });
+    const storedPlans = await context.plans.list(projectId);
+    expect(storedPlans.ok && storedPlans.value).toHaveLength(0);
+    const storedIssues = await context.issues.list(projectId);
+    expect(storedIssues.ok && storedIssues.value).toHaveLength(0);
+  });
+
+  it('rejects Issues reported without a PRD draft', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    const token = context.sessionRuntime.requests.at(-1)?.reportToken ?? '';
+
+    const res = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...bearer(token) },
+      body: JSON.stringify({ issues: [{ title: 'Save a bookmark' }] }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
+  });
+
+  it('returns the session status to the same bearer token', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    const token = context.sessionRuntime.requests.at(-1)?.reportToken ?? '';
+
+    const res = await context.app.request(`/api/grill-sessions/${started.id}/status`, {
+      headers: bearer(token),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      id: started.id,
+      status: 'active',
+      draft: { hasPrd: false, issueCount: 0 },
+    });
+  });
+});
+
+describe('POST /api/projects/:id/grill/:sessionId/finish', () => {
+  async function report(
+    context: TestContext,
+    sessionId: string,
+    payload: unknown,
+  ): Promise<Response> {
+    const token = context.sessionRuntime.requests.at(-1)?.reportToken ?? '';
+    return context.app.request(`/api/grill-sessions/${sessionId}/report`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  it('publishes the drafts as one Plan and its Issues', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await report(context, started.id, {
+      prd: '# Plan (PRD)',
+      issues: [
+        {
+          title: 'Save a bookmark',
+          body: 'Persist a bookmark.',
+          labels: ['ready'],
+          depends_on: [],
+        },
+      ],
+    });
+
+    const res = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      session: { status: 'finished' },
+      plan: { contentMarkdown: '# Plan (PRD)', source: 'grill-me', version: 1 },
+      issues: [{ title: 'Save a bookmark', planId: expect.any(String) }],
+    });
+    const retried = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+    expect(retried.status).toBe(200);
+    const storedPlans = await context.plans.list(projectId);
+    expect(storedPlans.ok && storedPlans.value).toHaveLength(1);
+    const storedIssues = await context.issues.list(projectId);
+    expect(storedIssues.ok && storedIssues.value).toHaveLength(1);
+  });
+
+  it('returns a conflict naming the missing drafts, and a forced Finish still publishes', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await report(context, started.id, { prd: '# Only a PRD' });
+
+    const conflict = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error: 'incomplete',
+      missing: ['issues'],
+    });
+
+    const forced = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({ force: true }) },
+    );
+
+    expect(forced.status).toBe(200);
+    await expect(forced.json()).resolves.toMatchObject({
+      session: { status: 'finished' },
+      plan: { contentMarkdown: '# Only a PRD' },
+      issues: [],
+    });
+  });
+
+  it('discards the drafts when the session is cancelled', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await report(context, started.id, { prd: '# A PRD' });
+
+    const cancelled = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/cancel`,
+      { method: 'POST' },
+    );
+
+    expect(cancelled.status).toBe(200);
+    await expect(cancelled.json()).resolves.toMatchObject({
+      draft: { hasPrd: false, issueCount: 0 },
+    });
+    const storedPlans = await context.plans.list(projectId);
+    expect(storedPlans.ok && storedPlans.value).toHaveLength(0);
+  });
+});
+
 describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
   it('reports that WebSockets are unavailable when no upgrader is injected', async () => {
     const { context, session } = await signedIn();

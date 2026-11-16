@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@yaaabk/issues": "workspace:*",
+    "@yaaabk/plans": "workspace:*",
     "@yaaabk/shared": "workspace:*"
   },
   "devDependencies": {

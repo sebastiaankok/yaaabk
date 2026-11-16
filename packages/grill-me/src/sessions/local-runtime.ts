@@ -48,6 +48,11 @@ export interface LocalSessionRuntimeOptions {
   host?: string;
   /** Working directory for ttyd. Defaults to the backend's directory. */
   cwd?: string;
+  /**
+   * OpenCode config file for sessions, applied through `OPENCODE_CONFIG`.
+   * Defaults to `YAAABK_SESSION_OPENCODE_CONFIG`. Agent Jobs do not load it.
+   */
+  opencodeConfig?: string;
   /** Extra environment for ttyd, merged over `process.env`. */
   env?: Record<string, string | undefined>;
   /** Runs one child process. Defaults to `child_process.spawn`. */
@@ -214,6 +219,7 @@ export function createLocalSessionRuntime(
   const opencodeCommand = options.opencodeCommand ?? 'opencode';
   const host = options.host ?? LOOPBACK;
   const cwd = options.cwd ?? process.cwd();
+  const opencodeConfig = options.opencodeConfig ?? process.env['YAAABK_SESSION_OPENCODE_CONFIG'];
   const spawn = options.spawn ?? realSpawner;
   const probe = options.probe ?? probeTtyd;
   const allocatePort = options.allocatePort ?? allocateLoopbackPort;
@@ -320,6 +326,9 @@ export function createLocalSessionRuntime(
             YAAABK_PROJECT_ID: spec.projectId,
             YAAABK_SESSION_ID: spec.sessionId,
             YAAABK_SKILL_LEVEL: spec.skillLevel,
+            ...(spec.reportToken === undefined ? {} : { YAAABK_REPORT_TOKEN: spec.reportToken }),
+            ...(spec.apiUrl === undefined ? {} : { YAAABK_API_URL: spec.apiUrl }),
+            ...(opencodeConfig === undefined ? {} : { OPENCODE_CONFIG: opencodeConfig }),
           },
           detached: true,
         });

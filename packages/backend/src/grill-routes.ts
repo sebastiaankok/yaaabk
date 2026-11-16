@@ -18,9 +18,19 @@ import { asString, body, fail, projectOrResponse } from './http';
 const STATUS_BY_KIND: Record<GrillSessionError['kind'], ContentfulStatusCode> = {
   'invalid-input': 400,
   'not-found': 404,
+  unauthorized: 401,
   'start-failed': 502,
+  incomplete: 409,
+  'publish-failed': 502,
   unknown: 500,
 };
+
+/** Reads the bearer token a session's reporting MCP server presents. */
+function bearerToken(c: { req: { header(name: string): string | undefined } }): string {
+  const header = c.req.header('authorization') ?? '';
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match?.[1]?.trim() ?? '';
+}
 
 export interface GrillRoutesOptions {
   /**
@@ -182,6 +192,52 @@ export function grillRoutes(
     const sessionId = c.req.param('sessionId');
     const result = await sessions.cancel(project.id, sessionId);
     if (result.ok) closeTerminal(sessionId);
+    return result.ok
+      ? c.json(result.value)
+      : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
+  });
+
+  app.post('/api/projects/:id/grill/:sessionId/finish', async (c) => {
+    const project = await projectOrResponse(c, projects, c.req.param('id'));
+    if (project instanceof Response) return project;
+
+    const input = await body(c);
+    const sessionId = c.req.param('sessionId');
+    const force = input.force === true || input.force === 'true';
+    const result = await sessions.finish(project.id, sessionId, { force });
+    if (!result.ok && result.error.kind === 'incomplete') {
+      return c.json(
+        {
+          error: result.error.kind,
+          message: result.error.message,
+          missing: result.error.missing ?? [],
+        },
+        409,
+      );
+    }
+    if (!result.ok) return fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
+    closeTerminal(sessionId);
+    return c.json(result.value);
+  });
+
+  /*
+   * The reporting routes are called by the session's MCP server, inside the
+   * runtime, so they authenticate with the per-session bearer token instead of
+   * the Developer's cookie. `requireAuth` skips this prefix for that reason.
+   */
+  app.post('/api/grill-sessions/:sessionId/report', async (c) => {
+    const input = await body(c);
+    const result = await sessions.report(c.req.param('sessionId'), bearerToken(c), {
+      ...(input.prd === undefined ? {} : { prd: input.prd }),
+      ...(input.issues === undefined ? {} : { issues: input.issues }),
+    });
+    return result.ok
+      ? c.json(result.value)
+      : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
+  });
+
+  app.get('/api/grill-sessions/:sessionId/status', async (c) => {
+    const result = await sessions.status(c.req.param('sessionId'), bearerToken(c));
     return result.ok
       ? c.json(result.value)
       : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);

@@ -6,6 +6,7 @@ WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile
 RUN bun run --filter '@yaaabk/backend' build
+RUN bun run --filter '@yaaabk/grill-mcp' build
 
 FROM oven/bun:1.3-alpine AS runtime
 WORKDIR /app
@@ -45,7 +46,13 @@ RUN apk add --no-cache ca-certificates && \
     opencode --version
 # Image-baked grill skills, matching the agent runtime.
 COPY --from=build /app/packages/grill-me/skills ./skills
+# The reporting MCP server and the session OpenCode config. compose sessions
+# run on the loopback, so the MCP server reaches the backend at localhost.
+COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
+COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
 ENV YAAABK_TTYD_BIN=/usr/local/bin/ttyd
 ENV YAAABK_OPENCODE_BIN=/usr/local/bin/opencode
 ENV YAAABK_GRILL_SKILL_PATH=/app/skills/grill-me/SKILL.md
+ENV YAAABK_SESSION_API_URL=http://127.0.0.1:3000
+ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 USER bun

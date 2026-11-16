@@ -2,14 +2,17 @@
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import type { Plan } from '@yaaabk/plans';
+  import type { Issue } from '@yaaabk/issues';
   import type { Project } from '@yaaabk/projects';
   import {
     ApiError,
     activatePlan,
     cancelGrill,
+    finishGrill,
     getActiveGrillSession,
     getActivePlan,
     getProject,
+    listIssues,
     listPlans,
     startGrill,
     terminalWebSocketUrl,
@@ -24,10 +27,12 @@
   let project = $state<Project | null>(null);
   let plans = $state<Plan[]>([]);
   let activePlan = $state<Plan | null>(null);
+  let issues = $state<Issue[]>([]);
   let session = $state<GrillSessionView | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
+  let finishConflict = $state<string | null>(null);
 
   let idea = $state('');
   let busy = $state(false);
@@ -36,6 +41,12 @@
 
   const terminalUrl = $derived(
     session === null || projectId === undefined ? '' : terminalWebSocketUrl(projectId, session.id),
+  );
+
+  const draftLabel = $derived(
+    session === null
+      ? ''
+      : `${session.draft.hasPrd ? 'PRD drafted' : 'No PRD yet'} · ${session.draft.issueCount} ${session.draft.issueCount === 1 ? 'issue' : 'issues'} drafted`,
   );
 
   const statusLabel = $derived(
@@ -53,9 +64,14 @@
   }
 
   async function refreshPlans(id: string): Promise<void> {
-    const [nextPlans, nextActive] = await Promise.all([listPlans(id), getActivePlan(id)]);
+    const [nextPlans, nextActive, nextIssues] = await Promise.all([
+      listPlans(id),
+      getActivePlan(id),
+      listIssues(id),
+    ]);
     plans = nextPlans;
     activePlan = nextActive;
+    issues = nextIssues;
   }
 
   // Load the project, its plan history and any session that survived a refresh.
@@ -65,12 +81,19 @@
     let cancelled = false;
     loading = true;
     error = null;
-    Promise.all([getProject(id), listPlans(id), getActivePlan(id), getActiveGrillSession(id)])
-      .then(([nextProject, nextPlans, nextActive, nextSession]) => {
+    Promise.all([
+      getProject(id),
+      listPlans(id),
+      getActivePlan(id),
+      listIssues(id),
+      getActiveGrillSession(id),
+    ])
+      .then(([nextProject, nextPlans, nextActive, nextIssues, nextSession]) => {
         if (cancelled) return;
         project = nextProject;
         plans = nextPlans;
         activePlan = nextActive;
+        issues = nextIssues;
         session = nextSession;
       })
       .catch((cause) => {
@@ -93,6 +116,7 @@
     if (projectId === undefined || busy || idea.trim() === '') return;
     error = null;
     notice = null;
+    finishConflict = null;
     busy = true;
     try {
       session = await startGrill(projectId, idea.trim());
@@ -106,9 +130,37 @@
     }
   }
 
+  async function finish(force = false): Promise<void> {
+    if (projectId === undefined || session === null || busy) return;
+    error = null;
+    notice = null;
+    finishConflict = null;
+    busy = true;
+    try {
+      const published = await finishGrill(projectId, session.id, { force });
+      session = null;
+      terminalStatus = 'closed';
+      terminalError = null;
+      activePlan = published.plan;
+      issues = published.issues;
+      await refreshPlans(projectId);
+      notice = `Published Plan (PRD) v${published.plan.version} and ${published.issues.length} ${published.issues.length === 1 ? 'issue' : 'issues'}.`;
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409) {
+        finishConflict = cause.message;
+      } else {
+        error = describe(cause);
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
   async function cancel(): Promise<void> {
     if (projectId === undefined || session === null || busy) return;
     error = null;
+    notice = null;
+    finishConflict = null;
     busy = true;
     try {
       await cancelGrill(projectId, session.id);
@@ -198,14 +250,44 @@
         aria-labelledby="active-plan-heading"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
-          <h2 id="active-plan-heading" class="text-sm font-semibold">Active plan</h2>
-          <span class="text-xs text-neutral-500">v{activePlan.version}</span>
+          <h2 id="active-plan-heading" class="text-sm font-semibold">
+            {activePlan.source === 'grill-me' ? 'Plan (PRD)' : 'Plan'}
+          </h2>
+          <span class="text-xs text-neutral-500">v{activePlan.version} · {activePlan.source}</span>
         </div>
         <div class="prose prose-neutral max-w-none text-sm">
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->
           {@html renderMarkdown(activePlan.contentMarkdown)}
         </div>
       </section>
+
+      {#if issues.length > 0}
+        <section
+          class="rounded-lg border border-neutral-200 p-4"
+          aria-labelledby="plan-issues-heading"
+        >
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h2 id="plan-issues-heading" class="text-sm font-semibold">Issues</h2>
+            <span class="text-xs text-neutral-500"
+              >{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span
+            >
+          </div>
+          <ul class="flex flex-col gap-1 text-sm">
+            {#each issues as issue (issue.id)}
+              <li class="flex items-center justify-between gap-2">
+                <span>{issue.title}</span>
+                <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600"
+                  >{issue.label}</span
+                >
+              </li>
+            {/each}
+          </ul>
+          <a
+            href={resolve('/projects/[id]/issues', { id: activePlan.projectId })}
+            class="mt-3 inline-block text-sm text-neutral-600 hover:underline">Review issues →</a
+          >
+        </section>
+      {/if}
     {/if}
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="grill-heading">
@@ -238,15 +320,42 @@
               {terminalError}
             </p>
           {/if}
+          <p class="text-xs text-neutral-500" role="status">{draftLabel}</p>
+          {#if finishConflict !== null}
+            <div class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+              {finishConflict}
+            </div>
+          {/if}
           <Terminal url={terminalUrl} onStatus={handleTerminalStatus} />
-          <button
-            type="button"
-            onclick={() => void cancel()}
-            disabled={busy}
-            class="self-start rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
-          >
-            Cancel session
-          </button>
+          <div class="flex flex-wrap gap-2">
+            {#if finishConflict === null}
+              <button
+                type="button"
+                onclick={() => void finish()}
+                disabled={busy}
+                class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              >
+                Finish
+              </button>
+            {:else}
+              <button
+                type="button"
+                onclick={() => void finish(true)}
+                disabled={busy}
+                class="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              >
+                Publish anyway
+              </button>
+            {/if}
+            <button
+              type="button"
+              onclick={() => void cancel()}
+              disabled={busy}
+              class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Cancel session
+            </button>
+          </div>
         </div>
       {:else}
         <form

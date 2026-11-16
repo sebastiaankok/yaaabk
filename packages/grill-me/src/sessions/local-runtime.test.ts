@@ -43,6 +43,18 @@ describe('local SessionRuntime contract', () => {
       YAAABK_PROJECT_ID: spec.projectId,
       YAAABK_SESSION_ID: spec.sessionId,
       YAAABK_SKILL_LEVEL: spec.skillLevel,
+      YAAABK_REPORT_TOKEN: 'report-token',
+      YAAABK_API_URL: 'http://backend:3000',
+    });
+  });
+
+  it('points sessions at the session OpenCode config without touching Agent Jobs', async () => {
+    const fake = createFakeLocalRuntime({ opencodeConfig: '/app/opencode-session.json' });
+
+    await fake.runtime.start(fake.harness.spec());
+
+    expect(fake.requests[0]?.env).toMatchObject({
+      OPENCODE_CONFIG: '/app/opencode-session.json',
     });
   });
 });

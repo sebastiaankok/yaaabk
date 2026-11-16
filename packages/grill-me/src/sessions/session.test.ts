@@ -1,3 +1,5 @@
+import { createInMemoryIssueStore, createIssuesModule } from '@yaaabk/issues';
+import { createInMemoryPlanStore, createPlansModule } from '@yaaabk/plans';
 import { describe, expect, it } from 'vitest';
 import { createFakeSessionRuntime } from './fake-runtime';
 import { createGrillSessionsModule, type StartGrillSessionInput } from './session';
@@ -8,6 +10,16 @@ function setup(options: { defaultModel?: string } = {}) {
   let sequence = 0;
   const sessions = createGrillSessionsModule({
     runtime,
+    plans: createPlansModule({
+      store: createInMemoryPlanStore(),
+      ids: () => `plan-${++sequence}`,
+      clock: () => new Date(clock.ms),
+    }),
+    issues: createIssuesModule({
+      store: createInMemoryIssueStore(),
+      ids: () => `issue-${++sequence}`,
+      clock: () => new Date(clock.ms),
+    }),
     defaultModel: options.defaultModel ?? 'openrouter/default-model',
     clock: () => new Date(clock.ms),
     ids: () => `session-${++sequence}`,

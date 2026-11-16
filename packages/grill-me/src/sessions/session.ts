@@ -1,5 +1,12 @@
-import { randomUUID } from 'node:crypto';
-import { isSkillLevel, type SkillLevel } from '@yaaabk/shared';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { Issue, IssuesModule } from '@yaaabk/issues';
+import type { Plan, PlansModule } from '@yaaabk/plans';
+import {
+  isSkillLevel,
+  normaliseGeneratedIssues,
+  type GeneratedIssueReport,
+  type SkillLevel,
+} from '@yaaabk/shared';
 import { buildGrillSessionPrompt, resolveSessionModel } from './prompt';
 import {
   type SessionRuntime,
@@ -12,6 +19,14 @@ export type GrillSessionStatus = 'starting' | 'active' | 'finished' | 'cancelled
 
 /** Why a session stopped running. */
 export type GrillSessionEndReason = 'finished' | 'cancelled' | 'replaced' | 'failed' | 'timeout';
+
+/** What the agent has reported so far, but not yet published. */
+export interface GrillSessionDraftSummary {
+  /** Whether a PRD draft has been reported. */
+  hasPrd: boolean;
+  /** How many Issues the latest report holds. */
+  issueCount: number;
+}
 
 /** The safe, browser-facing shape of a session. Credentials never appear here. */
 export interface GrillSessionView {
@@ -28,7 +43,27 @@ export interface GrillSessionView {
   error: string | null;
   /** Path the browser opens as a WebSocket for the terminal. */
   terminalPath: string;
+  /** What the agent has reported, so the Plan page can warn before Finish. */
+  draft: GrillSessionDraftSummary;
 }
+
+/** What the reporting MCP server may report in one call. */
+export interface GrillSessionReport {
+  /** The PRD markdown to store as the draft. Validated before storage. */
+  prd?: unknown;
+  /** The Issue list to store as the draft. Validated before storage. */
+  issues?: unknown;
+}
+
+/** The published result of finishing a session. */
+export interface GrillSessionFinish {
+  session: GrillSessionView;
+  plan: Plan;
+  issues: Issue[];
+}
+
+/** A missing draft that blocks Finish, unless it is forced. */
+export type GrillSessionMissingDraft = 'prd' | 'issues';
 
 /** Everything start needs from the Project and Plan modules. */
 export interface StartGrillSessionInput {
@@ -43,12 +78,21 @@ export interface StartGrillSessionInput {
   repoFullName?: string | null;
 }
 
-export type GrillSessionErrorKind = 'invalid-input' | 'not-found' | 'start-failed' | 'unknown';
+export type GrillSessionErrorKind =
+  | 'invalid-input'
+  | 'not-found'
+  | 'unauthorized'
+  | 'start-failed'
+  | 'incomplete'
+  | 'publish-failed'
+  | 'unknown';
 
 export interface GrillSessionError {
   kind: GrillSessionErrorKind;
   operation: string;
   message: string;
+  /** Which drafts are missing, when Finish refuses an incomplete session. */
+  missing?: GrillSessionMissingDraft[];
 }
 
 export type GrillSessionResult<T> =
@@ -61,6 +105,26 @@ export interface GrillSessionsModule {
   getActive(projectId: string): Promise<GrillSessionResult<GrillSessionView | null>>;
   /** One session, including ended sessions, for status rendering. */
   get(projectId: string, sessionId: string): Promise<GrillSessionResult<GrillSessionView>>;
+  /**
+   * Stores what the session's agent reported as drafts. Authenticated by the
+   * per-session bearer token, not the Developer's cookie.
+   */
+  report(
+    sessionId: string,
+    token: string,
+    report: GrillSessionReport,
+  ): Promise<GrillSessionResult<GrillSessionView>>;
+  /** The session's status, authenticated by the per-session bearer token. */
+  status(sessionId: string, token: string): Promise<GrillSessionResult<GrillSessionView>>;
+  /**
+   * Publishes the drafts as one Plan version and that Plan's Issues. Without a
+   * PRD and at least one Issue it refuses unless `force` is set.
+   */
+  finish(
+    projectId: string,
+    sessionId: string,
+    options?: { force?: boolean },
+  ): Promise<GrillSessionResult<GrillSessionFinish>>;
   /** Stops the runtime, discards the session and marks it cancelled. */
   cancel(projectId: string, sessionId: string): Promise<GrillSessionResult<GrillSessionView>>;
   /** Records terminal activity so idle reaping can see it. */
@@ -71,8 +135,15 @@ export interface GrillSessionsModule {
 
 export interface GrillSessionsModuleOptions {
   runtime: SessionRuntime;
+  /** Where a finished session publishes its Plan and Issues. */
+  plans: PlansModule;
+  issues: IssuesModule;
   /** Model used when no per-session choice is supplied. */
   defaultModel?: string;
+  /** Backend base URL the session's reporting MCP server posts to. */
+  apiUrl?: string;
+  /** Mints the per-session report token. Defaults to 32 random bytes. */
+  tokens?: () => string;
   clock?: () => Date;
   ids?: () => string;
   logger?: {
@@ -94,6 +165,28 @@ interface SessionRecord {
   endReason: GrillSessionEndReason | null;
   error: string | null;
   runtime: SessionRuntimeRef | null;
+  /** SHA-256 of the report token; the plaintext only goes to the runtime. */
+  reportTokenHash: string;
+  draft: { prd: string | null; issues: GeneratedIssueReport[] | null };
+  /** The Plan this session published, kept so a retried Finish is idempotent. */
+  publishedPlan: Plan | null;
+  /** The Issues published with that Plan. */
+  publishedIssues: Issue[];
+  /** A Finish that is in flight, so a double click publishes once. */
+  finishInFlight: Promise<GrillSessionResult<GrillSessionFinish>> | null;
+}
+
+/** Hashes a report token for storage and comparison. */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+/** Compares a presented token to the stored hash in constant time. */
+function tokenMatches(storedHash: string, token: string): boolean {
+  const presented = hashToken(token);
+  const expected = Buffer.from(storedHash, 'utf8');
+  const actual = Buffer.from(presented, 'utf8');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function invalidReason(input: StartGrillSessionInput): string | undefined {
@@ -123,6 +216,11 @@ export function createGrillSessionsModule(
   const clock = options.clock ?? (() => new Date());
   const newId = options.ids ?? randomUUID;
   const logger = options.logger ?? { info: () => {}, error: () => {} };
+  const tokens = options.tokens ?? (() => randomBytes(32).toString('hex'));
+  const apiUrl =
+    options.apiUrl ??
+    process.env['YAAABK_SESSION_API_URL'] ??
+    `http://127.0.0.1:${process.env['PORT'] ?? '3000'}`;
   const sessions = new Map<string, SessionRecord>();
 
   function isLive(session: SessionRecord): boolean {
@@ -149,6 +247,10 @@ export function createGrillSessionsModule(
       endReason: session.endReason,
       error: session.error,
       terminalPath: `/api/projects/${encodeURIComponent(session.projectId)}/grill/${encodeURIComponent(session.id)}/terminal`,
+      draft: {
+        hasPrd: session.draft.prd !== null,
+        issueCount: session.draft.issues?.length ?? 0,
+      },
     };
   }
 
@@ -156,8 +258,35 @@ export function createGrillSessionsModule(
     operation: string,
     kind: GrillSessionErrorKind,
     message: string,
+    missing?: GrillSessionMissingDraft[],
   ): GrillSessionResult<never> {
-    return { ok: false, error: { operation, kind, message } };
+    return {
+      ok: false,
+      error: { operation, kind, message, ...(missing === undefined ? {} : { missing }) },
+    };
+  }
+
+  /** Resolves a session by its report token, or reports the matching failure. */
+  function authenticate(
+    operation: string,
+    sessionId: string,
+    token: string,
+  ): SessionRecord | GrillSessionResult<never> {
+    const session = sessions.get(sessionId);
+    if (session === undefined) {
+      return fail(operation, 'not-found', `No grill session "${sessionId}"`);
+    }
+    if (!isLive(session)) {
+      return fail(operation, 'unauthorized', `Grill session "${sessionId}" has ended`);
+    }
+    if (!tokenMatches(session.reportTokenHash, token)) {
+      return fail(operation, 'unauthorized', 'The session token is not valid');
+    }
+    return session;
+  }
+
+  function discardDrafts(session: SessionRecord): void {
+    session.draft = { prd: null, issues: null };
   }
 
   function find(projectId: string, sessionId: string): SessionRecord | undefined {
@@ -175,6 +304,7 @@ export function createGrillSessionsModule(
       reason === 'failed' ? 'failed' : reason === 'finished' ? 'finished' : 'cancelled';
     session.endReason = reason;
     session.endedAt = clock().toISOString();
+    if (reason !== 'finished') discardDrafts(session);
     if (runtime === null) return undefined;
     const stopped = await options.runtime.stop(runtime);
     if (!stopped.ok) {
@@ -208,6 +338,7 @@ export function createGrillSessionsModule(
       const model = resolveSessionModel(input.model ?? undefined, options.defaultModel);
       const sessionId = newId();
       const startedAt = clock().toISOString();
+      const reportToken = tokens();
       const prompt = buildGrillSessionPrompt({
         projectId: input.projectId,
         projectName: input.projectName,
@@ -226,6 +357,8 @@ export function createGrillSessionsModule(
         skillLevel: input.skillLevel,
         prompt,
         model,
+        reportToken,
+        apiUrl,
       });
       if (!started.ok) {
         logger.error('grill session start failed', {
@@ -252,6 +385,11 @@ export function createGrillSessionsModule(
         endReason: null,
         error: null,
         runtime: started.value,
+        reportTokenHash: hashToken(reportToken),
+        draft: { prd: null, issues: null },
+        publishedPlan: null,
+        publishedIssues: [],
+        finishInFlight: null,
       };
       sessions.set(sessionId, session);
       logger.info('grill session started', { sessionId, projectId: input.projectId, model });
@@ -268,6 +406,155 @@ export function createGrillSessionsModule(
       return session === undefined
         ? fail('get', 'not-found', `No grill session "${sessionId}" for project "${projectId}"`)
         : { ok: true, value: view(session) };
+    },
+
+    async report(sessionId, token, report) {
+      const session = authenticate('report', sessionId, token);
+      if ('ok' in session) return session;
+
+      const hasPrd = report.prd !== undefined;
+      const hasIssues = report.issues !== undefined;
+      if (!hasPrd && !hasIssues) {
+        return fail('report', 'invalid-input', 'A PRD or an issue list is required');
+      }
+
+      let prd: string | undefined;
+      if (hasPrd) {
+        if (typeof report.prd !== 'string' || report.prd.trim() === '') {
+          return fail('report', 'invalid-input', 'The PRD must be markdown text');
+        }
+        prd = report.prd.trim();
+      }
+
+      let issues: GeneratedIssueReport[] | undefined;
+      if (hasIssues) {
+        const normalised = normaliseGeneratedIssues(report.issues);
+        if (!normalised.ok) {
+          return fail('report', 'invalid-input', normalised.message);
+        }
+        if (normalised.value.length === 0) {
+          return fail('report', 'invalid-input', 'An issue list must contain at least one issue');
+        }
+        issues = normalised.value;
+      }
+
+      if (issues !== undefined && (prd ?? session.draft.prd) === null) {
+        return fail('report', 'invalid-input', 'Report a PRD before its issues');
+      }
+
+      if (prd !== undefined) session.draft.prd = prd;
+      if (issues !== undefined) session.draft.issues = issues;
+      session.lastActivityAt = clock().toISOString();
+      return { ok: true, value: view(session) };
+    },
+
+    async status(sessionId, token) {
+      const session = authenticate('status', sessionId, token);
+      return 'ok' in session ? session : { ok: true, value: view(session) };
+    },
+
+    async finish(projectId, sessionId, finishOptions = {}) {
+      const session = find(projectId, sessionId);
+      if (session === undefined) {
+        return fail(
+          'finish',
+          'not-found',
+          `No grill session "${sessionId}" for project "${projectId}"`,
+        );
+      }
+      if (session.status === 'finished' && session.publishedPlan !== null) {
+        return {
+          ok: true,
+          value: {
+            session: view(session),
+            plan: session.publishedPlan,
+            issues: session.publishedIssues,
+          },
+        };
+      }
+      if (!isLive(session)) {
+        return fail('finish', 'not-found', `Grill session "${sessionId}" has ended`);
+      }
+
+      const missing: GrillSessionMissingDraft[] = [];
+      if (session.draft.prd === null) missing.push('prd');
+      if (session.draft.issues === null || session.draft.issues.length === 0)
+        missing.push('issues');
+      if (missing.length > 0 && finishOptions.force !== true) {
+        const names = missing.map((item) => (item === 'prd' ? 'a PRD' : 'an issue list'));
+        return fail(
+          'finish',
+          'incomplete',
+          `Cannot finish: ${names.join(' and ')} missing`,
+          missing,
+        );
+      }
+      // A Plan cannot exist without a PRD, so forcing does not bypass this one.
+      if (session.draft.prd === null) {
+        return fail('finish', 'incomplete', 'Cannot finish: a PRD missing', ['prd']);
+      }
+      const prd = session.draft.prd;
+
+      // A double click must not create two Plan versions. Concurrent Finish
+      // calls share the first publication.
+      if (session.finishInFlight !== null) return session.finishInFlight;
+      const publishing = (async (): Promise<GrillSessionResult<GrillSessionFinish>> => {
+        let plan = session.publishedPlan;
+        if (plan === null) {
+          const created = await options.plans.create({
+            projectId,
+            contentMarkdown: prd,
+            skillLevel: session.skillLevel,
+            source: 'grill-me',
+          });
+          if (!created.ok) {
+            logger.error('grill session plan publish failed', {
+              sessionId,
+              kind: created.error.kind,
+            });
+            return fail('finish', 'publish-failed', created.error.message);
+          }
+          plan = created.value;
+          // Remember the Plan immediately so a retry after a failed issue publish
+          // reuses it instead of creating a second version.
+          session.publishedPlan = plan;
+        }
+
+        let publishedIssues = session.publishedIssues;
+        if (session.draft.issues !== null && session.draft.issues.length > 0) {
+          const replaced = await options.issues.replaceForPlan(
+            projectId,
+            plan.id,
+            session.draft.issues,
+          );
+          if (!replaced.ok) {
+            logger.error('grill session issues publish failed', {
+              sessionId,
+              kind: replaced.error.kind,
+            });
+            return fail('finish', 'publish-failed', replaced.error.message);
+          }
+          publishedIssues = replaced.value;
+          session.publishedIssues = publishedIssues;
+        }
+
+        const stopped = await stop(session, 'finished');
+        if (stopped !== undefined) {
+          logger.error('grill session runtime stop failed after publishing', {
+            sessionId,
+            kind: stopped.kind,
+          });
+        }
+        discardDrafts(session);
+        logger.info('grill session finished', { sessionId, planId: plan.id });
+        return { ok: true, value: { session: view(session), plan, issues: publishedIssues } };
+      })();
+      session.finishInFlight = publishing;
+      try {
+        return await publishing;
+      } finally {
+        session.finishInFlight = null;
+      }
     },
 
     async cancel(projectId, sessionId) {

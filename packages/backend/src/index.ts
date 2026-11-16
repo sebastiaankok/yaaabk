@@ -409,6 +409,11 @@ const sessionRuntime = createLocalSessionRuntime({
 });
 const grillSessions = createGrillSessionsModule({
   runtime: sessionRuntime,
+  plans,
+  issues,
+  ...(process.env['YAAABK_SESSION_API_URL'] === undefined
+    ? {}
+    : { apiUrl: process.env['YAAABK_SESSION_API_URL'] }),
   ...(process.env['YAAABK_DEFAULT_MODEL'] === undefined
     ? {}
     : { defaultModel: process.env['YAAABK_DEFAULT_MODEL'] }),
