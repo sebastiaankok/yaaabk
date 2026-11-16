@@ -10,7 +10,9 @@ import {
   type FakeRepositoryProvider,
 } from './fake-repository-provider';
 import {
+  PROJECT_AGENT_CLUSTER_ROLE,
   PROJECT_AGENT_SERVICE_ACCOUNT,
+  PROJECT_DEPLOY_CLUSTER_ROLE,
   PROJECT_DEPLOY_SERVICE_ACCOUNT,
   PROJECT_NAME_LABEL,
   PROJECT_PSA_LABELS,
@@ -133,8 +135,9 @@ describe('create', () => {
 
     expect(store.getByName('todo-app')).toEqual(project);
 
-    // YAAABK provisions the Project namespace, PSA labels, and per-Project RBAC
-    // (yaaabk-agent and yaaabk-deploy SAs, Roles, and RoleBindings).
+    // YAAABK provisions the Project namespace, PSA labels, and per-Project RBAC:
+    // the two ServiceAccounts plus a RoleBinding each to the fixed ClusterRoles
+    // the backend is allowed to bind. It never mints a per-namespace Role.
     const ns = await k8s.namespaces.get(project.namespace);
     expect(ns.ok).toBe(true);
     if (ns.ok) {
@@ -144,17 +147,14 @@ describe('create', () => {
       });
     }
 
-    for (const saName of [PROJECT_AGENT_SERVICE_ACCOUNT, PROJECT_DEPLOY_SERVICE_ACCOUNT]) {
+    for (const [saName, clusterRole] of [
+      [PROJECT_AGENT_SERVICE_ACCOUNT, PROJECT_AGENT_CLUSTER_ROLE],
+      [PROJECT_DEPLOY_SERVICE_ACCOUNT, PROJECT_DEPLOY_CLUSTER_ROLE],
+    ] as const) {
       const sa = await k8s.serviceAccounts.get(project.namespace, saName);
       expect(sa.ok).toBe(true);
       if (sa.ok) {
         expect(sa.value).toMatchObject({ name: saName, namespace: project.namespace });
-      }
-
-      const role = await k8s.roles.get(project.namespace, saName);
-      expect(role.ok).toBe(true);
-      if (role.ok) {
-        expect(role.value).toMatchObject({ name: saName, namespace: project.namespace });
       }
 
       const rb = await k8s.roleBindings.get(project.namespace, saName);
@@ -163,74 +163,18 @@ describe('create', () => {
         expect(rb.value).toMatchObject({
           name: saName,
           namespace: project.namespace,
-          roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: saName },
+          roleRef: {
+            apiGroup: 'rbac.authorization.k8s.io',
+            kind: 'ClusterRole',
+            name: clusterRole,
+          },
           subjects: [{ kind: 'ServiceAccount', name: saName, namespace: project.namespace }],
         });
       }
-    }
 
-    const agentRole = await k8s.roles.get(project.namespace, PROJECT_AGENT_SERVICE_ACCOUNT);
-    expect(agentRole.ok).toBe(true);
-    if (agentRole.ok) {
-      const readCore = agentRole.value.rules.find((r) => r.resources.includes('pods'));
-      expect(readCore).toMatchObject({
-        apiGroups: [''],
-        resources: expect.arrayContaining(['pods', 'pods/log', 'services', 'configmaps', 'events']),
-        verbs: ['get', 'list', 'watch'],
-      });
-      expect(readCore?.resources).not.toContain('secrets');
-      expect(agentRole.value.rules.find((r) => r.resources.includes('pods/exec'))).toMatchObject({
-        apiGroups: [''],
-        resources: ['pods/exec'],
-        verbs: ['create'],
-      });
-      expect(agentRole.value.rules.find((r) => r.resources.includes('deployments'))).toMatchObject({
-        apiGroups: ['apps'],
-        resources: ['deployments'],
-        verbs: ['get', 'list', 'watch'],
-      });
-      expect(agentRole.value.rules.find((r) => r.resources.includes('httproutes'))).toMatchObject({
-        apiGroups: ['gateway.networking.k8s.io'],
-        resources: ['httproutes'],
-        verbs: ['get', 'list', 'watch'],
-      });
-      expect(agentRole.value.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
-    }
-
-    const deployRole = await k8s.roles.get(project.namespace, PROJECT_DEPLOY_SERVICE_ACCOUNT);
-    expect(deployRole.ok).toBe(true);
-    if (deployRole.ok) {
-      const writeVerbs = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'];
-      const coreWrite = deployRole.value.rules.find((r) => r.resources.includes('services'));
-      expect(coreWrite).toMatchObject({
-        apiGroups: [''],
-        resources: expect.arrayContaining(['services', 'configmaps', 'secrets']),
-        verbs: writeVerbs,
-      });
-      expect(deployRole.value.rules.find((r) => r.resources.includes('deployments'))).toMatchObject(
-        {
-          apiGroups: ['apps'],
-          resources: ['deployments'],
-          verbs: writeVerbs,
-        },
-      );
-      expect(deployRole.value.rules.find((r) => r.resources.includes('httproutes'))).toMatchObject({
-        apiGroups: ['gateway.networking.k8s.io'],
-        resources: ['httproutes'],
-        verbs: writeVerbs,
-      });
-      expect(deployRole.value.rules.find((r) => r.resources.includes('pods'))).toMatchObject({
-        apiGroups: [''],
-        resources: ['pods', 'pods/log'],
-        verbs: ['get', 'list'],
-      });
-      expect(deployRole.value.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
-      // The deploy Job cannot create or delete Namespaces.
-      const allDeployVerbs = deployRole.value.rules.flatMap((r) =>
-        r.resources.includes('namespaces') ? r.verbs : [],
-      );
-      expect(allDeployVerbs).not.toContain('create');
-      expect(allDeployVerbs).not.toContain('delete');
+      // No per-Project Role: the backend binds a vetted ClusterRole instead of
+      // minting one, so it never has to hold the permissions it delegates.
+      expect((await k8s.roles.get(project.namespace, saName)).ok).toBe(false);
     }
 
     expect(git.calls).toContainEqual({

@@ -1,5 +1,3 @@
-import type { PolicyRule } from '@yaaabk/k8s';
-
 /** ServiceAccount the Project's agent Jobs run as. */
 export const PROJECT_AGENT_SERVICE_ACCOUNT = 'yaaabk-agent';
 
@@ -7,60 +5,24 @@ export const PROJECT_AGENT_SERVICE_ACCOUNT = 'yaaabk-agent';
 export const PROJECT_DEPLOY_SERVICE_ACCOUNT = 'yaaabk-deploy';
 
 /**
- * RBAC rules for `yaaabk-agent`: read-only (get/list/watch) on core resources,
- * deployments, and httproutes, plus create on pods/exec. Never grants secrets
- * read.
+ * ClusterRole bound as `yaaabk-agent` in each Project Namespace: read-only
+ * (get/list/watch) on core resources, deployments, and httproutes, plus create
+ * on pods/exec. Never grants secrets read.
+ *
+ * Defined in `deploy/rbac.yaml`; the backend only binds it so it never has to
+ * hold (or mint) the permissions itself.
  */
-export const PROJECT_AGENT_ROLE_RULES: PolicyRule[] = [
-  {
-    apiGroups: [''],
-    resources: ['pods', 'pods/log', 'services', 'configmaps', 'events'],
-    verbs: ['get', 'list', 'watch'],
-  },
-  {
-    apiGroups: ['apps'],
-    resources: ['deployments'],
-    verbs: ['get', 'list', 'watch'],
-  },
-  {
-    apiGroups: ['gateway.networking.k8s.io'],
-    resources: ['httproutes'],
-    verbs: ['get', 'list', 'watch'],
-  },
-  {
-    apiGroups: [''],
-    resources: ['pods/exec'],
-    verbs: ['create'],
-  },
-];
+export const PROJECT_AGENT_CLUSTER_ROLE = 'yaaabk-project-agent';
 
 /**
- * RBAC rules for `yaaabk-deploy`: full write on deployments, services,
- * configmaps, secrets, and httproutes, plus read on pods/pods/log. Cannot
- * create or delete namespaces.
+ * ClusterRole bound as `yaaabk-deploy` in each Project Namespace: full write on
+ * deployments, services, configmaps, secrets, and httproutes, plus read on
+ * pods/pods/log. Cannot create or delete namespaces.
+ *
+ * Defined in `deploy/rbac.yaml`; the backend only binds it so it never has to
+ * hold (or mint) the permissions itself.
  */
-export const PROJECT_DEPLOY_ROLE_RULES: PolicyRule[] = [
-  {
-    apiGroups: [''],
-    resources: ['services', 'configmaps', 'secrets'],
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
-  },
-  {
-    apiGroups: ['apps'],
-    resources: ['deployments'],
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
-  },
-  {
-    apiGroups: ['gateway.networking.k8s.io'],
-    resources: ['httproutes'],
-    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
-  },
-  {
-    apiGroups: [''],
-    resources: ['pods', 'pods/log'],
-    verbs: ['get', 'list'],
-  },
-];
+export const PROJECT_DEPLOY_CLUSTER_ROLE = 'yaaabk-project-deploy';
 
 /**
  * Key the GitHub token is stored under in that Secret.
