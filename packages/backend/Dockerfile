@@ -20,3 +20,32 @@ COPY --from=build /app/templates ./templates
 EXPOSE 3000
 USER bun
 CMD ["bun", "dist/index.js"]
+
+# Development stage used by docker compose: the backend runs interactive grill
+# sessions as local ttyd + OpenCode child processes, so both binaries and the
+# image-baked skills are present here. Production uses the Kubernetes session
+# runtime instead and keeps them out of the backend image.
+FROM runtime AS dev
+ARG TARGETARCH
+ARG OPENCODE_VERSION=2.2.5
+ARG TTYD_VERSION=1.7.7
+USER root
+RUN apk add --no-cache ca-certificates && \
+    case "${TARGETARCH}" in \
+      amd64) TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
+      arm64) TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \
+      *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1;; \
+    esac && \
+    wget -qO /usr/local/bin/ttyd "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}" && \
+    chmod +x /usr/local/bin/ttyd && \
+    wget -qO /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OPENCODE_ARCH}-musl.tar.gz" && \
+    tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode && \
+    chmod +x /usr/local/bin/opencode && \
+    rm -f /tmp/opencode.tar.gz && \
+    opencode --version
+# Image-baked grill skills, matching the agent runtime.
+COPY --from=build /app/packages/grill-me/skills ./skills
+ENV YAAABK_TTYD_BIN=/usr/local/bin/ttyd
+ENV YAAABK_OPENCODE_BIN=/usr/local/bin/opencode
+ENV YAAABK_GRILL_SKILL_PATH=/app/skills/grill-me/SKILL.md
+USER bun

@@ -20,7 +20,11 @@ import {
   createOpenRouterVerifier,
   loadCostControlConfig,
 } from '@yaaabk/cost-control';
-import { createGrillMeModule } from '@yaaabk/grill-me';
+import {
+  createGrillMeModule,
+  createGrillSessionsModule,
+  createLocalSessionRuntime,
+} from '@yaaabk/grill-me';
 import {
   createGitHubCredentialVerifier,
   createGitHubIssuesClient,
@@ -49,6 +53,7 @@ import {
   type SettingsModule,
 } from '@yaaabk/settings';
 import { createTemplateModule } from '@yaaabk/template';
+import { createBunWebSocket } from 'hono/bun';
 import { createApp } from './app';
 import {
   createGitHubTokenResolver,
@@ -384,6 +389,36 @@ const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(se
 const grillMe = createGrillMeModule();
 
 /**
+ * Interactive sessions run as local ttyd + `opencode mini` child processes in
+ * this slice. The Kubernetes adapter arrives with its own slice and only has to
+ * satisfy the same SessionRuntime port.
+ */
+const sessionRuntime = createLocalSessionRuntime({
+  ...(process.env['YAAABK_TTYD_BIN'] === undefined
+    ? {}
+    : { ttydCommand: process.env['YAAABK_TTYD_BIN'] }),
+  ...(process.env['YAAABK_OPENCODE_BIN'] === undefined
+    ? {}
+    : { opencodeCommand: process.env['YAAABK_OPENCODE_BIN'] }),
+  ...(process.env['YAAABK_SESSION_CWD'] === undefined
+    ? {}
+    : { cwd: process.env['YAAABK_SESSION_CWD'] }),
+  logger: {
+    info: (message, fields) => console.info(message, fields ?? ''),
+  },
+});
+const grillSessions = createGrillSessionsModule({
+  runtime: sessionRuntime,
+  ...(process.env['YAAABK_DEFAULT_MODEL'] === undefined
+    ? {}
+    : { defaultModel: process.env['YAAABK_DEFAULT_MODEL'] }),
+  logger: {
+    info: (message, fields) => console.info(message, fields ?? ''),
+    error: (message, fields) => console.error(message, fields ?? ''),
+  },
+});
+
+/**
  * The Cost Control Module, built from the Settings credential store with the
  * environment as fallback. Without either, an empty management key makes every
  * OpenRouter call fail with a clear `unauthorized` error. Its consumers (the
@@ -426,6 +461,8 @@ const ciTracker = createCiTracker({
     : {}),
 });
 
+const { upgradeWebSocket, websocket } = createBunWebSocket();
+
 const app = createApp({
   auth,
   projects,
@@ -433,6 +470,8 @@ const app = createApp({
   issues,
   issueSync,
   grillMe,
+  grillSessions,
+  upgradeWebSocket,
   agents,
   ciTracker,
   settings,
@@ -467,4 +506,5 @@ ciTracker.start();
 export default {
   port: Number(process.env.PORT ?? 3000),
   fetch: app.fetch,
+  websocket,
 };

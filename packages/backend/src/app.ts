@@ -2,7 +2,7 @@ import type { AgentManager } from '@yaaabk/agents';
 import type { AuthModule } from '@yaaabk/auth';
 import type { CiTracker } from '@yaaabk/ci-tracker';
 import type { IssueSyncModule } from '@yaaabk/github';
-import type { GrillMeModule } from '@yaaabk/grill-me';
+import type { GrillMeModule, GrillSessionsModule } from '@yaaabk/grill-me';
 import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
@@ -10,10 +10,11 @@ import type { SettingsModule } from '@yaaabk/settings';
 import { SKILL_LEVELS } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import type { UpgradeWebSocket } from 'hono/ws';
 import { authRoutes, requireAuth, type AuthRoutesOptions } from './auth-routes';
 import { agentRoutes } from './agent-routes';
 import { ciRoutes } from './ci-routes';
-import { grillRoutes } from './grill-routes';
+import { grillRoutes, type GrillRoutesOptions } from './grill-routes';
 import { issueRoutes } from './issue-routes';
 import { issueSyncRoutes } from './issue-sync-routes';
 import { planRoutes } from './plan-routes';
@@ -43,6 +44,12 @@ export interface AppOptions {
   issueSync: IssueSyncModule;
   /** The Grill-Me Module. Tests inject one over a fake spawner. */
   grillMe: GrillMeModule;
+  /** Interactive terminal sessions. Tests inject one over a fake runtime. */
+  grillSessions: GrillSessionsModule;
+  /** Bun's WebSocket upgrader; omitted in unit tests. */
+  upgradeWebSocket?: UpgradeWebSocket;
+  /** Extra seams for terminal route tests. */
+  grillRoutesOptions?: Omit<GrillRoutesOptions, 'upgradeWebSocket'>;
   /** The Agent Manager Module. Tests inject one over a mock cluster. */
   agents: AgentManager;
   /** The CI Tracker Module. Tests inject one over fake GitHub ports. */
@@ -84,7 +91,15 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', statsRoutes(options.issues, options.agents, options.projects));
-  app.route('/', grillRoutes(options.grillMe, options.projects, options.plans, options.issues));
+  app.route(
+    '/',
+    grillRoutes(options.grillSessions, options.projects, options.plans, {
+      ...options.grillRoutesOptions,
+      ...(options.upgradeWebSocket === undefined
+        ? {}
+        : { upgradeWebSocket: options.upgradeWebSocket }),
+    }),
+  );
   app.route('/', ciRoutes(options.ciTracker));
   app.route('/', settingsRoutes(options.settings));
 

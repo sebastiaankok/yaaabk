@@ -26,10 +26,27 @@ const PLAN = {
   isActive: true,
 };
 
-const sse = (events: string[]): string => events.map((event) => `${event}\n\n`).join('');
+const SESSION = {
+  id: 's1',
+  projectId: 'p1',
+  status: 'active',
+  skillLevel: 'expert',
+  model: 'openrouter/default-model',
+  startedAt: '2026-01-01T00:00:00.000Z',
+  lastActivityAt: '2026-01-01T00:00:00.000Z',
+  endedAt: null,
+  endReason: null,
+  error: null,
+  terminalPath: '/api/projects/p1/grill/s1/terminal',
+};
 
-/** A signed-in session with a project, its plan and a plan-less active endpoint. */
-async function mockProject(page: Page): Promise<void> {
+interface MockOptions {
+  activeSession?: typeof SESSION | null;
+  startFailure?: string;
+}
+
+/** A signed-in session with a project, its plan and a scripted grill session API. */
+async function mockProject(page: Page, options: MockOptions = {}): Promise<void> {
   await page.route('**/api/auth/status', (route) =>
     route.fulfill({
       json: { setupComplete: true, authenticated: true, user: { id: 'u', username: 'alice' } },
@@ -40,6 +57,39 @@ async function mockProject(page: Page): Promise<void> {
     route.fulfill({ json: { plans: [PLAN] } }),
   );
   await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
+
+  let active = options.activeSession ?? null;
+  await page.route('**/api/projects/p1/grill', async (route) => {
+    if (route.request().method() === 'POST') {
+      if (options.startFailure !== undefined) {
+        await route.fulfill({
+          status: 502,
+          json: { error: 'start-failed', message: options.startFailure },
+        });
+        return;
+      }
+      active = SESSION;
+      await route.fulfill({ status: 201, json: SESSION });
+      return;
+    }
+    await route.fulfill(
+      active === null
+        ? { status: 404, json: { error: 'not-found', message: 'No active grill session' } }
+        : { json: active },
+    );
+  });
+  await page.route('**/api/projects/p1/grill/s1/cancel', (route) =>
+    route.fulfill({
+      json: { ...SESSION, status: 'cancelled', endReason: 'cancelled' },
+    }),
+  );
+}
+
+/** Mocks the backend terminal socket and immediately marks the terminal live. */
+async function mockTerminal(page: Page): Promise<void> {
+  await page.routeWebSocket(/\/grill\/s1\/terminal$/, (socket) => {
+    socket.send(JSON.stringify({ type: 'status', status: 'live' }));
+  });
 }
 
 test('shows the project and its active plan', async ({ page }) => {
@@ -53,129 +103,44 @@ test('shows the project and its active plan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 });
 
-test('streams a question and sends an answer', async ({ page }) => {
+test('starts a live terminal session and cancels it', async ({ page }) => {
   await mockProject(page);
-  await page.route('**/api/projects/p1/grill', (route) =>
-    route.fulfill({ status: 201, json: { sessionId: 's1' } }),
-  );
-  await page.route('**/api/projects/p1/grill/s1/answer', (route) =>
-    route.fulfill({ json: { ok: true } }),
-  );
-
-  let attempts = 0;
-  await page.route(
-    (url) => url.pathname === '/api/projects/p1/grill' && url.searchParams.has('sessionId'),
-    async (route) => {
-      attempts += 1;
-      if (attempts > 1) {
-        await route.abort();
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: sse([
-          'event: token\ndata: {"sessionId":"s1","text":"Thinking"}',
-          'event: question\ndata: {"sessionId":"s1","question":"Which database?"}',
-        ]),
-      });
-    },
-  );
+  await mockTerminal(page);
 
   await page.goto('/projects/p1/plan');
   await page.getByLabel('Your idea').fill('A todo app');
   await page.getByRole('button', { name: 'Start Grill-Me' }).click();
 
-  await expect(page.getByText('AI is thinking…')).toBeVisible();
-  await expect(page.getByText('Which database?')).toBeVisible();
-  await page.getByLabel('Your answer').fill('Postgres');
-  await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText('Postgres')).toBeVisible();
-});
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+  expect(await page.locator('.xterm').count()).toBe(1);
 
-test('shows the plan when the session ends', async ({ page }) => {
-  await mockProject(page);
-  await page.route('**/api/projects/p1/grill', (route) =>
-    route.fulfill({ status: 201, json: { sessionId: 's1' } }),
-  );
-  await page.route(
-    (url) => url.pathname === '/api/projects/p1/grill' && url.searchParams.has('sessionId'),
-    (route) =>
-      route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: sse([
-          'event: question\ndata: {"sessionId":"s1","question":"Which database?"}',
-          'event: plan_ready\ndata: {"sessionId":"s1","plan":"# Refined plan"}',
-          'event: ended\ndata: {"sessionId":"s1","reason":"completed"}',
-        ]),
-      }),
-  );
-
-  await page.goto('/projects/p1/plan');
-  await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
-
-  await expect(page.getByRole('heading', { name: 'Refined plan' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start a new session' })).toBeVisible();
-});
-
-test('cancels the session', async ({ page }) => {
-  await mockProject(page);
-  await page.route('**/api/projects/p1/grill', (route) =>
-    route.fulfill({ status: 201, json: { sessionId: 's1' } }),
-  );
-  await page.route('**/api/projects/p1/grill/s1/cancel', (route) =>
-    route.fulfill({ json: { ok: true } }),
-  );
-  await page.route(
-    (url) => url.pathname === '/api/projects/p1/grill' && url.searchParams.has('sessionId'),
-    (route) =>
-      route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: '' }),
-  );
-
-  await page.goto('/projects/p1/plan');
-  await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
   await page.getByRole('button', { name: 'Cancel session' }).click();
 
-  await expect(page.getByText('Session cancelled')).toBeVisible();
+  await expect(page.getByText('Session cancelled.')).toBeVisible();
+  await expect(page.getByLabel('Your idea')).toBeVisible();
 });
 
-test('reconnects after the SSE stream drops', async ({ page }) => {
-  await mockProject(page);
-  await page.route('**/api/projects/p1/grill', (route) =>
-    route.fulfill({ status: 201, json: { sessionId: 's1' } }),
-  );
+test('reconnects to a running session after a refresh', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
 
-  let attempts = 0;
-  await page.route(
-    (url) => url.pathname === '/api/projects/p1/grill' && url.searchParams.has('sessionId'),
-    async (route) => {
-      attempts += 1;
-      if (attempts === 1) {
-        await route.abort();
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: sse([
-          'event: question\ndata: {"sessionId":"s1","question":"Which database?"}',
-          'event: ended\ndata: {"sessionId":"s1","reason":"cancelled"}',
-        ]),
-      });
-    },
-  );
+  await page.goto('/projects/p1/plan');
+
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+  expect(await page.locator('.xterm').count()).toBe(1);
+});
+
+test('shows the reason a session could not start', async ({ page }) => {
+  await mockProject(page, { startFailure: 'ttyd: exec format error' });
 
   await page.goto('/projects/p1/plan');
   await page.getByLabel('Your idea').fill('A todo app');
   await page.getByRole('button', { name: 'Start Grill-Me' }).click();
 
-  await expect(page.getByText('Reconnecting…')).toBeVisible();
-  await expect(page.getByText('Which database?')).toBeVisible();
-  await expect(page.getByText('Reconnecting…')).toBeHidden();
+  await expect(page.getByText('ttyd: exec format error')).toBeVisible();
+  await expect(page.getByLabel('Your idea')).toBeVisible();
 });
 
 test('activates an earlier plan version', async ({ page }) => {

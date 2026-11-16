@@ -1,14 +1,56 @@
 # @yaaabk/grill-me
 
-The Grill-Me Module: YAAABK's OpenCode bridge. It owns the lifecycle of an
-OpenCode session, parses the structured markers the grill-me skill emits
-(`<QUESTION>`, `<PLAN>`, `<ISSUES>`), and streams the results as events.
+The Grill-Me Module: YAAABK's OpenCode bridge, in two generations.
 
-The module is transport-free. It emits domain events; the backend adapts them to
-Server-Sent Events with `createSseStream`, and drives the conversation with
-`submitAnswer`, `refineIssues` and `cancelSession`.
+**Interactive sessions (current).** `createGrillSessionsModule` owns the
+browser-facing lifecycle of a real terminal session: one live session per
+Project, start/get/cancel, activity tracking and the `SessionRuntime` port. The
+local adapter runs ttyd in front of `opencode mini` as child processes; the
+Kubernetes adapter will satisfy the same contract. `createTerminalBridge`
+translates the browser's JSON protocol to ttyd's `tty` frames, and
+`sessionRuntimeContract` is the shared suite every adapter runs.
 
-## Usage
+**Marker stream (legacy).** `createGrillMeModule` spawns `opencode run` and
+parses `<QUESTION>`, `<PLAN>` and `<ISSUES>` markers. It remains only for the
+one-shot Issue generation endpoints until the legacy path is removed.
+
+The legacy module is transport-free. It emits domain events; the backend adapts
+them to Server-Sent Events with `createSseStream`, and drives the conversation
+with `submitAnswer`, `refineIssues` and `cancelSession`.
+
+## Interactive sessions
+
+```ts
+import { createGrillSessionsModule, createLocalSessionRuntime } from '@yaaabk/grill-me';
+
+const sessions = createGrillSessionsModule({
+  runtime: createLocalSessionRuntime(),
+  defaultModel: 'openrouter/anthropic/claude-sonnet-4.5',
+});
+
+const started = await sessions.start({
+  projectId,
+  projectName: 'todo-app',
+  idea: 'A todo app',
+  skillLevel: 'expert',
+});
+
+if (started.ok) {
+  const terminal = await sessions.terminal(started.value.id);
+  // The backend proxy connects to terminal.url with terminal.credential.
+}
+```
+
+Starting another session for the same Project stops and replaces the previous
+one. Cancel stops the runtime and ends the session. The session view never
+contains the ttyd credential; only `terminal()` returns it, to the backend
+proxy.
+
+`createLocalSessionRuntime()` waits for ttyd readiness before resolving a start
+and reports the failing process's stderr on start failure. Host development uses
+`ttyd` and `opencode` from `PATH`; the agent image pins both.
+
+## Usage (legacy)
 
 ```ts
 import { createGrillMeModule, createSseStream } from '@yaaabk/grill-me';

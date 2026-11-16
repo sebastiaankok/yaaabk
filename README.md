@@ -13,6 +13,9 @@ them.
 
 - [Bun](https://bun.sh) **1.3+** — the only runtime needed for local development
 - Docker — optional, only for the containerised stack
+- For local Grill-Me sessions: [`ttyd`](https://github.com/tsl0922/ttyd) and
+  [OpenCode](https://opencode.ai) on `PATH`, plus an `OPENROUTER_API_KEY`.
+  `docker compose up` provides both binaries in the backend image.
 
 ## Developing locally
 
@@ -34,8 +37,9 @@ The first time you open the frontend it walks you through creating the admin
 account: choose a username and password, scan the TOTP QR code with an
 authenticator app, then confirm a code. See [Authentication](#authentication).
 
-No configuration is needed to start. To change defaults, copy the example file
-to the repository root:
+No configuration is needed to start the app. Grill-Me sessions additionally need
+`OPENROUTER_API_KEY` and the two binaries above. To change defaults, copy the
+example file to the repository root:
 
 ```sh
 cp .env.example .env
@@ -124,12 +128,14 @@ This is a Bun workspace monorepo:
 | Package | Path | What it is |
 | --- | --- | --- |
 | `@yaaabk/frontend` | `packages/frontend` | SvelteKit + Tailwind + shadcn-svelte browser UI |
-| `@yaaabk/backend` | `packages/backend` | Bun + Hono REST API and SSE bridge |
+| `@yaaabk/backend` | `packages/backend` | Bun + Hono REST API and terminal WebSocket bridge |
 | `@yaaabk/auth` | `packages/auth` | Password policy, TOTP, sessions and the `AuthStore` port |
 | `@yaaabk/agent` | `packages/agent` | Per-issue agent that runs in a Kubernetes Job |
 | `@yaaabk/k8s` | `packages/k8s` | Typed Kubernetes client (`createK8sClient`) and in-memory mock |
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
+| `@yaaabk/plans` | `packages/plans` | Versioned Plans (`createPlansModule`) and the `PlanStore` port |
+| `@yaaabk/grill-me` | `packages/grill-me` | Grill-Me terminal sessions, the `SessionRuntime` port and local adapter, and the terminal protocol |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
 | `@yaaabk/stats` | `packages/stats` | Pure Project statistics (`computeProjectStats`): issue counts, velocity, agent success, cost and durations |
@@ -237,8 +243,8 @@ Plan generates. The backend exposes it over HTTP:
 The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
 the generated Issues grouped by wave (with label pills, dependency tags and any
 circular-dependency warning), a "Refine with prompt" box, and "Approve & Create".
-Issues are also recorded automatically whenever a live grill-me session emits an
-`<ISSUES>` block.
+The one-shot generate/refine endpoints remain until the legacy marker path is
+removed; new grill sessions publish through Finish in a later slice.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency
@@ -465,7 +471,9 @@ docker compose up --build
 
 This builds the backend and frontend images, exposes the frontend on
 <http://localhost:5173>, and mounts a named volume for the SQLite data
-directory. The OpenCode sidecar is added in a later slice.
+directory. The backend is built with the `dev` stage, which includes ttyd and
+OpenCode so `docker compose` can run local grill sessions; set
+`OPENROUTER_API_KEY` in the environment (or `.env`) for the selected model.
 
 ## CI
 

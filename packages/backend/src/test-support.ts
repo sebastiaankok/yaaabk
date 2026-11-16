@@ -10,10 +10,14 @@ import {
   type AuthStore,
 } from '@yaaabk/auth';
 import {
+  createFakeSessionRuntime,
   createFakeSpawner,
   createGrillMeModule,
+  createGrillSessionsModule,
+  type FakeSessionRuntime,
   type FakeSpawner,
   type GrillMeModule,
+  type GrillSessionsModule,
 } from '@yaaabk/grill-me';
 import {
   createFakeGitHubIssues,
@@ -55,7 +59,9 @@ import {
   createTemplateModule,
   silentLogger as templateLogger,
 } from '@yaaabk/template';
+import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp, type AppOptions } from './app';
+import type { GrillRoutesOptions } from './grill-routes';
 
 /** A password that satisfies the real policy. */
 export const TEST_PASSWORD = 'vX7$qmPz2!Lw9Rt';
@@ -75,6 +81,8 @@ export interface TestContext {
   issueSync: IssueSyncModule;
   github: FakeGitHubIssues;
   grillMe: GrillMeModule;
+  grillSessions: GrillSessionsModule;
+  sessionRuntime: FakeSessionRuntime;
   agents: AgentManager;
   ciTracker: CiTracker;
   pulls: FakeGitHubPulls;
@@ -111,10 +119,16 @@ function nextIssueId(): string {
   return `issue-${issueSequence.toString(16).padStart(8, '0')}`;
 }
 
+export interface TestContextOverrides {
+  upgradeWebSocket?: UpgradeWebSocket;
+  grillRoutesOptions?: Omit<GrillRoutesOptions, 'upgradeWebSocket'>;
+}
+
 /** Builds an app whose modules run on fakes and in-memory stores. */
 export function createTestContext(
   authRoutesOptions: AppOptions['authRoutesOptions'] = { attemptsPerMinute: 100 },
   repositories: RepositoryProvider = createFakeRepositoryProvider(),
+  overrides: TestContextOverrides = {},
 ): TestContext {
   const clock = { ms: TEST_NOW };
   const store = createInMemoryAuthStore();
@@ -179,6 +193,15 @@ export function createTestContext(
     logger: silent,
   });
 
+  const sessionRuntime = createFakeSessionRuntime();
+  const grillSessions = createGrillSessionsModule({
+    runtime: sessionRuntime,
+    defaultModel: 'openrouter/default-model',
+    ids: () => `grill-${Math.random().toString(16).slice(2, 10)}`,
+    clock: () => new Date(clock.ms),
+    logger: silent,
+  });
+
   const agents = createAgentManager({
     store: createInMemoryAgentStore(),
     issues,
@@ -215,6 +238,13 @@ export function createTestContext(
       issues,
       issueSync,
       grillMe,
+      grillSessions,
+      ...(overrides.upgradeWebSocket === undefined
+        ? {}
+        : { upgradeWebSocket: overrides.upgradeWebSocket }),
+      ...(overrides.grillRoutesOptions === undefined
+        ? {}
+        : { grillRoutesOptions: overrides.grillRoutesOptions }),
       agents,
       ciTracker,
       settings,
@@ -227,6 +257,8 @@ export function createTestContext(
     issueSync,
     github,
     grillMe,
+    grillSessions,
+    sessionRuntime,
     agents,
     ciTracker,
     pulls,

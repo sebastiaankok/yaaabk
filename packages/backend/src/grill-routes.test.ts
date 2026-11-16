@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { TerminalBridge, TerminalBridgeOptions, TerminalSize } from '@yaaabk/grill-me';
+import type { UpgradeWebSocket, WSEvents, WSContext } from 'hono/ws';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
 const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
-const decoder = new TextDecoder();
 
 async function request(
   context: TestContext,
@@ -33,23 +34,110 @@ async function createProject(context: TestContext, name = 'todo-app'): Promise<s
   return created.value.id;
 }
 
+interface SessionBody {
+  id: string;
+  projectId: string;
+  status: string;
+  model: string;
+  terminalPath: string;
+}
+
 async function startSession(
   context: TestContext,
   session: string,
   projectId: string,
-  idea = 'A todo app',
-): Promise<string> {
+  payload: Record<string, unknown> = { idea: 'A todo app' },
+): Promise<SessionBody> {
   const res = await request(context, session, `/api/projects/${projectId}/grill`, {
     method: 'POST',
-    body: JSON.stringify({ idea }),
+    body: JSON.stringify(payload),
   });
   expect(res.status).toBe(201);
-  const { sessionId } = (await res.json()) as { sessionId: string };
-  return sessionId;
+  return (await res.json()) as SessionBody;
 }
 
-/** Awaits pending microtasks so a fire-and-forget plan save can complete. */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+interface FakeTerminalBridge {
+  factory(options: TerminalBridgeOptions): TerminalBridge;
+  bridge: TerminalBridge;
+  readonly created: number;
+  readonly options: TerminalBridgeOptions;
+  readonly input: string[];
+  readonly resize: TerminalSize[];
+  readonly closed: boolean;
+}
+
+function fakeTerminalBridge(): FakeTerminalBridge {
+  const input: string[] = [];
+  const resize: TerminalSize[] = [];
+  let created = 0;
+  let closed = false;
+  let options: TerminalBridgeOptions | undefined;
+  const bridge: TerminalBridge = {
+    input(data) {
+      input.push(data);
+    },
+    resize(size) {
+      resize.push(size);
+    },
+    close() {
+      closed = true;
+    },
+  };
+  return {
+    factory(next) {
+      created += 1;
+      options = next;
+      return bridge;
+    },
+    bridge,
+    get created() {
+      return created;
+    },
+    get options() {
+      if (options === undefined) throw new Error('no bridge created');
+      return options;
+    },
+    get input() {
+      return input;
+    },
+    get resize() {
+      return resize;
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+interface FakeWebSocket {
+  ws: WSContext;
+  readonly messages: Array<Record<string, unknown>>;
+  readonly closed: { code?: number; reason?: string } | undefined;
+}
+
+function fakeWebSocket(): FakeWebSocket {
+  const messages: Array<Record<string, unknown>> = [];
+  let closed: { code?: number; reason?: string } | undefined;
+  const ws = {
+    readyState: 1,
+    send(data: string) {
+      messages.push(JSON.parse(data) as Record<string, unknown>);
+    },
+    close(code?: number, reason?: string) {
+      closed = {
+        ...(code === undefined ? {} : { code }),
+        ...(reason === undefined ? {} : { reason }),
+      };
+    },
+  } as unknown as WSContext;
+  return {
+    ws,
+    messages,
+    get closed() {
+      return closed;
+    },
+  };
+}
 
 describe('POST /api/projects/:id/grill', () => {
   it('rejects an unauthenticated request', async () => {
@@ -64,19 +152,46 @@ describe('POST /api/projects/:id/grill', () => {
     expect(res.status).toBe(401);
   });
 
-  it('starts a session for the project and returns its id', async () => {
+  it('starts a terminal session for the project', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
 
-    const sessionId = await startSession(context, session, projectId, 'A todo app');
+    const started = await startSession(context, session, projectId, { idea: 'A todo app' });
 
-    expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(context.spawner.requests[0]).toMatchObject({
-      sessionId,
+    expect(started.id).toMatch(/^grill-/);
+    expect(started.projectId).toBe(projectId);
+    expect(started.status).toBe('active');
+    expect(started.model).toBe('openrouter/default-model');
+    expect(started.terminalPath).toContain(`/grill/${started.id}/terminal`);
+    expect(JSON.stringify(started)).not.toContain('test-token');
+
+    const runtimeRequest = context.sessionRuntime.requests[0];
+    expect(runtimeRequest).toMatchObject({
       projectId,
       idea: 'A todo app',
       skillLevel: 'expert',
+      model: 'openrouter/default-model',
     });
+    expect(runtimeRequest?.prompt).toContain('A todo app');
+  });
+
+  it('uses a requested model and carries the active plan into the prompt', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    await context.plans.create({
+      projectId,
+      contentMarkdown: '# Existing plan',
+      skillLevel: 'expert',
+      source: 'grill-me',
+    });
+
+    const started = await startSession(context, session, projectId, {
+      idea: 'Add tags',
+      model: 'openrouter/chosen',
+    });
+
+    expect(started.model).toBe('openrouter/chosen');
+    expect(context.sessionRuntime.requests[0]?.prompt).toContain('# Existing plan');
   });
 
   it('returns 404 for an unknown project', async () => {
@@ -103,210 +218,210 @@ describe('POST /api/projects/:id/grill', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
   });
 
-  it('cancels the previous session when starting a new one', async () => {
+  it('returns the runtime failure reason as a bad gateway', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    context.sessionRuntime.failNextStart('ttyd: exec format error');
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill`, {
+      method: 'POST',
+      body: JSON.stringify({ idea: 'A todo app' }),
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'start-failed',
+      message: expect.stringContaining('exec format error'),
+    });
+  });
+
+  it('stops and replaces the previous session for the same project', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
 
-    await startSession(context, session, projectId, 'First');
-    await startSession(context, session, projectId, 'Second');
+    const first = await startSession(context, session, projectId, { idea: 'First' });
+    const second = await startSession(context, session, projectId, { idea: 'Second' });
 
-    expect(context.spawner.processes[0]?.stopped).toBe(true);
-    expect(context.spawner.processes[1]?.stopped).toBe(false);
+    expect(context.sessionRuntime.stopped.map((ref) => ref.sessionId)).toEqual([first.id]);
+
+    const previous = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${first.id}`,
+    );
+    expect(previous.status).toBe(200);
+    await expect(previous.json()).resolves.toMatchObject({
+      status: 'cancelled',
+      endReason: 'replaced',
+    });
+
+    const active = await request(context, session, `/api/projects/${projectId}/grill`);
+    await expect(active.json()).resolves.toMatchObject({ id: second.id });
   });
 });
 
 describe('GET /api/projects/:id/grill', () => {
-  it('streams the session events as SSE', async () => {
+  it('returns the active session so a refresh can reconnect', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
-    const sessionId = await startSession(context, session, projectId);
+    const started = await startSession(context, session, projectId);
 
-    const res = await request(
-      context,
-      session,
-      `/api/projects/${projectId}/grill?sessionId=${sessionId}`,
-    );
+    const res = await request(context, session, `/api/projects/${projectId}/grill`);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/event-stream');
-    const reader = res.body!.getReader();
-    context.spawner.processes[0]?.emit('<QUESTION>Which database?</QUESTION>');
-
-    const { value } = await reader.read();
-    expect(decoder.decode(value)).toContain('event: question');
-    expect(decoder.decode(value)).toContain('Which database?');
-    await reader.cancel();
+    await expect(res.json()).resolves.toMatchObject({
+      id: started.id,
+      status: 'active',
+    });
   });
 
-  it('rejects a request without a sessionId', async () => {
+  it('returns 404 when no session is live', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
 
     const res = await request(context, session, `/api/projects/${projectId}/grill`);
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
 
-  it('rejects a session id that belongs to another project', async () => {
+  it('returns 404 for a session that belongs to another project', async () => {
     const { context, session } = await signedIn();
     const first = await createProject(context, 'todo-app');
     const second = await createProject(context, 'other-app');
-    const sessionId = await startSession(context, session, first);
+    const started = await startSession(context, session, first);
 
-    const res = await request(
-      context,
-      session,
-      `/api/projects/${second}/grill?sessionId=${sessionId}`,
-    );
+    const res = await request(context, session, `/api/projects/${second}/grill/${started.id}`);
 
     expect(res.status).toBe(404);
-  });
-});
-
-describe('POST /api/projects/:id/grill/:sessionId/answer', () => {
-  it('sends the answer to the process', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    const sessionId = await startSession(context, session, projectId);
-
-    const res = await request(
-      context,
-      session,
-      `/api/projects/${projectId}/grill/${sessionId}/answer`,
-      { method: 'POST', body: JSON.stringify({ answer: 'Postgres' }) },
-    );
-
-    expect(res.status).toBe(200);
-    expect(context.spawner.processes[0]?.sent).toEqual(['Postgres']);
-  });
-
-  it('rejects an empty answer with 400', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    const sessionId = await startSession(context, session, projectId);
-
-    const res = await request(
-      context,
-      session,
-      `/api/projects/${projectId}/grill/${sessionId}/answer`,
-      { method: 'POST', body: JSON.stringify({ answer: '   ' }) },
-    );
-
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 404 for an unknown session', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-
-    const res = await request(context, session, `/api/projects/${projectId}/grill/missing/answer`, {
-      method: 'POST',
-      body: JSON.stringify({ answer: 'Postgres' }),
-    });
-
-    expect(res.status).toBe(404);
-  });
-});
-
-describe('POST /api/projects/:id/grill/:sessionId/refine', () => {
-  it('sends the refinement feedback to the process', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    const sessionId = await startSession(context, session, projectId);
-
-    const res = await request(
-      context,
-      session,
-      `/api/projects/${projectId}/grill/${sessionId}/refine`,
-      { method: 'POST', body: JSON.stringify({ feedback: 'Split the first issue' }) },
-    );
-
-    expect(res.status).toBe(200);
-    expect(context.spawner.processes[0]?.sent[0]).toContain('Split the first issue');
   });
 });
 
 describe('POST /api/projects/:id/grill/:sessionId/cancel', () => {
-  it('stops the process', async () => {
+  it('stops the runtime and ends the session', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
-    const sessionId = await startSession(context, session, projectId);
+    const started = await startSession(context, session, projectId);
 
     const res = await request(
       context,
       session,
-      `/api/projects/${projectId}/grill/${sessionId}/cancel`,
+      `/api/projects/${projectId}/grill/${started.id}/cancel`,
       { method: 'POST' },
     );
 
     expect(res.status).toBe(200);
-    expect(context.spawner.processes[0]?.stopped).toBe(true);
+    await expect(res.json()).resolves.toMatchObject({
+      status: 'cancelled',
+      endReason: 'cancelled',
+    });
+    expect(context.sessionRuntime.stopped.map((ref) => ref.sessionId)).toEqual([started.id]);
+
+    const active = await request(context, session, `/api/projects/${projectId}/grill`);
+    expect(active.status).toBe(404);
+  });
+
+  it('returns 404 when cancelling twice', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await request(context, session, `/api/projects/${projectId}/grill/${started.id}/cancel`, {
+      method: 'POST',
+    });
+
+    const res = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/cancel`,
+      { method: 'POST' },
+    );
+
+    expect(res.status).toBe(404);
   });
 });
 
-describe('plans from a grill-me session', () => {
-  it('saves the plan when the skill emits a <PLAN> marker', async () => {
+describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
+  it('reports that WebSockets are unavailable when no upgrader is injected', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
-    await startSession(context, session, projectId);
+    const started = await startSession(context, session, projectId);
 
-    context.spawner.processes[0]?.emit('<PLAN># Refined plan</PLAN>');
-    await tick();
+    const res = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/terminal`,
+    );
 
-    await expect(context.plans.list(projectId)).resolves.toMatchObject({
-      ok: true,
-      value: [
-        expect.objectContaining({
-          version: 1,
-          contentMarkdown: '# Refined plan',
-          source: 'grill-me',
-          skillLevel: 'expert',
-          isActive: true,
-        }),
-      ],
-    });
-  });
-});
-
-describe('issues from a grill-me session', () => {
-  const ISSUES = (title: string) =>
-    `<ISSUES>[{"title":"${title}","labels":["ready"],"depends_on":[]}]</ISSUES>`;
-
-  it('records the generated issues against the active plan', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    await startSession(context, session, projectId);
-
-    context.spawner.processes[0]?.emit('<PLAN># Refined plan</PLAN>');
-    context.spawner.processes[0]?.emit(ISSUES('Add auth'));
-    await tick();
-
-    await expect(context.issues.list(projectId)).resolves.toMatchObject({
-      ok: true,
-      value: [
-        expect.objectContaining({
-          title: 'Add auth',
-          label: 'ready',
-          planId: expect.any(String),
-        }),
-      ],
-    });
+    expect(res.status).toBe(501);
   });
 
-  it('replaces the previous drafts when the skill emits a new list', async () => {
+  it('returns 404 for an ended session', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
-    await startSession(context, session, projectId);
+    const started = await startSession(context, session, projectId);
+    await request(context, session, `/api/projects/${projectId}/grill/${started.id}/cancel`, {
+      method: 'POST',
+    });
 
-    context.spawner.processes[0]?.emit('<PLAN># Refined plan</PLAN>');
-    context.spawner.processes[0]?.emit(ISSUES('First pass'));
-    await tick();
-    context.spawner.processes[0]?.emit(ISSUES('Second pass'));
-    await tick();
+    const res = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/terminal`,
+    );
 
-    const listed = await context.issues.list(projectId);
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) return;
-    expect(listed.value.map((issue) => issue.title)).toEqual(['Second pass']);
+    expect(res.status).toBe(404);
+  });
+
+  it('keeps the upstream terminal alive across a browser refresh', async () => {
+    const bridge = fakeTerminalBridge();
+    let events: WSEvents | undefined;
+    const upgrade = ((_c: Parameters<UpgradeWebSocket>[0], nextEvents: WSEvents) => {
+      events = nextEvents;
+      return new Response(null);
+    }) as unknown as UpgradeWebSocket;
+    const context = createTestContext(undefined, undefined, {
+      upgradeWebSocket: upgrade,
+      grillRoutesOptions: { terminalBridgeFactory: bridge.factory },
+    });
+    const session = await signIn(context);
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+
+    const res = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/terminal`,
+    );
+    expect(res.status).toBe(200);
+    expect(events).toBeDefined();
+
+    const first = fakeWebSocket();
+    events!.onOpen!(new Event('open'), first.ws);
+    expect(bridge.created).toBe(1);
+    bridge.options.onReady?.();
+    expect(first.messages).toContainEqual({ type: 'status', status: 'live' });
+
+    // Refreshing closes the browser socket; the upstream ttyd connection and
+    // OpenCode process must survive.
+    events!.onClose!(new CloseEvent('close'), first.ws);
+    expect(bridge.closed).toBe(false);
+
+    const second = fakeWebSocket();
+    events!.onOpen!(new Event('open'), second.ws);
+    expect(bridge.created).toBe(1);
+    expect(second.messages).toContainEqual({ type: 'status', status: 'live' });
+
+    events!.onMessage!(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'input', data: 'ls\r' }),
+      }),
+      second.ws,
+    );
+    expect(bridge.input).toEqual(['ls\r']);
+
+    await request(context, session, `/api/projects/${projectId}/grill/${started.id}/cancel`, {
+      method: 'POST',
+    });
+    expect(bridge.closed).toBe(true);
+    expect(second.closed).toEqual({ code: 1000, reason: 'session ended' });
   });
 });
