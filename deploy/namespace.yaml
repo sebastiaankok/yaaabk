@@ -10,18 +10,6 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---
-# ArgoCD only reconciles Applications in namespaces it is configured to watch
-# (application.namespaces). This is where every Project Application lives.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: yaaabk-apps
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/enforce-version: latest
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
----
 # The ServiceAccount every agent Job runs as, created once by deploy rather
 # than per Project: agent Jobs need no Kubernetes API access, so it holds no
 # RoleBindings at all.

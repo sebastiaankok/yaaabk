@@ -1,8 +1,16 @@
 /** Namespace agent Jobs, PVCs and agent Secrets are provisioned in. */
 export const AGENT_NAMESPACE = 'yaaabk';
 
-/** Namespace every Project's ArgoCD Application is created in. */
-export const ARGOCD_APPS_NAMESPACE = 'yaaabk-apps';
+/**
+ * Namespace every Project's ArgoCD Application is created in.
+ *
+ * The same namespace the backend and the agent Jobs run in, so ArgoCD has to
+ * watch exactly one namespace for Applications and the backend needs exactly
+ * one RoleBinding for them. A Project's workloads still land in its own
+ * `yaaabk-<id>` namespace — this is where the Application *resource* lives,
+ * not what it deploys.
+ */
+export const ARGOCD_APPLICATION_NAMESPACE = 'yaaabk';
 
 /** Shared AppProject every Project Application defers to, managed via GitOps. */
 export const ARGOCD_APP_PROJECT_NAME = 'yaaabk';

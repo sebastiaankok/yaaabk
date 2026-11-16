@@ -75,9 +75,9 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with exactly two namespaced RoleBindings: agent Jobs, PVCs
-  and per-attempt Secrets in `yaaabk`, and ArgoCD Applications in
-  `yaaabk-apps`. It holds **no** cluster-wide rights: namespaces and
+  `yaaabk-backend` with exactly two namespaced RoleBindings, both in
+  `yaaabk`: one for agent Jobs, PVCs and per-attempt Secrets, one for ArgoCD
+  Applications. It holds **no** cluster-wide rights: namespaces and
   AppProjects are managed by ArgoCD from Git, and the `yaaabk-agent`
   ServiceAccount (deploy-managed) needs no Kubernetes API access at all.
 - Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
@@ -85,11 +85,25 @@ kubectl --context k3s-home auth can-i --list \
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).
   Single backend replica, `Recreate` strategy — a lost node means lost data.
 - **GitHub credentials**: prefer a GitHub App (Settings page: app id, private
-  key, installation id). The backend mints short-lived installation tokens for
-  repository management, scaffold pushes and agent runs — no long-lived PAT is
-  used or copied around. The PAT/env fallbacks exist only for local dev.
-- **ArgoCD**: the controller must be configured to reconcile Applications in
-  `yaaabk-apps` (`application.namespaces: yaaabk-apps` in
-  `argocd-cmd-params-cm`) and to read the project repositories — replace any
+  key, installation id — all three are required). The backend mints short-lived
+  installation tokens for repository management, scaffold pushes and agent runs
+  — no long-lived PAT is used or copied around. The PAT/env fallbacks exist only
+  for local dev. Note that registering an App is not installing it: create one at
+  <https://github.com/settings/apps>, install it on the `yaaabk` org, then copy
+  the installation id from the install confirmation URL into Settings. Until
+  then every create fails with "configured without an Installation ID", and
+  `YAAABK_GITHUB_OWNER` must still name the account repos are created under
+  (`yaaabk`).
+- **ArgoCD**: each Project Application is created in `yaaabk`, not in
+  `argocd`. Applications outside ArgoCD's own namespace are only reconciled
+  when two things agree:
+  1. `application.namespaces` in `argocd-cmd-params-cm` includes `yaaabk`
+     (then restart `argocd-server` and `argocd-application-controller`);
+  2. the `yaaabk` AppProject's `spec.sourceNamespaces` includes `yaaabk`
+     (applied from `appproject.yaml`).
+
+  Without both, ArgoCD refuses the Application as a permission violation and it
+  sits unreconciled with an empty status — which looks like a successful create.
+  The controller must also read the project repositories — replace any
   PAT-based repository credential with a GitHub App installation token secret
   in the `argocd` namespace.

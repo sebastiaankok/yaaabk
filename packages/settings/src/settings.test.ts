@@ -171,6 +171,53 @@ describe('SettingsModule', () => {
     expect(githubVerifier.patCalls).toEqual(['ghp_originalvalue1234']);
   });
 
+  it('tells the Developer an App has no Installation ID instead of verifying as the app itself', async () => {
+    const githubVerifier = createFakeGitHubVerifier({
+      ok: true,
+      value: { kind: 'app', account: 'yaaabk' },
+    });
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      githubVerifier,
+    });
+    await applyUpdate(settings, {
+      githubAppId: '12345',
+      githubPrivateKey: '-----BEGIN PRIVATE KEY-----',
+    });
+
+    const result = await settings.verifyGitHub();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('unauthorized');
+      expect(result.error.message).toContain('Installation ID');
+      expect(result.error.message).toContain('12345');
+    }
+    // Verified as the app rather than an installation would authenticate nothing.
+    expect(githubVerifier.appCalls).toEqual([]);
+  });
+
+  it('reports incomplete App credentials rather than falling back to the PAT', async () => {
+    const githubVerifier = createFakeGitHubVerifier();
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      githubVerifier,
+    });
+    await applyUpdate(settings, {
+      githubAppId: '12345',
+      githubPat: 'ghp_originalvalue1234',
+    });
+
+    const result = await settings.verifyGitHub();
+
+    expect(result.ok).toBe(false);
+    expect(githubVerifier.patCalls).toEqual([]);
+  });
+
   it('reports unauthorized when verifying GitHub without any credentials', async () => {
     const settings = createModule();
 

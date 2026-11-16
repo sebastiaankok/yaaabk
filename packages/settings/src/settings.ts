@@ -239,14 +239,47 @@ export function createSettingsModule({
     async verifyGitHub() {
       const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } =
         await credentials();
-      if (githubAppId !== undefined && githubPrivateKey !== undefined) {
+
+      // A complete App is the preferred credential: it mints a short-lived
+      // installation token. A half-filled one is reported rather than silently
+      // falling through to the PAT, because an App with no Installation ID
+      // cannot authenticate at all — the Developer chose the App, so say what
+      // is missing instead of verifying something they did not configure.
+      const appComplete =
+        githubAppId !== undefined &&
+        githubPrivateKey !== undefined &&
+        githubInstallationId !== undefined;
+      const appConfigured =
+        githubAppId !== undefined ||
+        githubPrivateKey !== undefined ||
+        githubInstallationId !== undefined;
+
+      if (appComplete) {
         return githubVerifier
           .verifyWithApp({
             appId: githubAppId,
             privateKey: githubPrivateKey,
-            ...(githubInstallationId === undefined ? {} : { installationId: githubInstallationId }),
+            installationId: githubInstallationId,
           })
           .then(mapOutcome('verify-github'));
+      }
+      if (appConfigured) {
+        const missing =
+          githubInstallationId === undefined
+            ? 'no Installation ID'
+            : githubPrivateKey === undefined
+              ? 'no private key'
+              : 'no App ID';
+        return {
+          ok: false,
+          error: {
+            kind: 'unauthorized',
+            operation: 'verify-github',
+            message:
+              `GitHub App ${githubAppId ?? '(no App ID)'} is incomplete (${missing}). ` +
+              'Install it at https://github.com/apps/yaaabk/installations/new and add the App ID, private key and Installation ID, or use a personal access token instead.',
+          },
+        };
       }
       if (githubPat !== undefined) {
         return githubVerifier.verifyWithPat(githubPat).then(mapOutcome('verify-github'));

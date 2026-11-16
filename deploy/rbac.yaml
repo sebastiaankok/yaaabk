@@ -1,10 +1,11 @@
 # Namespace-scoped access for the backend, nothing more.
 #
-# It provisions agent Jobs, PVCs and per-attempt Secrets in `yaaabk`, and
-# ArgoCD Applications in `yaaabk-apps`. No ClusterRoleBindings exist: the
-# backend can neither read other namespaces' Secrets nor escalate itself, and
-# everything cluster-scoped (namespaces, AppProjects) is managed by ArgoCD
-# from Git instead.
+# Everything the backend does happens in `yaaabk`: it provisions agent Jobs,
+# PVCs and per-attempt Secrets there, and it creates each Project's ArgoCD
+# Application there too. No ClusterRoleBindings exist: the backend can neither
+# read other namespaces' Secrets nor escalate itself, and everything
+# cluster-scoped (namespaces, AppProjects) is managed by ArgoCD from Git
+# instead.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -45,14 +46,16 @@ subjects:
     name: yaaabk-backend
     namespace: yaaabk
 ---
-# ArgoCD Applications: every Project Application lives here and defers to the
-# shared, GitOps-managed AppProject. AppProjects themselves are cluster-scoped
-# and deliberately absent — YAAABK never creates or modifies one.
+# ArgoCD Applications: every Project Application lives in `yaaabk`, beside the
+# backend, and defers to the shared, GitOps-managed AppProject. AppProjects
+# themselves are cluster-scoped and deliberately absent — YAAABK never creates
+# or modifies one. Kept separate from the agent Role above so the two concerns
+# stay independently reviewable, even though both are namespaced to `yaaabk`.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: yaaabk-backend-argocd
-  namespace: yaaabk-apps
+  namespace: yaaabk
 rules:
   - apiGroups: [argoproj.io]
     resources: [applications]
@@ -62,7 +65,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: yaaabk-backend-argocd
-  namespace: yaaabk-apps
+  namespace: yaaabk
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

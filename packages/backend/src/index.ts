@@ -26,10 +26,10 @@ import {
   createGitHubIssuesClient,
   createGitHubPullsClient,
   createInstallationTokenProvider,
+  type InstallationTokenProviderOptions,
   createIssueSyncModule,
   type GitHubIssues,
   type GitHubPulls,
-  type GitHubResult,
   type InstallationTokenProvider,
 } from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
@@ -49,6 +49,11 @@ import {
 } from '@yaaabk/settings';
 import { createTemplateModule } from '@yaaabk/template';
 import { createApp } from './app';
+import {
+  createGitHubTokenResolver,
+  GITHUB_OWNER_UNSET_MESSAGE,
+  type ResolvedGitHubToken,
+} from './github-token';
 
 /** Resolves the HS256 secret, generating an ephemeral one for local dev. */
 function resolveAuthSecret(): string {
@@ -87,71 +92,58 @@ const settings = createSettingsModule({
 const bootstrapCredentials = await settings.credentials();
 
 /**
- * The GitHub App installation token provider for the currently configured App
- * credentials, cached so its token is reused until it nears expiry.
+ * Mints GitHub App installation tokens for the currently configured App,
+ * cached so the token is reused until it nears expiry.
+ *
+ * Keyed on the App and installation: saving new credentials must not keep
+ * handing out tokens minted for the previous installation.
  */
 let installationTokens: InstallationTokenProvider | undefined;
+let installationTokenKey: string | undefined;
 
-async function appInstallationToken(
-  credentials: Awaited<ReturnType<SettingsModule['credentials']>>,
-): Promise<string | undefined> {
-  const { githubAppId, githubPrivateKey, githubInstallationId } = credentials;
-  if (
-    githubAppId === undefined ||
-    githubAppId === '' ||
-    githubPrivateKey === undefined ||
-    githubPrivateKey === '' ||
-    githubInstallationId === undefined ||
-    githubInstallationId === ''
-  ) {
-    installationTokens = undefined;
-    return undefined;
+function mintInstallationToken({
+  appId,
+  privateKey,
+  installationId,
+}: InstallationTokenProviderOptions): Promise<string> {
+  const key = `${appId}:${installationId}`;
+  if (installationTokens === undefined || installationTokenKey !== key) {
+    installationTokens = createInstallationTokenProvider({
+      appId,
+      privateKey,
+      installationId,
+    });
+    installationTokenKey = key;
   }
-  installationTokens ??= createInstallationTokenProvider({
-    appId: githubAppId,
-    privateKey: githubPrivateKey,
-    installationId: githubInstallationId,
-  });
   return installationTokens.token();
 }
 
 /**
- * The token a GitHub call should use.
- *
- * A configured GitHub App wins: its installation token is short-lived
- * (roughly an hour) and scoped to the permissions the installation was
- * granted, so nothing long-lived with broad repository access is ever used.
- * The stored PAT and the environment variable remain fallbacks.
+ * The GitHub token resolution the ports below share: an App installation token
+ * when an App is configured, otherwise the stored PAT or the environment.
+ * `resolveGithubToken` names the gap when there is none, so a create reports
+ * what to fix instead of one generic "GitHub is not configured".
  */
-async function resolveGithubToken(settingsModule: SettingsModule): Promise<string | undefined> {
-  const stored = await settingsModule.credentials();
-  const fromApp = await appInstallationToken(stored);
-  if (fromApp !== undefined) {
-    return fromApp;
-  }
-  if (stored.githubPat !== undefined && stored.githubPat !== '') {
-    return stored.githubPat;
-  }
-  const fromEnv = process.env.YAAABK_GITHUB_TOKEN;
-  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined;
+const resolveTokenFor = createGitHubTokenResolver({ mintInstallationToken });
+
+/** The token a GitHub call should use, or the reason there is none. */
+function resolveGithubToken(settingsModule: SettingsModule): Promise<ResolvedGitHubToken> {
+  return settingsModule.credentials().then((stored) =>
+    resolveTokenFor({
+      githubAppId: stored.githubAppId,
+      githubPrivateKey: stored.githubPrivateKey,
+      githubInstallationId: stored.githubInstallationId,
+      githubPat: stored.githubPat,
+    }),
+  );
 }
 
 function unconfigured(
   operation: string,
   message: string,
 ): { ok: false; error: { kind: 'unauthorized'; operation: string; message: string } } {
-  return {
-    ok: false,
-    error: {
-      kind: 'unauthorized',
-      operation,
-      message,
-    },
-  };
+  return { ok: false, error: { kind: 'unauthorized', operation, message } };
 }
-
-const GITHUB_UNCONFIGURED_MESSAGE =
-  'GitHub is not configured; add a GitHub PAT in Settings or set YAAABK_GITHUB_TOKEN (and YAAABK_GITHUB_OWNER to create projects)';
 
 /**
  * Resolves the Repository port from the Settings credential store, falling back
@@ -163,41 +155,51 @@ function resolveRepositories(settingsModule: SettingsModule): RepositoryProvider
   const ownerType = resolveGitHubOwnerType();
   return {
     create: async (input) => {
-      const token = await resolveGithubToken(settingsModule);
-      if (token === undefined || owner === undefined || owner === '') {
-        return unconfigured('create', GITHUB_UNCONFIGURED_MESSAGE);
+      const resolved = await resolveGithubToken(settingsModule);
+      if (!resolved.ok) {
+        return unconfigured('create', resolved.message);
       }
-      return createGitHubRepositoryProvider({ token, owner, ownerType }).create(input);
-    },
-    delete: async (fullName) => {
-      const token = await resolveGithubToken(settingsModule);
-      if (token === undefined) {
-        return unconfigured('delete', GITHUB_UNCONFIGURED_MESSAGE);
-      }
-      return createGitHubRepositoryProvider({ token, owner: owner ?? '', ownerType }).delete(
-        fullName,
-      );
-    },
-    addCollaborator: async (fullName, username) => {
-      const token = await resolveGithubToken(settingsModule);
-      if (token === undefined) {
-        return unconfigured('addCollaborator', GITHUB_UNCONFIGURED_MESSAGE);
+      if (owner === undefined || owner === '') {
+        return unconfigured('create', GITHUB_OWNER_UNSET_MESSAGE);
       }
       return createGitHubRepositoryProvider({
-        token,
+        token: resolved.token,
+        owner,
+        ownerType,
+      }).create(input);
+    },
+    delete: async (fullName) => {
+      const resolved = await resolveGithubToken(settingsModule);
+      if (!resolved.ok) {
+        return unconfigured('delete', resolved.message);
+      }
+      return createGitHubRepositoryProvider({
+        token: resolved.token,
+        owner: owner ?? '',
+        ownerType,
+      }).delete(fullName);
+    },
+    addCollaborator: async (fullName, username) => {
+      const resolved = await resolveGithubToken(settingsModule);
+      if (!resolved.ok) {
+        return unconfigured('addCollaborator', resolved.message);
+      }
+      return createGitHubRepositoryProvider({
+        token: resolved.token,
         owner: owner ?? '',
         ownerType,
       }).addCollaborator(fullName, username);
     },
     transfer: async (fullName, target) => {
-      const token = await resolveGithubToken(settingsModule);
-      if (token === undefined) {
-        return unconfigured('transfer', GITHUB_UNCONFIGURED_MESSAGE);
+      const resolved = await resolveGithubToken(settingsModule);
+      if (!resolved.ok) {
+        return unconfigured('transfer', resolved.message);
       }
-      return createGitHubRepositoryProvider({ token, owner: owner ?? '', ownerType }).transfer(
-        fullName,
-        target,
-      );
+      return createGitHubRepositoryProvider({
+        token: resolved.token,
+        owner: owner ?? '',
+        ownerType,
+      }).transfer(fullName, target);
     },
   };
 }
@@ -214,31 +216,33 @@ function resolveGitHubOwnerType(): 'org' | 'user' {
  */
 function resolveGitHubIssues(settingsModule: SettingsModule): GitHubIssues {
   const build = async () => {
-    const token = await resolveGithubToken(settingsModule);
-    return token === undefined ? undefined : createGitHubIssuesClient({ token });
+    const resolved = await resolveGithubToken(settingsModule);
+    return resolved.ok
+      ? { ok: true as const, client: createGitHubIssuesClient({ token: resolved.token }) }
+      : resolved;
   };
-  const fail = (operation: string): Promise<GitHubResult<never>> =>
-    Promise.resolve(unconfigured(operation, GITHUB_UNCONFIGURED_MESSAGE));
+  const fail = (operation: string, resolved: Extract<ResolvedGitHubToken, { ok: false }>) =>
+    Promise.resolve(unconfigured(operation, resolved.message));
   return {
     ensureLabels: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('ensureLabels') : client.ensureLabels(...args);
+      const built = await build();
+      return built.ok ? built.client.ensureLabels(...args) : fail('ensureLabels', built);
     },
     createIssue: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('createIssue') : client.createIssue(...args);
+      const built = await build();
+      return built.ok ? built.client.createIssue(...args) : fail('createIssue', built);
     },
     updateIssue: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('updateIssue') : client.updateIssue(...args);
+      const built = await build();
+      return built.ok ? built.client.updateIssue(...args) : fail('updateIssue', built);
     },
     getIssue: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('getIssue') : client.getIssue(...args);
+      const built = await build();
+      return built.ok ? built.client.getIssue(...args) : fail('getIssue', built);
     },
     listIssues: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('listIssues') : client.listIssues(...args);
+      const built = await build();
+      return built.ok ? built.client.listIssues(...args) : fail('listIssues', built);
     },
   };
 }
@@ -250,23 +254,25 @@ function resolveGitHubIssues(settingsModule: SettingsModule): GitHubIssues {
  */
 function resolveGitHubPulls(settingsModule: SettingsModule): GitHubPulls {
   const build = async () => {
-    const token = await resolveGithubToken(settingsModule);
-    return token === undefined ? undefined : createGitHubPullsClient({ token });
+    const resolved = await resolveGithubToken(settingsModule);
+    return resolved.ok
+      ? { ok: true as const, client: createGitHubPullsClient({ token: resolved.token }) }
+      : resolved;
   };
-  const fail = (operation: string): Promise<GitHubResult<never>> =>
-    Promise.resolve(unconfigured(operation, GITHUB_UNCONFIGURED_MESSAGE));
+  const fail = (operation: string, resolved: Extract<ResolvedGitHubToken, { ok: false }>) =>
+    Promise.resolve(unconfigured(operation, resolved.message));
   return {
     listPullRequests: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('listPullRequests') : client.listPullRequests(...args);
+      const built = await build();
+      return built.ok ? built.client.listPullRequests(...args) : fail('listPullRequests', built);
     },
     checkState: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('checkState') : client.checkState(...args);
+      const built = await build();
+      return built.ok ? built.client.checkState(...args) : fail('checkState', built);
     },
     mergePullRequest: async (...args) => {
-      const client = await build();
-      return client === undefined ? fail('mergePullRequest') : client.mergePullRequest(...args);
+      const built = await build();
+      return built.ok ? built.client.mergePullRequest(...args) : fail('mergePullRequest', built);
     },
   };
 }
@@ -295,7 +301,8 @@ const k8s = createK8sClient({ connection: detectK8sConnection() });
  */
 const resolveGithubTokenForAgents = async (): Promise<string | undefined> => {
   try {
-    return await resolveGithubToken(settings);
+    const resolved = await resolveGithubToken(settings);
+    return resolved.ok ? resolved.token : undefined;
   } catch {
     return undefined;
   }

@@ -176,9 +176,7 @@
         </div>
 
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium" for="github-installation-id"
-            >Installation ID (optional)</label
-          >
+          <label class="text-sm font-medium" for="github-installation-id">Installation ID</label>
           <input
             id="github-installation-id"
             bind:value={githubInstallationId}
@@ -186,6 +184,16 @@
             class="rounded-md border border-neutral-300 px-3 py-2 text-sm"
             placeholder={settings.githubInstallationId ?? '67890'}
           />
+          <p class="text-xs text-neutral-500">
+            Required: an App mints tokens for exactly one installation, so YAAABK cannot create
+            repositories without it. Find it in the install confirmation URL, or under
+            <a
+              class="underline"
+              href="https://github.com/settings/installations"
+              target="_blank"
+              rel="noreferrer">GitHub's installed apps</a
+            >.
+          </p>
           {#if settings.githubInstallationId !== undefined && githubInstallationId === ''}
             <p class="text-xs text-neutral-500">Configured: {settings.githubInstallationId}</p>
           {/if}

@@ -56,9 +56,12 @@ spec:
             # Namespace agent Jobs, PVCs and per-attempt Secrets are created in.
             - name: YAAABK_AGENT_NAMESPACE
               value: yaaabk
-            # The scaffold templates bundled into the image (see backend Dockerfile).
+            # The scaffold template bundled into the image (see backend
+            # Dockerfile). Must name the template directory itself, not the
+            # directory holding it: the scaffolder copies this directory's
+            # contents to the repository root.
             - name: YAAABK_TEMPLATE_DIR
-              value: /app/templates
+              value: /app/templates/svelte-bun
             # Trust the in-cluster API server's CA in Node's TLS stack: Bun's
             # undici ignores the CA @kubernetes/client-node loads, so every
             # in-cluster call fails with "self signed certificate in
