@@ -28,9 +28,16 @@ export interface Project {
   namespace: string;
   /** Commit SHA of the last successful deploy, or `null` if never deployed. */
   deployedCommitSha: string | null;
+  /** How the last deploy ended, or `null` if the Project has never deployed. */
+  lastDeployStatus: DeployStatus | null;
+  /** When the last deploy finished, or `null` if it has never deployed. */
+  lastDeployAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/** How a Project's last deploy ended. */
+export type DeployStatus = 'success' | 'failed';
 
 /** The values needed to create a Project. */
 export interface NewProject {

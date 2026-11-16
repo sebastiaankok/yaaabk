@@ -126,6 +126,25 @@
               >{/if}
           </dd>
         </div>
+        <div>
+          <dt class="text-neutral-500">Last deploy</dt>
+          <dd>
+            {#if project.lastDeployStatus === null}
+              <span class="text-neutral-500">Never deployed</span>
+            {:else}
+              <span
+                class={project.lastDeployStatus === 'failed' ? 'text-red-700' : 'text-emerald-700'}
+              >
+                {project.lastDeployStatus === 'failed' ? 'Failed' : 'Succeeded'}
+              </span>
+              {#if project.lastDeployAt}
+                <span class="text-neutral-500">
+                  · <time datetime={project.lastDeployAt}>{project.lastDeployAt.slice(0, 10)}</time>
+                </span>
+              {/if}
+            {/if}
+          </dd>
+        </div>
       </dl>
     </section>
 

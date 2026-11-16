@@ -10,6 +10,8 @@ const PROJECT = {
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
   deployedCommitSha: null,
+  lastDeployStatus: null,
+  lastDeployAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };

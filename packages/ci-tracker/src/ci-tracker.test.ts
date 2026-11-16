@@ -32,6 +32,8 @@ function project(overrides: Partial<Project> = {}): Project {
     repoFullName: REPO,
     namespace: 'yaaabk-a1b2c3d4',
     deployedCommitSha: null,
+    lastDeployStatus: null,
+    lastDeployAt: null,
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
     ...overrides,

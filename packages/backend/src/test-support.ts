@@ -184,6 +184,7 @@ export function createTestContext(
     issues,
     projects: projectStore,
     k8s,
+    githubIssues: github,
     ids: () => `run-${Math.random().toString(16).slice(2, 10)}`,
     clock: () => new Date(clock.ms),
     logger: agentsLogger,

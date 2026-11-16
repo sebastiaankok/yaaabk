@@ -184,6 +184,11 @@ export interface AgentReport {
   logs?: string;
   /** Commit SHA deployed by a successful deploy run. */
   commitSha?: string;
+  /**
+   * How a deploy run ended. Omitted by runs that are not deploys; a failed
+   * deploy is recorded on the Project and surfaced to the Developer.
+   */
+  deployOutcome?: 'success' | 'failed';
 }
 
 /** The kinds of failure an Agent Manager command can report. */

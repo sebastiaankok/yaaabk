@@ -30,6 +30,8 @@ export function projectRecord(overrides: Partial<Project> = {}): Project {
     repoFullName: 'acme/todo-app',
     namespace: 'yaaabk-a1b2c3d4',
     deployedCommitSha: null,
+    lastDeployStatus: null,
+    lastDeployAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -100,6 +102,23 @@ export function projectStoreContract(api: StoreTestApi, createStore: () => Proje
 
       expect(store.get('project-1')?.description).toBe('Updated');
       expect(store.get('project-1')?.updatedAt).toBe('2026-03-01T00:00:00.000Z');
+    });
+
+    it('stores the last deploy status and time', () => {
+      const store = createStore();
+      store.create(projectRecord());
+
+      store.update(
+        projectRecord({
+          deployedCommitSha: 'abc1234',
+          lastDeployStatus: 'success',
+          lastDeployAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+        }),
+      );
+
+      expect(store.get('project-1')?.lastDeployStatus).toBe('success');
+      expect(store.get('project-1')?.lastDeployAt).toBe('2026-03-01T00:00:00.000Z');
     });
 
     it('deletes a project by id', () => {

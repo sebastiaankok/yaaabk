@@ -212,6 +212,7 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
   const branch = config.branch ?? 'main';
   const deployPath = config.deployPath ?? 'deploy';
   const logs: string[] = [];
+  let rollbackNeeded = false;
 
   try {
     await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
@@ -223,10 +224,14 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
     await deps.kubectl.applyServerSide({ directory, namespace, path: deployPath });
     logs.push(`Applied ${deployPath} with server-side apply`);
 
+    // From here until the health check passes, a failure means the new
+    // revision is live but broken, so the previous one must be restored.
+    rollbackNeeded = true;
     await deps.kubectl.waitForRollout({ namespace, deploymentName });
     logs.push(`Rollout complete for deployment/${deploymentName}`);
 
     await deps.kubectl.checkHealth({ namespace, serviceName: deploymentName });
+    rollbackNeeded = false;
     logs.push(`Health check passed for ${deploymentName}`);
 
     await deps.kubectl.labelDeployment({
@@ -237,11 +242,42 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
     });
     logs.push(`Labelled deployment/${deploymentName} ${DEPLOYED_SHA_LABEL}=${commitSha}`);
 
-    await deps.reporter.report({ prUrl: null, logs: logs.join('\n'), commitSha });
+    await deps.reporter.report({
+      prUrl: null,
+      logs: logs.join('\n'),
+      commitSha,
+      deployOutcome: 'success',
+    });
     return { ok: true, prUrl: '', branch, commitSha };
   } catch (error) {
-    const output = `${logs.join('\n')}\n${error instanceof Error ? error.message : String(error)}`;
-    await deps.reporter.report({ prUrl: null, logs: output, commitSha });
+    logs.push(error instanceof Error ? error.message : String(error));
+
+    if (rollbackNeeded) {
+      // Capture the failing pods before rolling back: undo replaces them, and
+      // the logs are what tells the Developer why the deploy broke.
+      try {
+        const podLogs = await deps.kubectl.podLogs({ namespace, deploymentName });
+        if (podLogs.trim() !== '') logs.push(`Pod logs:\n${podLogs}`);
+      } catch (cause) {
+        logs.push(
+          `Could not capture pod logs: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      }
+
+      try {
+        const rollback = await deps.kubectl.undoRollout({ namespace, deploymentName });
+        logs.push(
+          rollback.rolledBack
+            ? 'Rolled back to the previous revision'
+            : `No previous revision to roll back${rollback.error === undefined ? '' : `: ${rollback.error}`}`,
+        );
+      } catch (cause) {
+        logs.push(`Rollback failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
+
+    const output = logs.join('\n');
+    await deps.reporter.report({ prUrl: null, logs: output, commitSha, deployOutcome: 'failed' });
     return {
       ok: false,
       reason: 'deploy-failed',
