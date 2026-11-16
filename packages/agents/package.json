@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@yaaabk/github": "workspace:*",
     "@yaaabk/issues": "workspace:*",
     "@yaaabk/k8s": "workspace:*",
     "@yaaabk/projects": "workspace:*"

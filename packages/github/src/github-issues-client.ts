@@ -31,6 +31,7 @@ const LABEL_COLORS: Record<string, string> = {
   'refinement-needed': 'fbca04',
   blocked: '6e7781',
   'needs-human': 'd73a4a',
+  'deploy-failed': 'b60205',
 };
 const DEFAULT_LABEL_COLOR = 'ededed';
 

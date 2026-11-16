@@ -80,6 +80,40 @@ export function createKubectl(): Kubectl {
     async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
       await Bun.$`kubectl label deployment ${deploymentName} --namespace ${namespace} ${`${labelKey}=${labelValue}`} --overwrite`.quiet();
     },
+    async undoRollout({ namespace, deploymentName }) {
+      const history =
+        await Bun.$`kubectl rollout history deployment/${deploymentName} --namespace ${namespace}`
+          .quiet()
+          .nothrow();
+      if (history.exitCode !== 0) {
+        return { rolledBack: false, error: history.stderr.toString().trim() };
+      }
+      const revisions = history.stdout
+        .toString()
+        .split('\n')
+        .filter((line) => /^\s*\d+\s+/.test(line)).length;
+      if (revisions < 2) return { rolledBack: false };
+      const undone =
+        await Bun.$`kubectl rollout undo deployment/${deploymentName} --namespace ${namespace}`
+          .quiet()
+          .nothrow();
+      if (undone.exitCode !== 0) {
+        return { rolledBack: false, error: undone.stderr.toString().trim() };
+      }
+      await Bun.$`kubectl rollout status deployment/${deploymentName} --namespace ${namespace} --timeout=120s`.quiet();
+      return { rolledBack: true };
+    },
+    async podLogs({ namespace, deploymentName }) {
+      // Tail keeps a broken deploy's report bounded while still capturing the
+      // logs that explain why the new pods never became ready.
+      const result =
+        await Bun.$`kubectl logs deployment/${deploymentName} --namespace ${namespace} --all-containers --prefix --tail=200`
+          .quiet()
+          .nothrow();
+      const stdout = result.stdout.toString();
+      const stderr = result.stderr.toString();
+      return [stdout, stderr].filter((part) => part.trim() !== '').join('\n');
+    },
   };
 }
 
@@ -209,7 +243,7 @@ export function createReporter(
 ): Reporter {
   const doFetch = options.fetch ?? globalThis.fetch;
   return {
-    async report({ prUrl, logs, costCents, commitSha }) {
+    async report({ prUrl, logs, costCents, commitSha, deployOutcome }) {
       if (
         config.apiUrl === undefined ||
         config.runId === undefined ||
@@ -226,6 +260,7 @@ export function createReporter(
           logs,
           ...(costCents === undefined ? {} : { costCents }),
           ...(commitSha === undefined ? {} : { commitSha }),
+          ...(deployOutcome === undefined ? {} : { deployOutcome }),
         }),
       });
     },

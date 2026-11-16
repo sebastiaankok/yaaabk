@@ -50,7 +50,13 @@ const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' 
 interface Fakes {
   deps: AgentDependencies;
   calls: string[];
-  reports: Array<{ prUrl: string | null; logs: string; costCents?: number; commitSha?: string }>;
+  reports: Array<{
+    prUrl: string | null;
+    logs: string;
+    costCents?: number;
+    commitSha?: string;
+    deployOutcome?: 'success' | 'failed';
+  }>;
   pullRequests: AgentPullRequest;
   reviews: Array<{ pullNumber: number; event: string; body: string }>;
 }
@@ -61,7 +67,14 @@ function fakes(
     checksPassed?: boolean;
     reviewExitCode?: number;
     verdict?: { event: 'approve' | 'request-changes'; body: string };
+    /** Message the clone step fails with, when the deploy never reaches the cluster. */
+    cloneError?: string;
+    /** Message the rollout step fails with, when the deploy should fail. */
     deployError?: string;
+    /** Whether the Deployment has a previous revision to roll back to. */
+    rolledBack?: boolean;
+    /** Logs the deploy Job captures from the Deployment's pods. */
+    podLogs?: string;
     /** USD the run's key has spent before and after the LLM call. */
     usage?: { before: number | undefined; after: number | undefined };
   } = {},
@@ -72,6 +85,7 @@ function fakes(
     logs: string;
     costCents?: number;
     commitSha?: string;
+    deployOutcome?: 'success' | 'failed';
   }> = [];
   const reviews: Array<{ pullNumber: number; event: string; body: string }> = [];
   const pullRequests: AgentPullRequest = {
@@ -90,6 +104,7 @@ function fakes(
   const git: Git = {
     async clone(input) {
       calls.push(`clone:${input.repoUrl}->${input.directory}`);
+      if (overrides.cloneError !== undefined) throw new Error(overrides.cloneError);
     },
     async createBranch(directory, branch) {
       calls.push(`branch:${directory}:${branch}`);
@@ -117,12 +132,24 @@ function fakes(
     },
     async waitForRollout({ namespace, deploymentName }) {
       calls.push(`rollout:${namespace}:${deploymentName}`);
+      if (overrides.deployError !== undefined) throw new Error(overrides.deployError);
     },
     async checkHealth({ namespace, serviceName }) {
       calls.push(`health:${namespace}:${serviceName}`);
     },
     async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
       calls.push(`label:${namespace}:${deploymentName}:${labelKey}=${labelValue}`);
+    },
+    async undoRollout({ namespace, deploymentName }) {
+      const rolledBack = overrides.rolledBack ?? true;
+      calls.push(
+        `undo:${namespace}:${deploymentName}:${rolledBack ? 'rolled-back' : 'no-revision'}`,
+      );
+      return { rolledBack };
+    },
+    async podLogs({ namespace, deploymentName }) {
+      calls.push(`pod-logs:${namespace}:${deploymentName}`);
+      return overrides.podLogs ?? 'pod log line';
     },
   };
   const openCode: OpenCode = {
@@ -345,5 +372,60 @@ describe('runAgent', () => {
     expect(reports).toHaveLength(1);
     expect(reports[0]?.prUrl).toBeNull();
     expect(reports[0]?.commitSha).toBe('merge-sha-7');
+    expect(reports[0]?.deployOutcome).toBe('success');
+  });
+
+  it('captures pod logs, rolls back, and reports a failed deploy when the rollout fails', async () => {
+    const { deps, calls, reports } = fakes({
+      deployError: 'rollout timed out',
+      podLogs: 'Error: CrashLoopBackOff',
+    });
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'deploy-failed' });
+    expect(calls).toEqual([
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout-commit:/work/repo:merge-sha-7',
+      'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
+      'rollout:yaaabk-a1b2c3d4:todo-app',
+      'pod-logs:yaaabk-a1b2c3d4:todo-app',
+      'undo:yaaabk-a1b2c3d4:todo-app:rolled-back',
+      'report',
+    ]);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      prUrl: null,
+      commitSha: 'merge-sha-7',
+      deployOutcome: 'failed',
+    });
+    expect(reports[0]?.logs).toContain('rollout timed out');
+    expect(reports[0]?.logs).toContain('Error: CrashLoopBackOff');
+    expect(reports[0]?.logs).toContain('Rolled back to the previous revision');
+  });
+
+  it('reports the failure without a rollback when the Deployment has no previous revision', async () => {
+    const { deps, reports } = fakes({
+      deployError: 'rollout timed out',
+      rolledBack: false,
+      podLogs: 'Error: CrashLoopBackOff',
+    });
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'deploy-failed' });
+    expect(reports[0]?.deployOutcome).toBe('failed');
+    expect(reports[0]?.logs).toContain('No previous revision to roll back');
+  });
+
+  it('does not roll back a deploy that never reached the cluster', async () => {
+    const { deps, calls, reports } = fakes({ cloneError: 'repository not found' });
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'deploy-failed' });
+    expect(calls).toEqual(['clone:https://github.com/acme/todo-app->/work/repo', 'report']);
+    expect(reports[0]?.deployOutcome).toBe('failed');
+    expect(reports[0]?.logs).toContain('repository not found');
   });
 });

@@ -250,6 +250,8 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           repoFullName: repository.fullName,
           namespace,
           deployedCommitSha: null,
+          lastDeployStatus: null,
+          lastDeployAt: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         };

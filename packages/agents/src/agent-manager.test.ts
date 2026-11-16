@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { createFakeGitHubIssues, type FakeGitHubIssues } from '@yaaabk/github';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
-import { createInMemoryProjectStore, type Project } from '@yaaabk/projects';
+import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import { DEFAULT_ACTIVE_DEADLINE_SECONDS, REVIEW_SKILL_PATH } from './config';
 import { silentLogger } from './errors';
@@ -22,6 +23,8 @@ function project(overrides: Partial<Project> = {}): Project {
     repoFullName: 'acme/todo-app',
     namespace: NS,
     deployedCommitSha: null,
+    lastDeployStatus: null,
+    lastDeployAt: null,
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
     ...overrides,
@@ -32,6 +35,8 @@ interface Harness {
   manager: AgentManager;
   issues: IssuesModule;
   k8s: MockK8sClient;
+  projects: ProjectStore;
+  github: FakeGitHubIssues;
   /** Every token scope the manager asked for, in order. */
   scopes: string[];
 }
@@ -48,6 +53,8 @@ async function harness(
   for (const entry of options.projects ?? [project()]) {
     projectStore.create(entry);
   }
+
+  const github = createFakeGitHubIssues();
 
   let issueSequence = 0;
   const issues = createIssuesModule({
@@ -73,6 +80,7 @@ async function harness(
     issues,
     projects: projectStore,
     k8s: createMockK8sClient(),
+    githubIssues: github,
     clock: () => NOW,
     ids: () => `run-${++runSequence}`,
     newToken: () => `token-${++tokenSequence}`,
@@ -84,7 +92,7 @@ async function harness(
   const k8s = managerOptions.k8s as MockK8sClient;
   const manager = createAgentManager(managerOptions);
 
-  return { manager, issues, k8s, scopes };
+  return { manager, issues, k8s, projects: projectStore, github, scopes };
 }
 
 /** Creates an Issue and gives it a GitHub number, as an approved sync would. */
@@ -563,8 +571,8 @@ describe('deploy runs', () => {
     if (!result.ok) expect(result.error.kind).toBe('invalid-input');
   });
 
-  it('records the deployed commit SHA on the Project when the deploy Job reports success', async () => {
-    const { manager, issues, k8s } = await harness();
+  it('records the deployed commit SHA and last deploy status on the Project when the deploy Job reports success', async () => {
+    const { manager, issues, k8s, projects } = await harness();
     const issue = await readyIssue(issues);
     const spawned = await manager.spawn('project-1', issue.id, {
       kind: 'deploy',
@@ -579,15 +587,61 @@ describe('deploy runs', () => {
     const reported = await manager.report(spawned.value.id, token!, {
       logs: 'deployed sha-merged-7',
       commitSha: 'sha-merged-7',
+      deployOutcome: 'success',
     });
 
     expect(reported.ok && reported.value).toMatchObject({
       kind: 'deploy',
       commitSha: 'sha-merged-7',
     });
+    expect(projects.get('project-1')).toMatchObject({
+      deployedCommitSha: 'sha-merged-7',
+      lastDeployStatus: 'success',
+      lastDeployAt: NOW.toISOString(),
+    });
   });
 
-  it('marks a failed deploy run failed without retrying or escalating the Issue', async () => {
+  it('records a failed deploy without advancing the deployed SHA or reopening the Issue', async () => {
+    const { manager, issues, k8s, projects, github } = await harness();
+    const created = await github.createIssue('acme/todo-app', {
+      title: 'Add login',
+      body: '',
+      labels: ['ready'],
+    });
+    if (!created.ok) throw new Error('github issue create failed');
+    const issue = await readyIssue(issues, { githubNumber: created.value.number, maxAttempts: 2 });
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { container } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    expect(token).toBeDefined();
+
+    const reported = await manager.report(spawned.value.id, token!, {
+      logs: 'rollout failed\nPod logs:\nError: CrashLoopBackOff',
+      commitSha: 'sha-merged-7',
+      deployOutcome: 'failed',
+    });
+
+    expect(reported.ok).toBe(true);
+    // The failed SHA never becomes the deployed one: the previous revision is
+    // what stayed live after the rollback.
+    expect(projects.get('project-1')).toMatchObject({
+      deployedCommitSha: null,
+      lastDeployStatus: 'failed',
+      lastDeployAt: NOW.toISOString(),
+    });
+    // The Issue stays closed/open as it was; only a label is added on GitHub.
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0, label: 'ready' });
+    expect(github.issues('acme/todo-app')[0]?.labels).toContain('deploy-failed');
+    expect(github.labels('acme/todo-app')).toContain('deploy-failed');
+  });
+
+  it('does not spawn a fix Agent or reopen the Issue after a failed deploy', async () => {
     const { manager, issues, k8s } = await harness();
     const issue = await readyIssue(issues, { maxAttempts: 2 });
 
@@ -608,5 +662,7 @@ describe('deploy runs', () => {
     const stored = await issues.get('project-1', issue.id);
     expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0, status: 'open' });
     expect(stored.ok && stored.value.label).not.toBe('needs-human');
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value).toHaveLength(1);
   });
 });

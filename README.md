@@ -323,7 +323,13 @@ each head commit plus the latest review through the `GitHubPulls` port:
 - **green, no review** — a review Agent is spawned to judge the pull request.
 - **green, approved** — the pull request is merged, its Issue is closed locally
   and on GitHub, and a deploy Job is spawned as `yaaabk-deploy` to apply the
-  manifests, wait for rollout, verify `/health`, and record the deployed commit SHA.
+  manifests, wait for rollout, verify `/health`, and record the deployed commit
+  SHA. If the rollout or health check fails, the Job captures the failing pods'
+  logs and rolls back to the previous revision when one exists. YAAABK records
+  the last deploy status and time on the Project, and labels the Issue
+  `deploy-failed`; a failed deploy neither reopens the Issue nor spawns a fix
+  Agent, leaving the Developer to decide between code, manifests or the
+  rollback.
 - **changes requested** — a fix attempt is spawned on the same branch carrying
   the reviewer's summary as a distinct prompt section, until the rejection count
   reaches two or the Issue's attempt budget is spent; then the Issue is labelled

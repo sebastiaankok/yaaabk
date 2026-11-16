@@ -125,6 +125,8 @@ describe('create', () => {
       repoUrl: 'https://github.com/acme/todo-app',
       namespace: 'yaaabk-a1b2c3d4',
       deployedCommitSha: null,
+      lastDeployStatus: null,
+      lastDeployAt: null,
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),
     });

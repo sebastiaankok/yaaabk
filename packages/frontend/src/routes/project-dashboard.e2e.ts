@@ -9,6 +9,8 @@ const PROJECT = {
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
   deployedCommitSha: 'abc1234',
+  lastDeployStatus: 'success',
+  lastDeployAt: '2026-01-02T03:04:05.000Z',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -47,6 +49,8 @@ test('shows the provisioned project with links to its tooling', async ({ page })
   await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
   await expect(page.getByText('Deployed commit')).toBeVisible();
   await expect(page.getByText('abc1234')).toBeVisible();
+  await expect(page.getByText('Last deploy')).toBeVisible();
+  await expect(page.getByText('Succeeded')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Grill-Me' })).toHaveAttribute(
     'href',
     '/projects/p1/plan',
@@ -55,6 +59,21 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'href',
     '/projects/p1/stats',
   );
+});
+
+test('shows a failed last deploy to the developer', async ({ page }) => {
+  await mockProject(page);
+  await page.route('**/api/projects/p1', (route) =>
+    route.fulfill({
+      json: { ...PROJECT, deployedCommitSha: null, lastDeployStatus: 'failed' },
+    }),
+  );
+
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByText('Last deploy')).toBeVisible();
+  await expect(page.getByText('Failed')).toBeVisible();
+  await expect(page.getByText('Not yet deployed')).toBeVisible();
 });
 
 test('deletes the project after confirmation', async ({ page }) => {

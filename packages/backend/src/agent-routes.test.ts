@@ -181,4 +181,54 @@ describe('POST /api/agent-runs/:runId/report', () => {
       prUrl: 'https://github.com/acme/todo/pull/7',
     });
   });
+
+  it('records a failed deploy reported with its outcome', async () => {
+    const { context, session } = await signedIn();
+    const { projectId, issueId } = await projectWithIssue(context, session);
+    const githubIssue = await context.github.createIssue('acme/todo-app', {
+      title: 'Add login',
+      body: '',
+      labels: ['ready'],
+    });
+    if (!githubIssue.ok) throw new Error('github issue missing');
+    await context.issues.update(projectId, issueId, { githubNumber: githubIssue.value.number });
+
+    const spawned = await context.agents.spawn(projectId, issueId, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const project = await context.projects.get(projectId);
+    if (!project.ok) throw new Error('project missing');
+    const job = await context.k8s.objectApi.read({
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: spawned.value.jobName!, namespace: project.value.namespace },
+    });
+    const container = (
+      job.spec as {
+        template: { spec: { containers: Array<{ env: Array<{ name: string; value: string }> }> } };
+      }
+    ).template.spec.containers[0]!;
+    const token = container.env.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    expect(token).toBeDefined();
+
+    const reported = await request(context, `/api/agent-runs/${spawned.value.id}/report`, {
+      method: 'POST',
+      body: JSON.stringify({
+        token,
+        logs: 'rollout failed\nPod logs:\nError: CrashLoopBackOff',
+        commitSha: 'sha-merged-7',
+        deployOutcome: 'failed',
+      }),
+    });
+
+    expect(reported.status).toBe(200);
+    expect(context.projectStore.get(projectId)).toMatchObject({
+      deployedCommitSha: null,
+      lastDeployStatus: 'failed',
+    });
+    expect(context.github.issues('acme/todo-app')[0]?.labels).toContain('deploy-failed');
+  });
 });

@@ -33,6 +33,9 @@ export const IMPLEMENT_SKILL_PATH = '/app/skills/implement-issue/SKILL.md';
 /** Skill the review Job loads. */
 export const REVIEW_SKILL_PATH = '/app/skills/review-pr/SKILL.md';
 
+/** Label a failed deploy leaves on the Issue, so the Developer can find it. */
+export const DEPLOY_FAILED_LABEL = 'deploy-failed';
+
 function prefix(kind: AgentRunKind): string {
   if (kind === 'review') return 'agent-review';
   if (kind === 'deploy') return 'yaaabk-deploy';

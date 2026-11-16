@@ -114,6 +114,21 @@
               </dd>
             </div>
             <div class="flex gap-1">
+              <dt class="font-medium">Last deploy</dt>
+              <dd>
+                {#if project.lastDeployStatus === null}
+                  —
+                {:else}
+                  <span class={project.lastDeployStatus === 'failed' ? 'text-red-700' : ''}>
+                    {project.lastDeployStatus === 'failed' ? 'Failed' : 'Succeeded'}
+                  </span>
+                  {#if project.lastDeployAt}
+                    <time datetime={project.lastDeployAt}>{project.lastDeployAt.slice(0, 10)}</time>
+                  {/if}
+                {/if}
+              </dd>
+            </div>
+            <div class="flex gap-1">
               <dt class="font-medium">Skill</dt>
               <dd>{project.skillLevel}</dd>
             </div>

@@ -29,6 +29,8 @@ interface ProjectRow {
   repo_full_name: string;
   namespace: string;
   deployed_commit_sha: string | null;
+  last_deploy_status: string | null;
+  last_deploy_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +45,8 @@ CREATE TABLE IF NOT EXISTS projects (
   repo_full_name     TEXT NOT NULL,
   namespace          TEXT NOT NULL,
   deployed_commit_sha TEXT,
+  last_deploy_status TEXT,
+  last_deploy_at     TEXT,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
@@ -60,6 +64,11 @@ function toProject(row: ProjectRow): Project {
     repoFullName: row.repo_full_name,
     namespace: row.namespace,
     deployedCommitSha: row.deployed_commit_sha ?? null,
+    lastDeployStatus:
+      row.last_deploy_status === 'success' || row.last_deploy_status === 'failed'
+        ? row.last_deploy_status
+        : null,
+    lastDeployAt: row.last_deploy_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -87,6 +96,17 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
   if (!columns.some((col) => col.name === 'deployed_commit_sha')) {
     database.exec('ALTER TABLE projects ADD COLUMN deployed_commit_sha TEXT');
   }
+  if (!columns.some((col) => col.name === 'last_deploy_status')) {
+    database.exec('ALTER TABLE projects ADD COLUMN last_deploy_status TEXT');
+  }
+  if (!columns.some((col) => col.name === 'last_deploy_at')) {
+    database.exec('ALTER TABLE projects ADD COLUMN last_deploy_at TEXT');
+  }
+  // Projects deployed before status tracking have a deployed commit but no
+  // status; treat the commit as the evidence of a successful last deploy.
+  database.exec(
+    "UPDATE projects SET last_deploy_status = 'success' WHERE deployed_commit_sha IS NOT NULL AND last_deploy_status IS NULL",
+  );
 
   return {
     create(project) {
@@ -94,8 +114,8 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         database
           .prepare(
             `INSERT INTO projects
-               (id, name, description, skill_level, repo_url, repo_full_name, namespace, deployed_commit_sha, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, name, description, skill_level, repo_url, repo_full_name, namespace, deployed_commit_sha, last_deploy_status, last_deploy_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             project.id,
@@ -106,6 +126,8 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
             project.repoFullName,
             project.namespace,
             project.deployedCommitSha,
+            project.lastDeployStatus,
+            project.lastDeployAt,
             project.createdAt,
             project.updatedAt,
           );
@@ -141,7 +163,8 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         .prepare(
           `UPDATE projects
              SET name = ?, description = ?, skill_level = ?, repo_url = ?, repo_full_name = ?,
-                 namespace = ?, deployed_commit_sha = ?, created_at = ?, updated_at = ?
+                 namespace = ?, deployed_commit_sha = ?, last_deploy_status = ?, last_deploy_at = ?,
+                 created_at = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -152,6 +175,8 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
           project.repoFullName,
           project.namespace,
           project.deployedCommitSha,
+          project.lastDeployStatus,
+          project.lastDeployAt,
           project.createdAt,
           project.updatedAt,
           project.id,

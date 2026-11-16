@@ -405,6 +405,7 @@ const agents = createAgentManager({
   issues,
   projects: projectStore,
   k8s,
+  githubIssues: resolveGitHubIssues(settings),
   githubToken: resolveGithubTokenForAgents,
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }

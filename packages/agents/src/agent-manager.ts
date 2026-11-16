@@ -1,10 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { GitHubIssues } from '@yaaabk/github';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { K8sClient, JobSpec } from '@yaaabk/k8s';
 import {
   DEPLOY_SOURCE_PATH,
   PROJECT_AGENT_SERVICE_ACCOUNT,
   PROJECT_DEPLOY_SERVICE_ACCOUNT,
+  type Project,
   type ProjectStore,
 } from '@yaaabk/projects';
 import {
@@ -13,6 +15,7 @@ import {
   DEFAULT_MAX_CONCURRENT_CLUSTER,
   DEFAULT_MAX_CONCURRENT_PER_PROJECT,
   DEFAULT_PVC_STORAGE,
+  DEPLOY_FAILED_LABEL,
   IMPLEMENT_SKILL_PATH,
   OPENROUTER_SECRET_KEY,
   REVIEW_SKILL_PATH,
@@ -46,6 +49,12 @@ export interface AgentManagerOptions {
   projects: ProjectStore;
   /** Creates the Jobs, PVCs and Secrets. */
   k8s: K8sClient;
+  /**
+   * Mirrors a failed deploy onto the Issue as a `deploy-failed` label. Optional
+   * so the manager still works without GitHub credentials; the failure is
+   * always recorded on the Project and its run regardless.
+   */
+  githubIssues?: GitHubIssues;
   /** Agent container image. Defaults to {@link DEFAULT_AGENT_IMAGE}. */
   image?: string;
   /** Cap on Agents running for one Project. Defaults to 2. */
@@ -155,6 +164,54 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     if (configured === undefined) return undefined;
     const token = typeof configured === 'function' ? await configured(kind) : configured;
     return token === '' ? undefined : token;
+  }
+
+  /**
+   * Labels the Issue whose deploy failed, leaving the Issue itself closed.
+   *
+   * Best-effort: GitHub being unreachable must not lose the deploy failure that
+   * has already been recorded on the Project and run.
+   */
+  async function labelDeployFailure(project: Project, issue: Issue): Promise<void> {
+    const github = options.githubIssues;
+    if (github === undefined || issue.githubNumber === null) return;
+    try {
+      const ensured = await github.ensureLabels(project.repoFullName, [DEPLOY_FAILED_LABEL]);
+      if (!ensured.ok) {
+        logger.error('agents deploy label failed', {
+          projectId: project.id,
+          issueId: issue.id,
+          kind: ensured.error.kind,
+        });
+        return;
+      }
+      const current = await github.getIssue(project.repoFullName, issue.githubNumber);
+      if (!current.ok) {
+        logger.error('agents deploy label read failed', {
+          projectId: project.id,
+          issueId: issue.id,
+          kind: current.error.kind,
+        });
+        return;
+      }
+      if (current.value.labels.includes(DEPLOY_FAILED_LABEL)) return;
+      const updated = await github.updateIssue(project.repoFullName, issue.githubNumber, {
+        labels: [...current.value.labels, DEPLOY_FAILED_LABEL],
+      });
+      if (!updated.ok) {
+        logger.error('agents deploy label update failed', {
+          projectId: project.id,
+          issueId: issue.id,
+          kind: updated.error.kind,
+        });
+      }
+    } catch (error) {
+      logger.error('agents deploy label failed', {
+        projectId: project.id,
+        issueId: issue.id,
+        error: String(error),
+      });
+    }
   }
 
   /** Running attempts per Project and cluster-wide. */
@@ -548,14 +605,27 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         };
         store.update(updated);
 
-        if (run.kind === 'deploy' && report.commitSha !== undefined) {
+        if (run.kind === 'deploy' && report.deployOutcome !== undefined) {
           const project = projects.get(run.projectId);
-          if (project !== undefined && project.deployedCommitSha !== report.commitSha) {
+          if (project !== undefined) {
+            const at = now().toISOString();
+            // Only a successful deploy advances the deployed commit; a failure
+            // keeps the last good one so the rollback is what stayed live.
+            const deployedCommitSha =
+              report.deployOutcome === 'success' && report.commitSha !== undefined
+                ? report.commitSha
+                : project.deployedCommitSha;
             projects.update({
               ...project,
-              deployedCommitSha: report.commitSha,
-              updatedAt: now().toISOString(),
+              deployedCommitSha,
+              lastDeployStatus: report.deployOutcome,
+              lastDeployAt: at,
+              updatedAt: at,
             });
+            if (report.deployOutcome === 'failed') {
+              const issue = await requireIssue(run.projectId, run.issueId);
+              await labelDeployFailure(project, issue);
+            }
           }
         }
 

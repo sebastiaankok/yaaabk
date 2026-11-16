@@ -77,6 +77,19 @@ export interface Kubectl {
     labelKey: string;
     labelValue: string;
   }): Promise<void>;
+  /**
+   * Rolls the Deployment back to its previous revision, when one exists.
+   *
+   * Returns `rolledBack: false` when the Deployment has no previous revision,
+   * which is not a failure: a first deploy that never became healthy simply
+   * leaves nothing to roll back to.
+   */
+  undoRollout(input: {
+    namespace: string;
+    deploymentName: string;
+  }): Promise<{ rolledBack: boolean; error?: string }>;
+  /** Captures the current logs of the Deployment's pods, for a failure report. */
+  podLogs(input: { namespace: string; deploymentName: string }): Promise<string>;
 }
 
 export interface OpenCode {
@@ -138,6 +151,11 @@ export interface Reporter {
     logs: string;
     costCents?: number;
     commitSha?: string;
+    /**
+     * How a deploy run ended. A failed deploy is reported so YAAABK can record
+     * the failure and surface it; a successful one records the deployed SHA.
+     */
+    deployOutcome?: 'success' | 'failed';
   }): Promise<void>;
 }
 

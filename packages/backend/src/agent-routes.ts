@@ -24,6 +24,11 @@ function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/** Reads a deploy outcome, treating anything else as absent. */
+function asDeployOutcome(value: unknown): 'success' | 'failed' | undefined {
+  return value === 'success' || value === 'failed' ? value : undefined;
+}
+
 /**
  * Builds the Agent routes: triggering attempts for an Issue, reading their
  * history, and the callback a running Job uses to report what it did.
@@ -77,6 +82,7 @@ export function agentRoutes(agents: AgentManager, projects: ProjectsModule): Hon
       costCents: asOptionalNumber(input.costCents ?? input.cost_cents),
       logs: typeof input.logs === 'string' ? input.logs : undefined,
       commitSha: typeof input.commitSha === 'string' ? input.commitSha : undefined,
+      deployOutcome: asDeployOutcome(input.deployOutcome ?? input.deploy_outcome),
     });
     return result.ok
       ? c.json(result.value)
