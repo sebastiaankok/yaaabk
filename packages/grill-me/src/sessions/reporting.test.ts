@@ -1,7 +1,7 @@
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
 import { createInMemoryPlanStore, createPlansModule } from '@yaaabk/plans';
 import { describe, expect, it } from 'vitest';
-import { createFakeSessionRuntime } from './fake-runtime';
+import { createFakeSessionKeys, createFakeSessionRuntime } from './fake-runtime';
 import {
   createGrillSessionsModule,
   type GrillSessionsModule,
@@ -20,12 +20,14 @@ interface Setup {
   runtime: ReturnType<typeof createFakeSessionRuntime>;
   plans: ReturnType<typeof createPlansModule>;
   issues: IssuesModule;
+  keys: ReturnType<typeof createFakeSessionKeys>;
   /** Starts a session and returns its id and report token. */
   start(): Promise<{ id: string; token: string }>;
 }
 
 function setup(options: { issues?: IssuesModule } = {}): Setup {
   const runtime = createFakeSessionRuntime();
+  const keys = createFakeSessionKeys();
   let sequence = 0;
   const plans = createPlansModule({
     store: createInMemoryPlanStore(),
@@ -45,6 +47,7 @@ function setup(options: { issues?: IssuesModule } = {}): Setup {
     issues,
     defaultModel: 'openrouter/default-model',
     apiUrl: 'http://backend.internal:3000',
+    keys,
     ids: () => `session-${++sequence}`,
     tokens: () => `report-token-${++sequence}`,
     clock: () => new Date(Date.UTC(2026, 0, 1, 12)),
@@ -56,6 +59,7 @@ function setup(options: { issues?: IssuesModule } = {}): Setup {
     runtime,
     plans,
     issues,
+    keys,
     async start() {
       const started = await sessions.start(INPUT);
       if (!started.ok) throw new Error(started.error.message);
@@ -237,6 +241,16 @@ describe('finishing a session', () => {
     const storedIssues = await issues.list('p1');
     expect(storedIssues.ok && storedIssues.value).toEqual([]);
     expect(runtime.stopped.map((ref) => ref.sessionId)).toEqual([id]);
+  });
+
+  it('revokes the session key when it finishes', async () => {
+    const { sessions, start, keys } = setup();
+    const { id, token } = await start();
+    await sessions.report(id, token, { prd: PRD });
+
+    await sessions.finish('p1', id, { force: true });
+
+    expect(keys.revoked).toEqual(['hash-session-1']);
   });
 
   it('publishes one Plan version and its Issues, and a retried Finish is idempotent', async () => {

@@ -31,6 +31,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoUrl: `https://github.com/${REPO}`,
     repoFullName: REPO,
     namespace: 'yaaabk-a1b2c3d4',
+    lastModel: null,
     deployedCommitSha: null,
     lastDeployStatus: null,
     lastDeployAt: null,

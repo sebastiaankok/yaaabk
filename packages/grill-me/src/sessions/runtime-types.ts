@@ -43,6 +43,11 @@ export interface SessionRuntimeSpec {
   /** The OpenCode model in `provider/model` form. */
   model: string;
   /**
+   * Budget-limited OpenRouter key the runtime's OpenCode process uses. It is
+   * injected into the runtime only and never appears in a session view.
+   */
+  openRouterKey?: string;
+  /**
    * Bearer token the session's reporting MCP server presents to the backend.
    * Injected into the runtime only; it never appears in a session view.
    */

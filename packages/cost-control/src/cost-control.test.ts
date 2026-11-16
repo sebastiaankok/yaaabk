@@ -278,6 +278,94 @@ describe('Cost Control Module', () => {
     });
   });
 
+  describe('mint', () => {
+    it('creates a budgeted key for a generic subject without recording a budget', async () => {
+      const { api, module } = setup();
+
+      const result = await module.mint({ subject: 'session-s1' });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({
+        subject: 'session-s1',
+        budgetCents: DEFAULT_ISSUE_BUDGET_CENTS,
+        expiresAt: THIRTY_DAYS_LATER,
+        createdAt: NOW.toISOString(),
+      });
+      expect(result.value.key).toBe(api.created[0]?.key);
+      expect(result.value.keyHash).toBe(api.created[0]?.keyInfo.hash);
+      expect(api.lastCreate).toEqual({
+        name: 'yaaabk-session-s1',
+        limitUsd: 0.5,
+        limitReset: null,
+        expiresAt: THIRTY_DAYS_LATER,
+      });
+    });
+
+    it('honours an explicit budget and lifetime', async () => {
+      const { api, module } = setup();
+
+      const result = await module.mint({
+        subject: 'session-s1',
+        budgetCents: 200,
+        ttlMs: 4 * 60 * 60 * 1000,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.budgetCents).toBe(200);
+      expect(api.lastCreate?.limitUsd).toBe(2);
+      expect(result.value.expiresAt).toBe(
+        new Date(NOW.getTime() + 4 * 60 * 60 * 1000).toISOString(),
+      );
+    });
+
+    it('rejects a blank subject and an out-of-range budget before calling OpenRouter', async () => {
+      const { api, module } = setup();
+
+      const blank = await module.mint({ subject: '   ' });
+      const tooHigh = await module.mint({ subject: 'session-s1', budgetCents: 501 });
+
+      expect(blank.ok).toBe(false);
+      if (!blank.ok) expect(blank.error.kind).toBe('invalid-input');
+      expect(tooHigh.ok).toBe(false);
+      if (!tooHigh.ok) expect(tooHigh.error.kind).toBe('budget-out-of-range');
+      expect(api.calls).toEqual([]);
+    });
+  });
+
+  describe('revoke', () => {
+    it('deletes the key by hash', async () => {
+      const { api, module } = setup();
+      const minted = await module.mint({ subject: 'session-s1' });
+      if (!minted.ok) throw new Error('mint failed');
+
+      const result = await module.revoke(minted.value.keyHash);
+
+      expect(result.ok).toBe(true);
+      expect(api.calls).toEqual(['createKey', 'deleteKey']);
+    });
+
+    it('treats an already-deleted key as revoked', async () => {
+      const { api, module } = setup();
+      api.fail('deleteKey', new OpenRouterApiError('API key not found', { statusCode: 404 }));
+
+      const result = await module.revoke('hash-1');
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('reports a failure to delete any other way', async () => {
+      const { api, module } = setup();
+      api.fail('deleteKey', new OpenRouterApiError('boom', { statusCode: 500 }));
+
+      const result = await module.revoke('hash-1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe('server');
+    });
+  });
+
   describe('error mapping', () => {
     it('maps an unauthorised management key to unauthorized', async () => {
       const { api, module } = setup();

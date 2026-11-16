@@ -17,6 +17,7 @@ import {
   createCostControlModule,
   createInMemoryBudgetStore,
   createOpenRouterApi,
+  createOpenRouterModelCatalogue,
   createOpenRouterVerifier,
   loadCostControlConfig,
 } from '@yaaabk/cost-control';
@@ -24,6 +25,7 @@ import {
   createGrillMeModule,
   createGrillSessionsModule,
   createLocalSessionRuntime,
+  DEFAULT_GRILL_MODEL,
 } from '@yaaabk/grill-me';
 import {
   createGitHubCredentialVerifier,
@@ -61,6 +63,7 @@ import {
   type GitHubTokenRequest,
   type ResolvedGitHubToken,
 } from './github-token';
+import { createOpenRouterSessionKeys } from './session-keys';
 
 /** Resolves the HS256 secret, generating an ephemeral one for local dev. */
 function resolveAuthSecret(): string {
@@ -388,6 +391,16 @@ const issues = createIssuesModule({
 const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(settings) });
 const grillMe = createGrillMeModule();
 
+/** Model used when neither the request nor the Project chooses one. */
+const defaultModel = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL;
+
+/**
+ * The Cost Control configuration is read once. Sessions use its default budget
+ * so a session key respects the same deployment cap as issue keys; the key
+ * lifetime is shorter because a session cannot outlive its four-hour cap.
+ */
+const costControlConfig = loadCostControlConfig(process.env);
+
 /**
  * Interactive sessions run as local ttyd + `opencode mini` child processes in
  * this slice. The Kubernetes adapter arrives with its own slice and only has to
@@ -407,16 +420,27 @@ const sessionRuntime = createLocalSessionRuntime({
     info: (message, fields) => console.info(message, fields ?? ''),
   },
 });
+const sessionKeys = createOpenRouterSessionKeys({
+  credentials: () => settings.credentials(),
+  ...(process.env['OPENROUTER_MANAGEMENT_KEY'] === undefined
+    ? {}
+    : { envManagementKey: process.env['OPENROUTER_MANAGEMENT_KEY'] }),
+  budgetCents: costControlConfig.defaultBudgetCents,
+  logger: {
+    info: (message, fields) => console.info(message, fields ?? ''),
+    error: (message, fields) => console.error(message, fields ?? ''),
+  },
+});
+
 const grillSessions = createGrillSessionsModule({
   runtime: sessionRuntime,
   plans,
   issues,
+  keys: sessionKeys,
+  defaultModel,
   ...(process.env['YAAABK_SESSION_API_URL'] === undefined
     ? {}
     : { apiUrl: process.env['YAAABK_SESSION_API_URL'] }),
-  ...(process.env['YAAABK_DEFAULT_MODEL'] === undefined
-    ? {}
-    : { defaultModel: process.env['YAAABK_DEFAULT_MODEL'] }),
   logger: {
     info: (message, fields) => console.info(message, fields ?? ''),
     error: (message, fields) => console.error(message, fields ?? ''),
@@ -429,7 +453,6 @@ const grillSessions = createGrillSessionsModule({
  * OpenRouter call fail with a clear `unauthorized` error. Its consumers (the
  * Agent Manager's budget lifecycle) arrive with a later issue.
  */
-const costControlConfig = loadCostControlConfig(process.env);
 createCostControlModule({
   api: createOpenRouterApi({
     managementKey:
@@ -480,6 +503,8 @@ const app = createApp({
   agents,
   ciTracker,
   settings,
+  models: createOpenRouterModelCatalogue(),
+  defaultModel,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
 });

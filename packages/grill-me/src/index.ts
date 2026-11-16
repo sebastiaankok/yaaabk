@@ -9,6 +9,7 @@ export * from './sse';
 export * from './fake-spawner';
 export * from './opencode-process';
 export * from './sessions/runtime-types';
+export * from './sessions/keys';
 export * from './sessions/runtime-contract';
 export * from './sessions/local-runtime';
 export * from './sessions/fake-runtime';

@@ -6,6 +6,7 @@
  * simple scripted runtime the session orchestrator and backend tests use.
  */
 
+import type { SessionKey, SessionKeyIssueResult, SessionKeyIssuer } from './keys';
 import type {
   SessionRuntime,
   SessionRuntimeRef,
@@ -157,6 +158,47 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
     },
     async stopAll() {
       await Promise.all(processes.map((child) => child.stop()));
+    },
+  };
+}
+
+export interface FakeSessionKeys extends SessionKeyIssuer {
+  /** Session ids a key was minted for, in order. */
+  readonly issued: string[];
+  /** Hashes revoked, in order. */
+  readonly revoked: string[];
+  /** Makes the next issue call fail with `message`. */
+  failNext(message: string): void;
+}
+
+/** A scripted key issuer for orchestrator and route tests. */
+export function createFakeSessionKeys(): FakeSessionKeys {
+  const issued: string[] = [];
+  const revoked: string[] = [];
+  let failure: string | undefined;
+
+  return {
+    issued,
+    revoked,
+    failNext(message) {
+      failure = message;
+    },
+    async issue(sessionId): Promise<SessionKeyIssueResult> {
+      if (failure !== undefined) {
+        const message = failure;
+        failure = undefined;
+        return { ok: false, message };
+      }
+      issued.push(sessionId);
+      const value: SessionKey = {
+        key: `sk-or-${sessionId}`,
+        hash: `hash-${sessionId}`,
+        expiresAt: '2030-01-01T00:00:00.000Z',
+      };
+      return { ok: true, value };
+    },
+    async revoke(hash) {
+      revoked.push(hash);
     },
   };
 }

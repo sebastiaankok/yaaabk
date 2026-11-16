@@ -1,3 +1,4 @@
+import type { ModelCatalogue } from '@yaaabk/cost-control';
 import {
   createTerminalBridge,
   type BrowserTerminalMessage,
@@ -40,6 +41,11 @@ export interface GrillRoutesOptions {
   upgradeWebSocket?: UpgradeWebSocket;
   /** Test seam for the upstream ttyd bridge. */
   terminalBridgeFactory?: typeof createTerminalBridge;
+  /**
+   * The catalogue a requested model must appear in. Omitted in legacy tests
+   * that do not exercise model selection.
+   */
+  catalogue?: ModelCatalogue;
 }
 
 function send(ws: WSContext, message: TerminalServerMessage): void {
@@ -147,19 +153,45 @@ export function grillRoutes(
       return fail(c, active.error, 500);
     }
 
-    const model = asString(input.model);
+    const model = asString(input.model).trim();
+    if (model !== '' && options.catalogue !== undefined) {
+      const catalogue = await options.catalogue.list();
+      if (!catalogue.ok) {
+        return c.json(
+          {
+            error: catalogue.error.kind,
+            message: `Could not load the model catalogue: ${catalogue.error.message}`,
+          },
+          502,
+        );
+      }
+      if (!catalogue.value.some((entry) => entry.id === model)) {
+        return c.json(
+          {
+            error: 'invalid-model',
+            message: `"${model}" is not a tool-capable model in the OpenRouter catalogue`,
+          },
+          400,
+        );
+      }
+    }
+
     const result = await sessions.start({
       projectId: project.id,
       projectName: project.name,
       idea: asString(input.idea ?? input.message),
       skillLevel: project.skillLevel,
-      model: model.trim() === '' ? null : model,
+      model: model === '' ? null : model,
+      lastModel: project.lastModel,
       activePlan: active.value?.contentMarkdown ?? null,
       repoFullName: project.repoFullName,
     });
-    return result.ok
-      ? c.json(result.value, 201)
-      : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
+    if (!result.ok) return fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
+
+    // Remembering the choice is a preference, not part of starting the session;
+    // a failure must not strand a running runtime.
+    await projects.rememberModel(project.id, result.value.model);
+    return c.json(result.value, 201);
   });
 
   app.get('/api/projects/:id/grill', async (c) => {

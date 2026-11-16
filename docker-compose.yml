@@ -18,8 +18,9 @@ services:
       YAAABK_DATA_DIR: /data
       YAAABK_WEB_ORIGIN: http://localhost:5173
       # Local grill sessions run ttyd + OpenCode inside the backend container.
-      # Provider credential OpenCode uses for the session model.
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # The management key mints each session its own budgeted key.
+      OPENROUTER_MANAGEMENT_KEY: ${OPENROUTER_MANAGEMENT_KEY:-}
+      YAAABK_DEFAULT_MODEL: ${YAAABK_DEFAULT_MODEL:-openrouter/anthropic/claude-sonnet-4.5}
       # Development-only default; set YAAABK_AUTH_SECRET to keep sessions.
       YAAABK_AUTH_SECRET: ${YAAABK_AUTH_SECRET:-dev-only-insecure-secret-change-me-0123456789}
     ports:

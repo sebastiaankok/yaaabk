@@ -326,6 +326,7 @@ export function createLocalSessionRuntime(
             YAAABK_PROJECT_ID: spec.projectId,
             YAAABK_SESSION_ID: spec.sessionId,
             YAAABK_SKILL_LEVEL: spec.skillLevel,
+            ...(spec.openRouterKey === undefined ? {} : { OPENROUTER_API_KEY: spec.openRouterKey }),
             ...(spec.reportToken === undefined ? {} : { YAAABK_REPORT_TOKEN: spec.reportToken }),
             ...(spec.apiUrl === undefined ? {} : { YAAABK_API_URL: spec.apiUrl }),
             ...(opencodeConfig === undefined ? {} : { OPENCODE_CONFIG: opencodeConfig }),

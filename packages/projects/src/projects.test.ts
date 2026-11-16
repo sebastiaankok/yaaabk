@@ -126,6 +126,7 @@ describe('create', () => {
       repoFullName: 'acme/todo-app',
       repoUrl: 'https://github.com/acme/todo-app',
       namespace: 'yaaabk-a1b2c3d4',
+      lastModel: null,
       deployedCommitSha: null,
       lastDeployStatus: null,
       lastDeployAt: null,
@@ -360,6 +361,49 @@ describe('update', () => {
     const { module } = harness();
 
     const result = await module.update('missing', { description: 'Updated' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('not-found');
+  });
+});
+
+describe('rememberModel', () => {
+  it('records the last-used grill model without changing other fields', async () => {
+    const { module, store, clock } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+    clock.now = new Date('2026-02-01T00:00:00.000Z');
+
+    const result = await module.rememberModel(
+      created.value.id,
+      'openrouter/anthropic/claude-sonnet-4.5',
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      description: created.value.description,
+      lastModel: 'openrouter/anthropic/claude-sonnet-4.5',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+    });
+    expect(store.get(created.value.id)?.lastModel).toBe(result.value.lastModel);
+  });
+
+  it('rejects an empty model', async () => {
+    const { module } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.rememberModel(created.value.id, '   ');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
+  it('reports not-found for an unknown id', async () => {
+    const { module } = harness();
+
+    const result = await module.rememberModel('missing', 'openrouter/test-model');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('not-found');

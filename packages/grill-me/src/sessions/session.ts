@@ -7,6 +7,7 @@ import {
   type GeneratedIssueReport,
   type SkillLevel,
 } from '@yaaabk/shared';
+import type { SessionKeyIssuer } from './keys';
 import { buildGrillSessionPrompt, resolveSessionModel } from './prompt';
 import {
   type SessionRuntime,
@@ -71,8 +72,10 @@ export interface StartGrillSessionInput {
   projectName: string;
   idea: string;
   skillLevel: SkillLevel;
-  /** The selected model; defaults to the configured environment model. */
+  /** The selected model; defaults to the Project's last-used or environment model. */
   model?: string | null;
+  /** The model the Project last used, if any. */
+  lastModel?: string | null;
   /** The Project's active Plan, when it has one, used as session context. */
   activePlan?: string | null;
   repoFullName?: string | null;
@@ -138,8 +141,13 @@ export interface GrillSessionsModuleOptions {
   /** Where a finished session publishes its Plan and Issues. */
   plans: PlansModule;
   issues: IssuesModule;
-  /** Model used when no per-session choice is supplied. */
+  /** Model used when no per-session choice or Project model is supplied. */
   defaultModel?: string;
+  /**
+   * Mints the budget-limited OpenRouter key each session runs with. When
+   * omitted, sessions start without a key (local development and unit tests).
+   */
+  keys?: SessionKeyIssuer;
   /** Backend base URL the session's reporting MCP server posts to. */
   apiUrl?: string;
   /** Mints the per-session report token. Defaults to 32 random bytes. */
@@ -167,6 +175,8 @@ interface SessionRecord {
   runtime: SessionRuntimeRef | null;
   /** SHA-256 of the report token; the plaintext only goes to the runtime. */
   reportTokenHash: string;
+  /** OpenRouter key hash for revocation; the plaintext only goes to the runtime. */
+  openRouterKeyHash: string | null;
   draft: { prd: string | null; issues: GeneratedIssueReport[] | null };
   /** The Plan this session published, kept so a retried Finish is idempotent. */
   publishedPlan: Plan | null;
@@ -305,20 +315,37 @@ export function createGrillSessionsModule(
     session.endReason = reason;
     session.endedAt = clock().toISOString();
     if (reason !== 'finished') discardDrafts(session);
-    if (runtime === null) return undefined;
-    const stopped = await options.runtime.stop(runtime);
-    if (!stopped.ok) {
+
+    const stopFailure = runtime === null ? undefined : await options.runtime.stop(runtime);
+    await revokeKey(session);
+
+    if (stopFailure !== undefined && !stopFailure.ok) {
       logger.error('grill session runtime stop failed', {
         sessionId: session.id,
-        kind: stopped.error.kind,
+        kind: stopFailure.error.kind,
       });
       return {
         kind: 'unknown',
         operation: 'stop',
-        message: stopped.error.message,
+        message: stopFailure.error.message,
       };
     }
     return undefined;
+  }
+
+  /** Revokes the session's OpenRouter key; a failure is logged, not fatal. */
+  async function revokeKey(session: SessionRecord): Promise<void> {
+    const hash = session.openRouterKeyHash;
+    session.openRouterKeyHash = null;
+    if (hash === null || options.keys === undefined) return;
+    try {
+      await options.keys.revoke(hash);
+    } catch (error) {
+      logger.error('grill session key revoke failed', {
+        sessionId: session.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   return {
@@ -335,10 +362,32 @@ export function createGrillSessionsModule(
         });
       }
 
-      const model = resolveSessionModel(input.model ?? undefined, options.defaultModel);
+      const model = resolveSessionModel(
+        input.model ?? input.lastModel ?? undefined,
+        options.defaultModel,
+      );
       const sessionId = newId();
       const startedAt = clock().toISOString();
       const reportToken = tokens();
+
+      let openRouterKey: string | undefined;
+      let openRouterKeyHash: string | null = null;
+      if (options.keys !== undefined) {
+        try {
+          const issued = await options.keys.issue(sessionId);
+          if (!issued.ok) {
+            logger.error('grill session key mint failed', { sessionId });
+            return fail('start', 'start-failed', issued.message);
+          }
+          openRouterKey = issued.value.key;
+          openRouterKeyHash = issued.value.hash;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error('grill session key mint failed', { sessionId, message });
+          return fail('start', 'start-failed', `Could not create the session key: ${message}`);
+        }
+      }
+
       const prompt = buildGrillSessionPrompt({
         projectId: input.projectId,
         projectName: input.projectName,
@@ -357,10 +406,21 @@ export function createGrillSessionsModule(
         skillLevel: input.skillLevel,
         prompt,
         model,
+        ...(openRouterKey === undefined ? {} : { openRouterKey }),
         reportToken,
         apiUrl,
       });
       if (!started.ok) {
+        if (openRouterKeyHash !== null && options.keys !== undefined) {
+          try {
+            await options.keys.revoke(openRouterKeyHash);
+          } catch (error) {
+            logger.error('grill session key revoke failed', {
+              sessionId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         logger.error('grill session start failed', {
           projectId: input.projectId,
           kind: started.error.kind,
@@ -386,6 +446,7 @@ export function createGrillSessionsModule(
         error: null,
         runtime: started.value,
         reportTokenHash: hashToken(reportToken),
+        openRouterKeyHash,
         draft: { prd: null, issues: null },
         publishedPlan: null,
         publishedIssues: [],
