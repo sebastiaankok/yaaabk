@@ -1,11 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { K8sClient, JobSpec } from '@yaaabk/k8s';
-import {
-  AGENT_NAMESPACE,
-  PROJECT_AGENT_SERVICE_ACCOUNT,
-  type ProjectStore,
-} from '@yaaabk/projects';
+import { PROJECT_AGENT_SERVICE_ACCOUNT, type ProjectStore } from '@yaaabk/projects';
 import {
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
@@ -197,9 +193,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         throw agentsError('not-found', `No project with id "${run.projectId}"`);
       }
       const issue = await requireIssue(run.projectId, run.issueId);
-      // All agent infrastructure lives in the shared agent namespace; the
-      // Project namespace is untouched.
-      const namespace = AGENT_NAMESPACE;
+      // Agent Jobs, their PVCs and per-attempt Secrets all live in the
+      // Project's own namespace, running as its `yaaabk-agent` SA.
+      const namespace = project.namespace;
       const labels = runLabels(run);
       const pvc = pvcName(run.issueId, run.attemptNumber, run.kind);
       const job = jobName(run.issueId, run.attemptNumber, run.kind);
@@ -372,7 +368,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     let secret: string | null = null;
     if (spawnOptions.openrouterApiKey !== undefined) {
       secret = openrouterSecretName(issueId, attemptNumber, kind);
-      const secretResult = await k8s.secrets.create(AGENT_NAMESPACE, secret, {
+      const secretResult = await k8s.secrets.create(project.namespace, secret, {
         [OPENROUTER_SECRET_KEY]: spawnOptions.openrouterApiKey,
       });
       if (!secretResult.ok) {
@@ -445,7 +441,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           if (run.status !== 'running' || run.jobName === null) continue;
           const project = projects.get(run.projectId);
           if (project === undefined) continue;
-          const job = await k8s.jobs.get(AGENT_NAMESPACE, run.jobName);
+          const job = await k8s.jobs.get(project.namespace, run.jobName);
           if (!job.ok) {
             if (job.error.kind === 'not-found') {
               await failRun(run, summary);

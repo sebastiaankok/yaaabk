@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_NAMESPACE } from '@yaaabk/projects';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
@@ -145,18 +144,24 @@ describe('POST /api/agent-runs/:runId/report', () => {
 
     const project = await context.projects.get(projectId);
     if (!project.ok) throw new Error('project missing');
-    // Agent infrastructure lives in the shared agent namespace, not the
-    // Project's.
+    // The Job runs in the Project's namespace as the Project's `yaaabk-agent` SA.
     const job = await context.k8s.objectApi.read({
       apiVersion: 'batch/v1',
       kind: 'Job',
-      metadata: { name: run.jobName, namespace: AGENT_NAMESPACE },
+      metadata: { name: run.jobName, namespace: project.value.namespace },
     });
-    const container = (
+    const podSpec = (
       job.spec as {
-        template: { spec: { containers: Array<{ env: Array<{ name: string; value: string }> }> } };
+        template: {
+          spec: {
+            serviceAccountName: string;
+            containers: Array<{ env: Array<{ name: string; value: string }> }>;
+          };
+        };
       }
-    ).template.spec.containers[0]!;
+    ).template.spec;
+    expect(podSpec.serviceAccountName).toBe('yaaabk-agent');
+    const container = podSpec.containers[0]!;
     const token = container.env.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
     expect(token).toBeDefined();
 

@@ -75,12 +75,20 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with two namespaced RoleBindings in `yaaabk` (one for agent
-  Jobs, PVCs and per-attempt Secrets, one for ArgoCD Applications) and two
-  narrow cluster-scoped Roles: `yaaabk-backend-namespaces` (`create`, `get`,
-  `delete` on Namespaces) and `yaaabk-backend-rbac` (`create`, `get`, `list`,
-  `watch`, `patch`, `delete` on ServiceAccounts, Roles, and RoleBindings in
-  Project Namespaces).
+  `yaaabk-backend` with one namespaced RoleBinding in `yaaabk` (for ArgoCD
+  Applications, until ArgoCD is removed) and three narrow cluster-scoped
+  ClusterRoles:
+  - `yaaabk-backend-namespaces` (`create`, `get`, `delete` on Namespaces)
+  - `yaaabk-backend-rbac` (`create`, `get`, `list`, `watch`, `patch`, `delete`
+    on ServiceAccounts, Roles, and RoleBindings in Project Namespaces)
+  - `yaaabk-backend-agent` (`create`, `get`, `list`, `watch`, `patch`, `delete`
+    on Secrets, PVCs, and Jobs across Project Namespaces).
+- Agent Jobs, their PVCs, and their per-attempt Secrets run inside each
+  Project's own Namespace (`yaaabk-<short-uuid>`) under the Project's
+  `yaaabk-agent` ServiceAccount. Kubernetes mounts an auto-rotating
+  ServiceAccount token into each Job, and `kubectl` is included in the agent
+  image so Agents can debug their Project's workloads without any long-lived
+  credential.
 - Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
   (cluster-internal); browsers use `https://yaaabk.otohgunga.nl`.
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).

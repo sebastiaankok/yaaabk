@@ -45,6 +45,30 @@ function documents(): Doc[] {
 }
 
 describe('deploy/rbac.yaml', () => {
+  it('grants the backend a ClusterRole for Jobs, PVCs and Secrets in Project Namespaces', () => {
+    const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
+    const agentRole = clusterRoles.find(
+      (doc) => doc.kind === 'ClusterRole' && doc.name === 'yaaabk-backend-agent',
+    );
+    expect(
+      agentRole,
+      'yaaabk-backend-agent ClusterRole not found in deploy/rbac.yaml',
+    ).toBeDefined();
+
+    const rules = agentRole!.rules;
+    expect(rules.find((r) => r.resources.includes('jobs'))?.apiGroups).toEqual(['batch']);
+    expect(rules.find((r) => r.resources.includes('persistentvolumeclaims'))?.apiGroups).toEqual([
+      '',
+    ]);
+    expect(rules.find((r) => r.resources.includes('secrets'))?.apiGroups).toEqual(['']);
+    expect(rules.find((r) => r.resources.includes('secrets'))?.verbs).toEqual(
+      expect.arrayContaining(['create', 'get', 'list', 'watch', 'patch', 'delete']),
+    );
+    // Nothing else: the backend must hold no other rights via this ClusterRole.
+    const resources = [...new Set(rules.flatMap((r) => r.resources))].sort();
+    expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
+  });
+
   it('grants the backend a narrow ClusterRole for Namespace lifecycle (create/get/delete)', () => {
     const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
     const nsRole = clusterRoles.find((doc) =>
@@ -89,21 +113,16 @@ describe('deploy/rbac.yaml', () => {
   });
 
   it('limits agent Jobs, PVCs and Secrets to the yaaabk namespace', () => {
-    const role = documents().find(
+    const legacyRole = documents().find(
       (doc) =>
         doc.kind === 'Role' && doc.name === 'yaaabk-backend-agent' && doc.namespace === 'yaaabk',
     );
-    expect(role, 'yaaabk-backend-agent Role in yaaabk not found').toBeDefined();
+    expect(legacyRole).toBeUndefined();
 
-    const rules = role!.rules;
-    expect(rules.find((r) => r.resources.includes('jobs'))?.apiGroups).toEqual(['batch']);
-    expect(rules.find((r) => r.resources.includes('persistentvolumeclaims'))?.apiGroups).toEqual([
-      '',
-    ]);
-    expect(rules.find((r) => r.resources.includes('secrets'))?.apiGroups).toEqual(['']);
-    // Nothing else: the backend must hold no other namespaced rights.
-    const resources = [...new Set(rules.flatMap((r) => r.resources))].sort();
-    expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
+    const clusterBindings = documents().filter((doc) => doc.kind === 'ClusterRoleBinding');
+    const agentBinding = clusterBindings.find((doc) => doc.name === 'yaaabk-backend-agent');
+    expect(agentBinding, 'yaaabk-backend-agent ClusterRoleBinding not found').toBeDefined();
+    expect(agentBinding!.subject).toBe('yaaabk-backend');
   });
 
   it('limits ArgoCD Applications to the yaaabk namespace', () => {
@@ -122,7 +141,17 @@ describe('deploy/rbac.yaml', () => {
   it('binds namespaced Roles only in their own namespace', () => {
     const bindings = documents().filter((doc) => doc.kind === 'RoleBinding');
     const subjects = bindings.map((doc) => `${doc.name}@${doc.namespace}->${doc.subject}`);
-    expect(subjects).toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');
     expect(subjects).toContain('yaaabk-backend-argocd@yaaabk->yaaabk-backend');
+    expect(subjects).not.toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');
+  });
+
+  it('does not provision a shared yaaabk-agent ServiceAccount in deploy/namespace.yaml', () => {
+    const text = readFileSync(
+      fileURLToPath(new URL('../deploy/namespace.yaml', import.meta.url)),
+      'utf8',
+    );
+    expect(text).toContain('kind: Namespace');
+    expect(text).not.toContain('kind: ServiceAccount');
+    expect(text).not.toContain('yaaabk-agent');
   });
 });
