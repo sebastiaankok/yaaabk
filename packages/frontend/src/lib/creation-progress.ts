@@ -33,6 +33,8 @@ export interface CreationState {
 const STEP_DEFS: readonly { id: ProvisioningStep; label: string }[] = [
   { id: 'repository', label: 'Creating GitHub repository' },
   { id: 'scaffold', label: 'Scaffolding project files' },
+  { id: 'namespace', label: 'Provisioning namespace' },
+  { id: 'rbac', label: 'Configuring RBAC & ServiceAccounts' },
   { id: 'argocd', label: 'Configuring ArgoCD' },
   { id: 'persist', label: 'Finishing up' },
 ];

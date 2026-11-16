@@ -67,7 +67,7 @@ values in `deploy/*.yaml` are a local baseline, not the running version.
 ```sh
 kubectl --context k3s-home -n yaaabk get pods,svc,httproute
 curl https://yaaabk.otohgunga.nl/health
-# The backend holds only its two namespaced Roles, nothing cluster-wide:
+# Verify backend permissions:
 kubectl --context k3s-home auth can-i --list \
   --as=system:serviceaccount:yaaabk:yaaabk-backend
 ```
@@ -75,11 +75,12 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with exactly two namespaced RoleBindings, both in
-  `yaaabk`: one for agent Jobs, PVCs and per-attempt Secrets, one for ArgoCD
-  Applications. It holds **no** cluster-wide rights: namespaces and
-  AppProjects are managed by ArgoCD from Git, and the `yaaabk-agent`
-  ServiceAccount (deploy-managed) needs no Kubernetes API access at all.
+  `yaaabk-backend` with two namespaced RoleBindings in `yaaabk` (one for agent
+  Jobs, PVCs and per-attempt Secrets, one for ArgoCD Applications) and two
+  narrow cluster-scoped Roles: `yaaabk-backend-namespaces` (`create`, `get`,
+  `delete` on Namespaces) and `yaaabk-backend-rbac` (`create`, `get`, `list`,
+  `watch`, `patch`, `delete` on ServiceAccounts, Roles, and RoleBindings in
+  Project Namespaces).
 - Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
   (cluster-internal); browsers use `https://yaaabk.otohgunga.nl`.
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).

@@ -15,6 +15,7 @@ const PLURALS: Record<string, string> = {
   Namespace: 'namespaces',
   Secret: 'secrets',
   ServiceAccount: 'serviceaccounts',
+  Role: 'roles',
   RoleBinding: 'rolebindings',
   Job: 'jobs',
   PersistentVolumeClaim: 'persistentvolumeclaims',

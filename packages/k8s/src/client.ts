@@ -12,8 +12,10 @@ import type {
   K8sClient,
   K8sResult,
   NamespaceInfo,
+  PolicyRule,
   PvcInfo,
   RoleBindingInfo,
+  RoleInfo,
   SecretInfo,
   ServiceAccountInfo,
 } from './types';
@@ -93,6 +95,16 @@ function toServiceAccountInfo(object: K8sObject): ServiceAccountInfo {
     name: object.metadata.name,
     namespace: object.metadata.namespace,
     labels: labelsOf(object.metadata),
+  };
+}
+
+function toRoleInfo(object: K8sObject, fallbackRules: PolicyRule[] = []): RoleInfo {
+  const rules = Array.isArray(object.rules) ? (object.rules as PolicyRule[]) : fallbackRules;
+  return {
+    name: object.metadata.name,
+    namespace: object.metadata.namespace,
+    labels: labelsOf(object.metadata),
+    rules,
   };
 }
 
@@ -418,6 +430,39 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
             return undefined;
           }
           await objectApi().delete({ ...KINDS.serviceAccount, metadata: { name, namespace } });
+          return undefined;
+        }),
+    },
+    roles: {
+      create: (namespace, name, rules) =>
+        guard('roles.create', { namespace, name }, async () => {
+          if (dryRun) {
+            return { name, namespace, labels: {}, rules } satisfies RoleInfo;
+          }
+          return toRoleInfo(
+            await objectApi().create({
+              ...KINDS.role,
+              metadata: { name, namespace },
+              rules,
+            }),
+            rules,
+          );
+        }),
+      get: (namespace, name) =>
+        guard('roles.get', { namespace, name }, async () => {
+          if (dryRun) {
+            return { name, namespace, labels: {}, rules: [] } satisfies RoleInfo;
+          }
+          return toRoleInfo(
+            await objectApi().read({ ...KINDS.role, metadata: { name, namespace } }),
+          );
+        }),
+      delete: (namespace, name) =>
+        guard('roles.delete', { namespace, name }, async () => {
+          if (dryRun) {
+            return undefined;
+          }
+          await objectApi().delete({ ...KINDS.role, metadata: { name, namespace } });
           return undefined;
         }),
     },

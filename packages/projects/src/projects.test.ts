@@ -9,6 +9,12 @@ import {
   createFakeRepositoryProvider,
   type FakeRepositoryProvider,
 } from './fake-repository-provider';
+import {
+  PROJECT_AGENT_SERVICE_ACCOUNT,
+  PROJECT_DEPLOY_SERVICE_ACCOUNT,
+  PROJECT_NAME_LABEL,
+  PROJECT_PSA_LABELS,
+} from './config';
 import { createInMemoryProjectStore } from './in-memory-project-store';
 import { createProjectsModule, type ProjectsModule } from './projects';
 import type { ProvisioningEvent, ProjectStore } from './types';
@@ -121,12 +127,98 @@ describe('create', () => {
 
     expect(store.getByName('todo-app')).toEqual(project);
 
-    // YAAABK no longer provisions the Project namespace or agent identity;
-    // ArgoCD deploys the scaffold, whose Namespace manifest creates it.
-    expect((await k8s.namespaces.get(project.namespace)).ok).toBe(false);
-    expect((await k8s.serviceAccounts.get(project.namespace, 'yaaabk-agent')).ok).toBe(false);
-    expect((await k8s.roleBindings.get(project.namespace, 'yaaabk-agent')).ok).toBe(false);
-    expect((await k8s.secrets.get(project.namespace, 'yaaabk-github')).ok).toBe(false);
+    // YAAABK provisions the Project namespace, PSA labels, and per-Project RBAC
+    // (yaaabk-agent and yaaabk-deploy SAs, Roles, and RoleBindings).
+    const ns = await k8s.namespaces.get(project.namespace);
+    expect(ns.ok).toBe(true);
+    if (ns.ok) {
+      expect(ns.value.labels).toMatchObject({
+        [PROJECT_NAME_LABEL]: 'todo-app',
+        ...PROJECT_PSA_LABELS,
+      });
+    }
+
+    for (const saName of [PROJECT_AGENT_SERVICE_ACCOUNT, PROJECT_DEPLOY_SERVICE_ACCOUNT]) {
+      const sa = await k8s.serviceAccounts.get(project.namespace, saName);
+      expect(sa.ok).toBe(true);
+      if (sa.ok) {
+        expect(sa.value).toMatchObject({ name: saName, namespace: project.namespace });
+      }
+
+      const role = await k8s.roles.get(project.namespace, saName);
+      expect(role.ok).toBe(true);
+      if (role.ok) {
+        expect(role.value).toMatchObject({ name: saName, namespace: project.namespace });
+      }
+
+      const rb = await k8s.roleBindings.get(project.namespace, saName);
+      expect(rb.ok).toBe(true);
+      if (rb.ok) {
+        expect(rb.value).toMatchObject({
+          name: saName,
+          namespace: project.namespace,
+          roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: saName },
+          subjects: [{ kind: 'ServiceAccount', name: saName, namespace: project.namespace }],
+        });
+      }
+    }
+
+    const agentRole = await k8s.roles.get(project.namespace, PROJECT_AGENT_SERVICE_ACCOUNT);
+    expect(agentRole.ok).toBe(true);
+    if (agentRole.ok) {
+      const readCore = agentRole.value.rules.find((r) => r.resources.includes('pods'));
+      expect(readCore).toMatchObject({
+        apiGroups: [''],
+        resources: expect.arrayContaining(['pods', 'pods/log', 'services', 'configmaps', 'events']),
+        verbs: ['get', 'list', 'watch'],
+      });
+      expect(readCore?.resources).not.toContain('secrets');
+      expect(agentRole.value.rules.find((r) => r.resources.includes('pods/exec'))).toMatchObject({
+        apiGroups: [''],
+        resources: ['pods/exec'],
+        verbs: ['create'],
+      });
+      expect(agentRole.value.rules.find((r) => r.resources.includes('deployments'))).toMatchObject({
+        apiGroups: ['apps'],
+        resources: ['deployments'],
+        verbs: ['get', 'list', 'watch'],
+      });
+      expect(agentRole.value.rules.find((r) => r.resources.includes('httproutes'))).toMatchObject({
+        apiGroups: ['gateway.networking.k8s.io'],
+        resources: ['httproutes'],
+        verbs: ['get', 'list', 'watch'],
+      });
+    }
+
+    const deployRole = await k8s.roles.get(project.namespace, PROJECT_DEPLOY_SERVICE_ACCOUNT);
+    expect(deployRole.ok).toBe(true);
+    if (deployRole.ok) {
+      const writeVerbs = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'];
+      const coreWrite = deployRole.value.rules.find((r) => r.resources.includes('services'));
+      expect(coreWrite).toMatchObject({
+        apiGroups: [''],
+        resources: expect.arrayContaining(['services', 'configmaps', 'secrets']),
+        verbs: writeVerbs,
+      });
+      expect(deployRole.value.rules.find((r) => r.resources.includes('deployments'))).toMatchObject(
+        {
+          apiGroups: ['apps'],
+          resources: ['deployments'],
+          verbs: writeVerbs,
+        },
+      );
+      expect(deployRole.value.rules.find((r) => r.resources.includes('httproutes'))).toMatchObject({
+        apiGroups: ['gateway.networking.k8s.io'],
+        resources: ['httproutes'],
+        verbs: writeVerbs,
+      });
+      expect(deployRole.value.rules.find((r) => r.resources.includes('pods'))).toMatchObject({
+        apiGroups: [''],
+        resources: ['pods', 'pods/log'],
+        verbs: ['get', 'list'],
+      });
+      expect(deployRole.value.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
+    }
 
     // The Application lives in `yaaabk` beside the backend and defers to the
     // shared AppProject, which YAAABK does not create or modify.
@@ -207,6 +299,10 @@ describe('create', () => {
       'repository:completed',
       'scaffold:started',
       'scaffold:completed',
+      'namespace:started',
+      'namespace:completed',
+      'rbac:started',
+      'rbac:completed',
       'argocd:started',
       'argocd:completed',
       'persist:started',
@@ -226,6 +322,27 @@ describe('create', () => {
     expect(result.error.kind).toBe('kubernetes');
     expect(store.list()).toHaveLength(0);
     expect((await k8s.applications.get('yaaabk', 'todo-app')).ok).toBe(true);
+    expect((await k8s.namespaces.get('yaaabk-a1b2c3d4')).ok).toBe(false);
+    expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
+  });
+
+  it('rolls back the repository when namespace creation fails', async () => {
+    const { module, store, repositories } = harness({
+      seed: [
+        {
+          apiVersion: 'v1',
+          kind: 'Namespace',
+          metadata: { name: 'yaaabk-a1b2c3d4', labels: {} },
+        },
+      ],
+    });
+
+    const result = await module.create(INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('kubernetes');
+    expect(store.list()).toHaveLength(0);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 });
@@ -396,7 +513,7 @@ describe('export', () => {
 });
 
 describe('remove', () => {
-  it('tears down the repository and ArgoCD Application, then forgets the project', async () => {
+  it('tears down the repository, ArgoCD Application, and Namespace, then forgets the project', async () => {
     const { module, store, k8s, repositories } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
@@ -405,9 +522,8 @@ describe('remove', () => {
 
     expect(result.ok).toBe(true);
     expect(store.get(created.value.id)).toBeUndefined();
-    // Deleting the Application lets ArgoCD prune the scaffold, which includes
-    // the Project namespace manifest; YAAABK itself deletes nothing else.
     expect((await k8s.applications.get('yaaabk', created.value.argoAppName)).ok).toBe(false);
+    expect((await k8s.namespaces.get(created.value.namespace)).ok).toBe(false);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 

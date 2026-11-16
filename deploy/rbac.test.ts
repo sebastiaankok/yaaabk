@@ -45,9 +45,47 @@ function documents(): Doc[] {
 }
 
 describe('deploy/rbac.yaml', () => {
-  it('binds no ClusterRole to the backend at all', () => {
+  it('grants the backend a narrow ClusterRole for Namespace lifecycle (create/get/delete)', () => {
+    const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
+    const nsRole = clusterRoles.find((doc) =>
+      doc.rules.some((r) => r.resources.includes('namespaces')),
+    );
+    expect(nsRole, 'namespaces ClusterRole not found in deploy/rbac.yaml').toBeDefined();
+
+    const nsRule = nsRole!.rules.find((r) => r.resources.includes('namespaces'));
+    expect(nsRule?.apiGroups).toEqual(['']);
+    expect(nsRule?.verbs).toEqual(expect.arrayContaining(['create', 'get', 'delete']));
+    // Narrow scope: no write verbs beyond create/get/delete on namespaces.
+    expect(nsRule?.verbs.sort()).toEqual(['create', 'delete', 'get']);
+  });
+
+  it('grants the backend a ClusterRole for ServiceAccounts, Roles and RoleBindings', () => {
+    const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
+    const rbacRole = clusterRoles.find((doc) =>
+      doc.rules.some((r) => r.resources.includes('serviceaccounts')),
+    );
+    expect(rbacRole, 'ServiceAccounts/Roles/RoleBindings ClusterRole not found').toBeDefined();
+
+    const saRule = rbacRole!.rules.find((r) => r.resources.includes('serviceaccounts'));
+    expect(saRule?.apiGroups).toEqual(['']);
+    expect(saRule?.verbs).toEqual(
+      expect.arrayContaining(['create', 'get', 'list', 'watch', 'patch', 'delete']),
+    );
+
+    const rolesRule = rbacRole!.rules.find((r) => r.resources.includes('roles'));
+    expect(rolesRule?.apiGroups).toEqual(['rbac.authorization.k8s.io']);
+    expect(rolesRule?.resources).toEqual(expect.arrayContaining(['roles', 'rolebindings']));
+    expect(rolesRule?.verbs).toEqual(
+      expect.arrayContaining(['create', 'get', 'list', 'watch', 'patch', 'delete']),
+    );
+  });
+
+  it('binds the ClusterRole(s) to the yaaabk-backend ServiceAccount', () => {
     const clusterBindings = documents().filter((doc) => doc.kind === 'ClusterRoleBinding');
-    expect(clusterBindings).toHaveLength(0);
+    expect(clusterBindings.length).toBeGreaterThanOrEqual(1);
+    for (const binding of clusterBindings) {
+      expect(binding.subject).toBe('yaaabk-backend');
+    }
   });
 
   it('limits agent Jobs, PVCs and Secrets to the yaaabk namespace', () => {
@@ -81,7 +119,7 @@ describe('deploy/rbac.yaml', () => {
     expect(argo?.resources).not.toContain('appprojects');
   });
 
-  it('binds each Role only in its own namespace', () => {
+  it('binds namespaced Roles only in their own namespace', () => {
     const bindings = documents().filter((doc) => doc.kind === 'RoleBinding');
     const subjects = bindings.map((doc) => `${doc.name}@${doc.namespace}->${doc.subject}`);
     expect(subjects).toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');

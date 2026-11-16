@@ -77,7 +77,8 @@ export type ProjectsResult<T> = { ok: true; value: T } | { ok: false; error: Pro
  * `persist` is last: nothing is written to the store until every external
  * resource exists, so a failed creation never leaves a half-registered Project.
  */
-export type ProvisioningStep = 'repository' | 'scaffold' | 'argocd' | 'persist';
+export type ProvisioningStep =
+  'repository' | 'scaffold' | 'namespace' | 'rbac' | 'argocd' | 'persist';
 
 /**
  * A step lifecycle event, emitted so the UI can show creation progress.
