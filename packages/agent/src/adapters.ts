@@ -1,4 +1,5 @@
 /// <reference types="bun" />
+import { join } from 'node:path';
 import type { AgentConfig } from './config';
 import type {
   AgentDependencies,
@@ -10,6 +11,7 @@ import type {
   OpenCode,
   Reporter,
 } from './ports';
+import { REVIEW_VERDICT_PATH } from './prompt';
 
 /** Splits an `https://github.com/<owner>/<repo>` URL into its parts. */
 export function parseRepoUrl(repoUrl: string): { owner: string; repo: string } {
@@ -47,15 +49,49 @@ export function createGit(): Git {
       const flags = options?.force === true ? ['--force-with-lease'] : [];
       await Bun.$`git -C ${directory} push -u origin ${branch} ${flags}`.quiet();
     },
+    async diff(directory) {
+      // Three-dot diff: what the pull request branch changed relative to the
+      // branch it forked from, which is what a reviewer needs to see.
+      const result = await Bun.$`git -C ${directory} diff origin/HEAD...HEAD`.quiet();
+      return result.stdout.toString();
+    },
   };
 }
 
 /** The real OpenCode adapter, running the implement-issue skill. */
 export function createOpenCode(): OpenCode {
+  /** Runs OpenCode with `prompt` and returns its exit code and output. */
+  async function run(directory: string, prompt: string) {
+    const result = await Bun.$`opencode run ${prompt}`.cwd(directory).nothrow().quiet();
+    return { exitCode: result.exitCode, output: result.stdout.toString() };
+  }
+
   return {
     async implement({ directory, prompt }) {
-      const result = await Bun.$`opencode run ${prompt}`.cwd(directory).nothrow().quiet();
-      return { exitCode: result.exitCode, output: result.stdout.toString() };
+      return run(directory, prompt);
+    },
+
+    async review({ directory, prompt }) {
+      const result = await run(directory, prompt);
+      const verdictFile = Bun.file(join(directory, REVIEW_VERDICT_PATH));
+      if (!(await verdictFile.exists())) {
+        throw new Error(`The review agent did not write ${REVIEW_VERDICT_PATH}`);
+      }
+      const raw = (await verdictFile.json()) as { event?: unknown; body?: unknown };
+      if (
+        (raw.event !== 'approve' && raw.event !== 'request-changes') ||
+        typeof raw.body !== 'string' ||
+        raw.body.trim() === ''
+      ) {
+        throw new Error(
+          `${REVIEW_VERDICT_PATH} must contain {"event": "approve" | "request-changes", "body": "…"}`,
+        );
+      }
+      return {
+        exitCode: result.exitCode,
+        output: result.output,
+        verdict: { event: raw.event, body: raw.body },
+      };
     },
   };
 }
@@ -124,6 +160,19 @@ export function createGitHub(config: AgentConfig): GitHub {
         });
       }
       return { number: pull.number, url: pull.html_url };
+    },
+    async createReview({ pullNumber, event, body }): Promise<void> {
+      const response = await fetch(`${base}/pulls/${pullNumber}/reviews`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          event: event === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES',
+          body,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to post review on #${pullNumber}: ${response.status}`);
+      }
     },
   };
 }

@@ -1,12 +1,24 @@
 /** Default number of implementation attempts before a human is asked to step in. */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
+/** What the Job is running: implementing an Issue, or reviewing a pull request. */
+export type AgentRunKind = 'implement-issue' | 'review';
+
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review'];
+
+/** Narrows an unknown value to an {@link AgentRunKind}. */
+export function isAgentRunKind(value: unknown): value is AgentRunKind {
+  return typeof value === 'string' && (AGENT_RUN_KINDS as readonly string[]).includes(value);
+}
+
 export interface AgentConfig {
+  /** What this Job is for. */
+  kind: AgentRunKind;
   /** GitHub issue number this agent is scoped to. */
   issueNumber: number;
   /** Clone URL of the Project repository. */
   repoUrl: string;
-  /** Short-lived token used to push branches and open pull requests. */
+  /** Short-lived token used to clone, push branches and open pull requests. */
   githubToken: string;
   /** Per-issue key used for LLM calls; carries the issue budget. */
   openrouterApiKey: string;
@@ -19,10 +31,13 @@ export interface AgentConfig {
   /** Base URL of the YAAABK API, when the Job was given one. */
   apiUrl?: string;
   /**
-   * The branch to work on, when this is a fix attempt against an existing pull
-   * request. Absent for a fresh attempt, which branches from the default branch.
+   * The branch to work on: a fix attempt's pull request branch, or the branch a
+   * review checks out. Absent for a fresh implement attempt, which branches from
+   * the default branch.
    */
   branch?: string;
+  /** The pull request a review judges, when the Job is a review run. */
+  pullNumber?: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -63,7 +78,28 @@ export function loadAgentConfig(env: Env): AgentConfig {
   const runToken = optional(env, 'AGENT_RUN_TOKEN');
   const apiUrl = optional(env, 'YAAABK_API_URL');
   const branch = optional(env, 'BRANCH');
+  const pullNumber = optional(env, 'PULL_NUMBER');
+  const rawKind = optional(env, 'AGENT_RUN_KIND') ?? 'implement-issue';
+  if (!isAgentRunKind(rawKind)) {
+    throw new Error(`AGENT_RUN_KIND must be one of ${AGENT_RUN_KINDS.join(', ')}`);
+  }
+  if (rawKind === 'review') {
+    if (branch === undefined) {
+      throw new Error('Missing required environment variable: BRANCH for a review run');
+    }
+    if (pullNumber === undefined) {
+      throw new Error('Missing required environment variable: PULL_NUMBER for a review run');
+    }
+  }
+  let parsedPullNumber: number | undefined;
+  if (pullNumber !== undefined) {
+    parsedPullNumber = Number(pullNumber);
+    if (!Number.isInteger(parsedPullNumber) || parsedPullNumber < 1) {
+      throw new Error(`PULL_NUMBER must be a positive integer, received: ${pullNumber}`);
+    }
+  }
   return {
+    kind: rawKind,
     issueNumber: positiveInt(env, 'ISSUE_NUMBER'),
     repoUrl: require(env, 'REPO_URL'),
     githubToken: require(env, 'GITHUB_TOKEN'),
@@ -73,5 +109,6 @@ export function loadAgentConfig(env: Env): AgentConfig {
     ...(runToken === undefined ? {} : { runToken }),
     ...(apiUrl === undefined ? {} : { apiUrl }),
     ...(branch === undefined ? {} : { branch }),
+    ...(parsedPullNumber === undefined ? {} : { pullNumber: parsedPullNumber }),
   };
 }

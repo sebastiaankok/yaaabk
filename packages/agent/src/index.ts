@@ -13,10 +13,18 @@ export async function main(env: Record<string, string | undefined> = process.env
   const config = loadAgentConfig(env);
   const outcome = await runAgent(config, createDependencies(config));
   if (outcome.ok) {
-    console.log(`agent finished issue #${config.issueNumber}: ${outcome.prUrl}`);
+    if (config.kind === 'review') {
+      console.log(`review finished pull request #${config.pullNumber}: ${outcome.prUrl}`);
+    } else {
+      console.log(`agent finished issue #${config.issueNumber}: ${outcome.prUrl}`);
+    }
     return 0;
   }
-  console.error(`agent failed issue #${config.issueNumber}: ${outcome.reason}`);
+  const target =
+    config.kind === 'review'
+      ? `pull request #${config.pullNumber}`
+      : `issue #${config.issueNumber}`;
+  console.error(`agent failed ${target}: ${outcome.reason}`);
   console.error(outcome.output);
   return 1;
 }

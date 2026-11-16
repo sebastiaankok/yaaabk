@@ -14,11 +14,19 @@ import { AUTOMERGE_LABEL } from './ports';
 import { runAgent } from './run-agent';
 
 const CONFIG: AgentConfig = {
+  kind: 'implement-issue',
   issueNumber: 42,
   repoUrl: 'https://github.com/acme/todo-app',
   githubToken: 'gh-token',
   openrouterApiKey: 'sk-or-key',
   maxAttempts: 3,
+};
+
+const REVIEW_CONFIG: AgentConfig = {
+  ...CONFIG,
+  kind: 'review',
+  pullNumber: 7,
+  branch: 'agent/issue-42',
 };
 
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
@@ -28,16 +36,20 @@ interface Fakes {
   calls: string[];
   reports: Array<{ prUrl: string | null; logs: string }>;
   pullRequests: AgentPullRequest;
+  reviews: Array<{ pullNumber: number; event: string; body: string }>;
 }
 
 function fakes(
   overrides: {
     exitCode?: number;
     checksPassed?: boolean;
+    reviewExitCode?: number;
+    verdict?: { event: 'approve' | 'request-changes'; body: string };
   } = {},
 ): Fakes {
   const calls: string[] = [];
   const reports: Array<{ prUrl: string | null; logs: string }> = [];
+  const reviews: Array<{ pullNumber: number; event: string; body: string }> = [];
   const pullRequests: AgentPullRequest = {
     number: 7,
     url: 'https://github.com/acme/todo-app/pull/7',
@@ -59,11 +71,23 @@ function fakes(
     async push(directory, branch, options) {
       calls.push(`push:${directory}:${branch}${options?.force === true ? ':force' : ''}`);
     },
+    async diff(directory) {
+      calls.push(`diff:${directory}`);
+      return 'diff --git a/src/a.ts b/src/a.ts';
+    },
   };
   const openCode: OpenCode = {
     async implement(input) {
       calls.push(`implement:${input.directory}`);
       return { exitCode: overrides.exitCode ?? 0, output: 'implemented' };
+    },
+    async review(input) {
+      calls.push(`review:${input.directory}`);
+      return {
+        exitCode: overrides.reviewExitCode ?? 0,
+        output: 'reviewed',
+        verdict: overrides.verdict ?? { event: 'approve', body: 'Looks good.' },
+      };
     },
   };
   const checks: Checks = {
@@ -81,6 +105,10 @@ function fakes(
       calls.push(`pr:${input.branch}:${input.labels.join(',')}`);
       return pullRequests;
     },
+    async createReview(input) {
+      calls.push(`review-post:${input.pullNumber}:${input.event}`);
+      reviews.push(input);
+    },
   };
   const reporter: Reporter = {
     async report(input) {
@@ -94,6 +122,7 @@ function fakes(
     calls,
     reports,
     pullRequests,
+    reviews,
   };
 }
 
@@ -160,5 +189,46 @@ describe('runAgent', () => {
       'report',
     ]);
     expect(outcome).toMatchObject({ ok: true, branch: 'agent/issue-42' });
+  });
+
+  it('reviews a pull request and posts the verdict', async () => {
+    const { deps, calls, reports, reviews } = fakes({
+      verdict: { event: 'request-changes', body: 'Please fix src/a.ts:12.' },
+    });
+
+    const outcome = await runAgent(REVIEW_CONFIG, deps);
+
+    expect(calls).toEqual([
+      'fetch:42',
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout:/work/repo:agent/issue-42',
+      'diff:/work/repo',
+      'review:/work/repo',
+      'review-post:7:request-changes',
+      'report',
+    ]);
+    expect(reviews).toEqual([
+      { pullNumber: 7, event: 'request-changes', body: 'Please fix src/a.ts:12.' },
+    ]);
+    expect(outcome).toMatchObject({
+      ok: true,
+      branch: 'agent/issue-42',
+      prUrl: 'https://github.com/acme/todo-app/pull/7',
+    });
+    // The review run reports the pull request it judged, never a new one.
+    expect(reports).toEqual([
+      { prUrl: 'https://github.com/acme/todo-app/pull/7', logs: 'reviewed' },
+    ]);
+  });
+
+  it('posts no review and reports a failure when the review itself fails', async () => {
+    const { deps, calls, reports, reviews } = fakes({ reviewExitCode: 1 });
+
+    const outcome = await runAgent(REVIEW_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'review-failed' });
+    expect(reviews).toEqual([]);
+    expect(calls).not.toContain('review-post:7:approve');
+    expect(reports).toEqual([{ prUrl: null, logs: 'reviewed' }]);
   });
 });
