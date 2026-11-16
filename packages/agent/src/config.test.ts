@@ -77,6 +77,13 @@ describe('loadAgentConfig', () => {
     expect(loadAgentConfig(baseEnv).branch).toBeUndefined();
   });
 
+  it('reads reviewer feedback when a fix attempt was given it', () => {
+    const config = loadAgentConfig({ ...baseEnv, REVIEW_FEEDBACK: 'Please rename the helper.' });
+
+    expect(config.reviewFeedback).toBe('Please rename the helper.');
+    expect(loadAgentConfig(baseEnv).reviewFeedback).toBeUndefined();
+  });
+
   it('fails fast when a required variable is missing', () => {
     expect(() => loadAgentConfig({ ...baseEnv, GITHUB_TOKEN: undefined })).toThrow(/GITHUB_TOKEN/);
     expect(() => loadAgentConfig({ ...baseEnv, REPO_URL: '' })).toThrow(/REPO_URL/);

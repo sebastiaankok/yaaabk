@@ -129,6 +129,7 @@ describe('createReview', () => {
       body: 'Looks good.',
       state: 'APPROVE',
       submitted_at: '2026-01-01T00:00:00Z',
+      commit_id: 'sha-7',
     }));
 
     const result = await pulls.createReview('acme/todo-app', 7, {
@@ -143,6 +144,7 @@ describe('createReview', () => {
         event: 'approve',
         body: 'Looks good.',
         submittedAt: '2026-01-01T00:00:00Z',
+        commitId: 'sha-7',
       },
     });
     expect(calls[0]).toEqual({
@@ -188,6 +190,77 @@ describe('createReview', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('not-found');
       expect(result.error.operation).toBe('create-review');
+    }
+  });
+});
+
+describe('listReviews', () => {
+  it('returns the reviews in submission order with their head commit', async () => {
+    const { pulls, calls } = client(() => [
+      {
+        id: 11,
+        body: 'First pass.',
+        state: 'COMMENTED',
+        submitted_at: '2026-01-01T00:00:00Z',
+        commit_id: 'sha-7',
+      },
+      {
+        id: 12,
+        body: 'Looks good.',
+        state: 'APPROVE',
+        submitted_at: '2026-01-02T00:00:00Z',
+        commit_id: 'sha-7',
+      },
+    ]);
+
+    const result = await pulls.listReviews('acme/todo-app', 7);
+
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        {
+          id: 11,
+          event: 'COMMENTED',
+          body: 'First pass.',
+          submittedAt: '2026-01-01T00:00:00Z',
+          commitId: 'sha-7',
+        },
+        {
+          id: 12,
+          event: 'approve',
+          body: 'Looks good.',
+          submittedAt: '2026-01-02T00:00:00Z',
+          commitId: 'sha-7',
+        },
+      ],
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      path: '/repos/acme/todo-app/pulls/7/reviews',
+    });
+  });
+
+  it('returns an empty list when the pull request has no reviews', async () => {
+    const { pulls } = client(() => []);
+
+    const result = await pulls.listReviews('acme/todo-app', 7);
+
+    expect(result).toEqual({ ok: true, value: [] });
+  });
+
+  it('maps a GitHub failure to a typed error', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ message: 'Pull request not found' }), {
+        status: 404,
+      })) as typeof fetch;
+    const pulls = createGitHubPullsClient({ token: 't', fetch: fetchImpl });
+
+    const result = await pulls.listReviews('acme/todo-app', 7);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('not-found');
+      expect(result.error.operation).toBe('list-reviews');
     }
   });
 });

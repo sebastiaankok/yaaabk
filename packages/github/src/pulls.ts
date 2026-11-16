@@ -52,6 +52,11 @@ export interface GitHubReview {
   event: string;
   body: string;
   submittedAt: string;
+  /**
+   * The commit the review was made against. A review only counts for the pull
+   * request's current head commit, so a new push invalidates it.
+   */
+  commitId: string | null;
 }
 
 export interface MergePullRequestInput {
@@ -85,6 +90,8 @@ export interface GitHubPulls {
     number: number,
     input: CreateReviewInput,
   ): Promise<GitHubResult<GitHubReview>>;
+  /** Every review on a pull request, oldest first. */
+  listReviews(repo: string, number: number): Promise<GitHubResult<GitHubReview[]>>;
 }
 
 /** A check run, reduced to the fields aggregation needs. */

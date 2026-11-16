@@ -44,6 +44,7 @@ interface RawReview {
   body: string | null;
   state: string;
   submitted_at: string;
+  commit_id: string | null;
 }
 
 /** GitHub's review states, mapped back to the port's verdicts. */
@@ -58,6 +59,7 @@ function toReview(raw: RawReview, fallback: GitHubReviewEvent): GitHubReview {
     event: REVIEW_EVENTS[raw.state] ?? fallback,
     body: raw.body ?? '',
     submittedAt: raw.submitted_at,
+    commitId: raw.commit_id ?? null,
   };
 }
 
@@ -211,6 +213,23 @@ export function createGitHubPullsClient(options: GitHubPullsClientOptions): GitH
         return { ok: true, value: toReview(raw, input.event) };
       } catch (error) {
         return { ok: false, error: toGitHubError('create-review', error) };
+      }
+    },
+
+    async listReviews(repo, number) {
+      try {
+        const raw = await send<RawReview[]>('list-reviews', () =>
+          fetchImpl(`${apiBaseUrl}/repos/${repo}/pulls/${number}/reviews?per_page=100`, {
+            method: 'GET',
+            headers: headers(),
+          }),
+        );
+        return {
+          ok: true,
+          value: raw.map((review) => toReview(review, review.state as GitHubReviewEvent)),
+        };
+      } catch (error) {
+        return { ok: false, error: toGitHubError('list-reviews', error) };
       }
     },
   };

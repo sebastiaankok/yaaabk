@@ -184,10 +184,17 @@ function watch(
   });
 }
 
+/** Posts a review on the harness's pull request. */
+async function review(h: Harness, event: 'approve' | 'request-changes', body = ''): Promise<void> {
+  const posted = await h.pulls.createReview(REPO, 7, { event, body });
+  if (!posted.ok) throw new Error(`review setup failed: ${posted.error.message}`);
+}
+
 describe('poll', () => {
   it('merges a passing pull request and closes its Issue locally and on GitHub', async () => {
     const h = await harness();
     watch(h);
+    await review(h, 'approve');
 
     const result = await h.tracker.poll();
 
@@ -198,6 +205,99 @@ describe('poll', () => {
     expect(h.githubIssues.issues(REPO).find((i) => i.number === h.githubNumber)?.state).toBe(
       'closed',
     );
+  });
+
+  it('spawns a review Agent when checks are green and no review exists', async () => {
+    const h = await harness();
+    watch(h);
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { reviewSpawned: 1, merged: 0, fixSpawned: 0 },
+    });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value).toHaveLength(1);
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      kind: 'review',
+      pullNumber: 7,
+      branch: h.branch,
+    });
+    const issue = await h.issues.get(h.projectId, h.issueId);
+    expect(issue.ok && issue.value.status).not.toBe('closed');
+  });
+
+  it('spawns a fix attempt carrying the reviewer summary when changes are requested', async () => {
+    const h = await harness();
+    watch(h);
+    await review(h, 'request-changes', 'Please rename the helper.');
+
+    const before = await h.issues.get(h.projectId, h.issueId);
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { fixSpawned: 1, reviewSpawned: 0 } });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value).toHaveLength(1);
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      branch: h.branch,
+      reviewFeedback: 'Please rename the helper.',
+    });
+    // The reviewer's summary reaches the prompt without mutating the Issue.
+    const after = await h.issues.get(h.projectId, h.issueId);
+    expect(after.ok && after.value.body).toBe(before.ok ? before.value.body : '');
+  });
+
+  it('escalates to needs-human on a second request-changes after a new head commit', async () => {
+    const h = await harness();
+    watch(h);
+    await review(h, 'request-changes', 'First round.');
+    await h.tracker.poll();
+
+    // The fix attempt pushes a new commit and the reviewer rejects it again.
+    h.pulls.setHeadSha(REPO, 7, 'sha-8');
+    h.pulls.setChecks(REPO, 'sha-8', { state: 'success', total: 1 });
+    await review(h, 'request-changes', 'Second round.');
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { needsHuman: 1, fixSpawned: 0 } });
+    const issue = await h.issues.get(h.projectId, h.issueId);
+    expect(issue.ok && issue.value.label).toBe('needs-human');
+  });
+
+  it('re-triggers review on a new head commit but keeps the rejection count', async () => {
+    const h = await harness();
+    watch(h);
+    await review(h, 'request-changes', 'First round.');
+    await h.tracker.poll();
+
+    // A new commit invalidates the old request-changes verdict.
+    h.pulls.setHeadSha(REPO, 7, 'sha-8');
+    h.pulls.setChecks(REPO, 'sha-8', { state: 'success', total: 1 });
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { reviewSpawned: 1, merged: 0 } });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value.filter((run) => run.kind === 'review')).toHaveLength(1);
+  });
+
+  it('does not gate a human-opened pull request that has no linked Issue', async () => {
+    const h = await harness();
+    h.pulls.addPullRequest(REPO, {
+      number: 9,
+      headRef: 'feature/manual',
+      headSha: 'sha-9',
+      labels: ['automerge'],
+    });
+    h.pulls.setChecks(REPO, 'sha-9', { state: 'success', total: 1 });
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { reviewSpawned: 0, merged: 0 } });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value).toHaveLength(0);
   });
 
   it('spawns a fix attempt on the pull request branch when checks fail', async () => {
@@ -286,6 +386,7 @@ describe('status', () => {
   it('reports the watches it has seen and when it last checked', async () => {
     const h = await harness();
     watch(h);
+    await review(h, 'approve');
 
     await h.tracker.poll();
 
@@ -350,6 +451,7 @@ describe('start and stop', () => {
     const ft = fakeTimers();
     const h = await harness({ timers: ft.timers });
     watch(h);
+    await review(h, 'approve');
 
     h.tracker.start();
     await ft.fire();

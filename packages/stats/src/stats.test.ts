@@ -37,6 +37,7 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
     pvcName: null,
     openrouterSecretName: null,
     branch: null,
+    reviewFeedback: null,
     status: 'success',
     prUrl: null,
     logs: null,

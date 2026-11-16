@@ -14,7 +14,7 @@
 import type { GitHubCheckState } from '@yaaabk/github';
 
 /** What the tracker did for a pull request's current head commit. */
-export type WatchAction = 'merged' | 'fix-spawned' | 'needs-human';
+export type WatchAction = 'merged' | 'fix-spawned' | 'review-spawned' | 'needs-human';
 
 /** The tracker's latest view of one watched pull request. */
 export interface PullRequestWatch {
@@ -32,6 +32,13 @@ export interface PullRequestWatch {
   state: GitHubCheckState;
   /** What the tracker did for this head commit, or `null` while undecided. */
   action: WatchAction | null;
+  /**
+   * Request-changes verdicts counted so far. Persists across head commits, so
+   * the "two strikes" policy holds even after a fix pushes a new commit.
+   */
+  rejections: number;
+  /** The id of the last review the tracker counted, so it is counted once. */
+  lastReviewId: number | null;
   lastCheckedAt: string;
 }
 
@@ -45,6 +52,8 @@ export interface CiPollSummary {
   pending: number;
   /** Pull requests merged because their checks passed. */
   merged: number;
+  /** Review Agents spawned on a green pull request with no verdict. */
+  reviewSpawned: number;
   /** Fix attempts spawned on a failing pull request. */
   fixSpawned: number;
   /** Issues escalated to a human after exhausting their attempts. */

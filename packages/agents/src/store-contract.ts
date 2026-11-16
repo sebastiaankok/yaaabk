@@ -32,6 +32,7 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     pvcName: null,
     openrouterSecretName: null,
     branch: null,
+    reviewFeedback: null,
     status: 'queued',
     prUrl: null,
     logs: null,
@@ -76,6 +77,18 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       store.create(review);
 
       expect(store.get('run-1')).toEqual(review);
+    });
+
+    it('stores and reads back a fix attempt with its reviewer feedback', () => {
+      const store = createStore();
+      const fix = runRecord({
+        branch: 'agent/issue-42',
+        reviewFeedback: 'Please rename the helper.',
+      });
+
+      store.create(fix);
+
+      expect(store.get('run-1')).toEqual(fix);
     });
 
     it('lists a project\u2019s runs newest first', () => {

@@ -89,6 +89,7 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     kind: run.kind,
     attemptNumber: run.attemptNumber,
     pullNumber: run.pullNumber,
+    reviewFeedback: run.reviewFeedback,
     jobName: run.jobName,
     pvcName: run.pvcName,
     openrouterSecretName: run.openrouterSecretName,
@@ -232,6 +233,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       }
       if (run.pullNumber !== null) {
         env.PULL_NUMBER = String(run.pullNumber);
+      }
+      if (run.reviewFeedback !== null) {
+        env.REVIEW_FEEDBACK = run.reviewFeedback;
       }
       const envFrom: JobSpec['envFrom'] = [];
       const githubToken = await githubTokenFor(run.kind);
@@ -383,6 +387,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       kind,
       attemptNumber,
       pullNumber: spawnOptions.pullNumber ?? null,
+      reviewFeedback: spawnOptions.reviewFeedback ?? null,
       jobName: null,
       pvcName: null,
       openrouterSecretName: secret,

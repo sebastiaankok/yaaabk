@@ -289,6 +289,10 @@ function resolveGitHubPulls(settingsModule: SettingsModule): GitHubPulls {
       const built = await build();
       return built.ok ? built.client.createReview(...args) : fail('createReview', built);
     },
+    listReviews: async (...args) => {
+      const built = await build();
+      return built.ok ? built.client.listReviews(...args) : fail('listReviews', built);
+    },
   };
 }
 

@@ -13,7 +13,7 @@ import type { GitHubError, GitHubResult } from './types';
 
 /** The operations a fake can be told to fail. */
 export type FakeGitHubPullsOperation =
-  'list-pulls' | 'check-state' | 'merge-pull' | 'create-review';
+  'list-pulls' | 'check-state' | 'merge-pull' | 'create-review' | 'list-reviews';
 
 /** One recorded call, for assertions. */
 export interface FakeGitHubPullsCall {
@@ -50,6 +50,8 @@ export interface FakeGitHubPulls extends GitHubPulls {
     ref: string,
     summary: { state: GitHubCheckState; failed?: string[]; total?: number },
   ): void;
+  /** Moves a pull request's head to a new commit, as a push would. */
+  setHeadSha(repo: string, number: number, headSha: string): void;
   /** Sets check runs, aggregating them the way GitHub would. */
   setCheckRuns(repo: string, ref: string, runs: CheckRunSummaryInput[]): void;
   /** Whether a pull request has been merged. */
@@ -125,6 +127,11 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
       });
     },
 
+    setHeadSha(repo, number, headSha) {
+      const pull = repoPulls(repo).find((candidate) => candidate.number === number);
+      if (pull !== undefined) pull.headSha = headSha;
+    },
+
     setCheckRuns(repo, ref, runs) {
       checksByRef.set(key(repo, ref), summarizeCheckRuns(runs));
     },
@@ -188,11 +195,20 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
         event: input.event,
         body: input.body,
         submittedAt: '2026-01-01T00:00:00.000Z',
+        // A review is made against the pull request's head commit at the time.
+        commitId: repoPulls(repo).find((pull) => pull.number === number)?.headSha ?? null,
       };
       const list = reviewsByPull.get(key(repo, number)) ?? [];
       list.push(review);
       reviewsByPull.set(key(repo, number), list);
       return { ok: true, value: review };
+    },
+
+    async listReviews(repo: string, number: number): Promise<GitHubResult<GitHubReview[]>> {
+      calls.push({ operation: 'list-reviews', repo, number });
+      const failed = fail<GitHubReview[]>('list-reviews');
+      if (failed !== undefined) return failed;
+      return { ok: true, value: [...(reviewsByPull.get(key(repo, number)) ?? [])] };
     },
   };
 }
