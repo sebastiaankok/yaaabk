@@ -8,6 +8,7 @@ const PROJECT = {
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
+  lastModel: 'openrouter/chosen-model',
   deployedCommitSha: null,
   lastDeployStatus: null,
   lastDeployAt: null,
@@ -76,6 +77,29 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
     }),
   );
   await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/models', (route) =>
+    route.fulfill({
+      json: {
+        models: [
+          {
+            id: 'openrouter/chosen-model',
+            name: 'Chosen model',
+            contextLength: 200000,
+            promptUsdPerMillion: 3,
+            completionUsdPerMillion: 15,
+          },
+          {
+            id: 'openrouter/other-model',
+            name: 'Other model',
+            contextLength: 128000,
+            promptUsdPerMillion: 1,
+            completionUsdPerMillion: 2,
+          },
+        ],
+        defaultModel: 'openrouter/default-model',
+      },
+    }),
+  );
   await page.route('**/api/projects/p1/plans', (route) =>
     route.fulfill({ json: { plans: [PLAN] } }),
   );
@@ -166,6 +190,25 @@ test('shows the project and its active plan', async ({ page }) => {
   await expect(page.getByText('A todo list')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+});
+
+test('preselects the Project model and starts the session with it', async ({ page }) => {
+  await mockProject(page);
+  await mockTerminal(page);
+  let startedWith: string | undefined;
+  await page.route('**/api/projects/p1/grill', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    startedWith = (route.request().postDataJSON() as { model?: string }).model;
+    await route.fulfill({ status: 201, json: SESSION });
+  });
+
+  await page.goto('/projects/p1/plan');
+
+  await expect(page.getByLabel('Model')).toHaveValue('openrouter/chosen-model');
+  await page.getByLabel('Your idea').fill('A todo app');
+  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+
+  await expect.poll(() => startedWith).toBe('openrouter/chosen-model');
 });
 
 test('starts a live terminal session and cancels it', async ({ page }) => {

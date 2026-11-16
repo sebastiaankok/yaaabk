@@ -13,10 +13,12 @@
     getActivePlan,
     getProject,
     listIssues,
+    listModels,
     listPlans,
     startGrill,
     terminalWebSocketUrl,
     type GrillSessionView,
+    type ModelCatalogueView,
   } from '#lib/api.js';
   import { renderMarkdown } from '#lib/markdown.js';
   import Terminal from '#lib/terminal.svelte';
@@ -35,6 +37,9 @@
   let finishConflict = $state<string | null>(null);
 
   let idea = $state('');
+  let catalogue = $state<ModelCatalogueView | null>(null);
+  let modelChoice = $state('');
+  let modelError = $state<string | null>(null);
   let busy = $state(false);
   let terminalStatus = $state<TerminalConnectionStatus>('connecting');
   let terminalError = $state<string | null>(null);
@@ -87,14 +92,33 @@
       getActivePlan(id),
       listIssues(id),
       getActiveGrillSession(id),
+      listModels().catch(() => null),
     ])
-      .then(([nextProject, nextPlans, nextActive, nextIssues, nextSession]) => {
+      .then(([nextProject, nextPlans, nextActive, nextIssues, nextSession, nextCatalogue]) => {
         if (cancelled) return;
         project = nextProject;
         plans = nextPlans;
         activePlan = nextActive;
         issues = nextIssues;
         session = nextSession;
+        catalogue = nextCatalogue;
+        modelError =
+          nextCatalogue === null
+            ? 'Could not load the model catalogue. The default model will be used.'
+            : null;
+        // Only preselect a model the catalogue actually offers. An empty choice
+        // lets the backend apply its configured default without model validation.
+        const remembered = nextProject.lastModel;
+        const offered = (id: string): boolean =>
+          nextCatalogue?.models.some((entry) => entry.id === id) ?? false;
+        modelChoice =
+          nextCatalogue === null
+            ? ''
+            : remembered !== null && offered(remembered)
+              ? remembered
+              : offered(nextCatalogue.defaultModel)
+                ? nextCatalogue.defaultModel
+                : '';
       })
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -119,7 +143,8 @@
     finishConflict = null;
     busy = true;
     try {
-      session = await startGrill(projectId, idea.trim());
+      session = await startGrill(projectId, idea.trim(), modelChoice.trim());
+      if (project !== null) project = { ...project, lastModel: session.model };
       idea = '';
       terminalStatus = 'connecting';
       terminalError = null;
@@ -372,6 +397,28 @@
             rows="3"
             class="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
             placeholder="Describe the app you want to build…"></textarea>
+          <div class="flex flex-col gap-1">
+            <label class="text-sm font-medium" for="model">Model</label>
+            <input
+              id="model"
+              list="model-options"
+              bind:value={modelChoice}
+              class="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              placeholder={catalogue?.defaultModel ?? 'Provider/model'}
+            />
+            <datalist id="model-options">
+              {#each catalogue?.models ?? [] as option (option.id)}
+                <option value={option.id}>{option.name}</option>
+              {/each}
+            </datalist>
+            {#if modelError !== null}
+              <p class="text-xs text-amber-700">{modelError}</p>
+            {:else}
+              <p class="text-xs text-neutral-500">
+                Search tool-capable models. The Project remembers your choice.
+              </p>
+            {/if}
+          </div>
           <button
             type="submit"
             disabled={busy || idea.trim() === ''}

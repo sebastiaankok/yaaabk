@@ -1,11 +1,12 @@
 import { createInMemoryIssueStore, createIssuesModule } from '@yaaabk/issues';
 import { createInMemoryPlanStore, createPlansModule } from '@yaaabk/plans';
 import { describe, expect, it } from 'vitest';
-import { createFakeSessionRuntime } from './fake-runtime';
+import { createFakeSessionKeys, createFakeSessionRuntime } from './fake-runtime';
 import { createGrillSessionsModule, type StartGrillSessionInput } from './session';
 
 function setup(options: { defaultModel?: string } = {}) {
   const runtime = createFakeSessionRuntime();
+  const keys = createFakeSessionKeys();
   const clock = { ms: Date.UTC(2026, 0, 1, 12) };
   let sequence = 0;
   const sessions = createGrillSessionsModule({
@@ -21,11 +22,12 @@ function setup(options: { defaultModel?: string } = {}) {
       clock: () => new Date(clock.ms),
     }),
     defaultModel: options.defaultModel ?? 'openrouter/default-model',
+    keys,
     clock: () => new Date(clock.ms),
     ids: () => `session-${++sequence}`,
     logger: { info: () => {}, error: () => {} },
   });
-  return { runtime, sessions, clock };
+  return { runtime, sessions, clock, keys };
 }
 
 const INPUT: StartGrillSessionInput = {
@@ -55,6 +57,22 @@ describe('starting a grill session', () => {
     expect(started.ok).toBe(true);
     if (started.ok) expect(started.value.model).toBe('openrouter/chosen-model');
     expect(runtime.requests[0]?.model).toBe('openrouter/chosen-model');
+  });
+
+  it('prefers the request model, then the Project model, then the default', async () => {
+    const { sessions } = setup({ defaultModel: 'openrouter/default-model' });
+
+    const requested = await sessions.start({
+      ...INPUT,
+      lastModel: 'openrouter/project-model',
+      model: 'openrouter/requested-model',
+    });
+    const fromProject = await sessions.start({ ...INPUT, lastModel: 'openrouter/project-model' });
+    const fromDefault = await sessions.start(INPUT);
+
+    expect(requested.ok && requested.value.model).toBe('openrouter/requested-model');
+    expect(fromProject.ok && fromProject.value.model).toBe('openrouter/project-model');
+    expect(fromDefault.ok && fromDefault.value.model).toBe('openrouter/default-model');
   });
 
   it('carries the idea, skill level and active plan into the opening prompt', async () => {
@@ -116,6 +134,68 @@ describe('starting a grill session', () => {
 
     expect(started.ok).toBe(false);
     if (!started.ok) expect(started.error.kind).toBe('invalid-input');
+  });
+});
+
+describe('per-session OpenRouter keys', () => {
+  it('mints a key and injects only the plaintext into the runtime', async () => {
+    const { runtime, sessions, keys } = setup();
+
+    const started = await sessions.start(INPUT);
+
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(keys.issued).toEqual(['session-1']);
+    expect(runtime.requests[0]?.openRouterKey).toBe('sk-or-session-1');
+    expect(JSON.stringify(started.value)).not.toContain('sk-or-session-1');
+  });
+
+  it('revokes the key when the session is cancelled', async () => {
+    const { sessions, keys } = setup();
+    const started = await sessions.start(INPUT);
+    if (!started.ok) throw new Error('start failed');
+
+    await sessions.cancel('p1', started.value.id);
+
+    expect(keys.revoked).toEqual(['hash-session-1']);
+  });
+
+  it('revokes the key of a session it replaces', async () => {
+    const { sessions, keys } = setup();
+    const first = await sessions.start(INPUT);
+    if (!first.ok) throw new Error('start failed');
+
+    await sessions.start({ ...INPUT, idea: 'Second idea' });
+
+    expect(keys.revoked).toEqual(['hash-session-1']);
+    expect(keys.issued).toEqual(['session-1', 'session-2']);
+  });
+
+  it('revokes the key when the runtime fails to start', async () => {
+    const { runtime, sessions, keys } = setup();
+    runtime.failNextStart('ttyd: exec format error');
+
+    const started = await sessions.start(INPUT);
+
+    expect(started.ok).toBe(false);
+    expect(keys.revoked).toEqual(['hash-session-1']);
+  });
+
+  it('fails start without starting the runtime when a key cannot be minted', async () => {
+    const { runtime, sessions, keys } = setup();
+    keys.failNext(
+      'OpenRouter is not configured. Add a management key in Settings to start a session.',
+    );
+
+    const started = await sessions.start(INPUT);
+
+    expect(started.ok).toBe(false);
+    if (!started.ok) {
+      expect(started.error.kind).toBe('start-failed');
+      expect(started.error.message).toContain('management key in Settings');
+    }
+    expect(runtime.requests).toHaveLength(0);
+    expect(keys.revoked).toEqual([]);
   });
 });
 

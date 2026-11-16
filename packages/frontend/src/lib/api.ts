@@ -136,6 +136,29 @@ export function verifyOpenrouterSettings(): Promise<OpenRouterVerifyOk> {
   return request<OpenRouterVerifyOk>('/api/settings/openrouter/verify', { method: 'POST' });
 }
 
+// --- Sessions and models -----------------------------------------------------
+
+/** A model the Plan page may offer for a Grill-Me Session. */
+export interface SessionModel {
+  /** OpenCode model id, e.g. `openrouter/anthropic/claude-sonnet-4.5`. */
+  id: string;
+  name: string;
+  contextLength: number | null;
+  promptUsdPerMillion: number | null;
+  completionUsdPerMillion: number | null;
+}
+
+export interface ModelCatalogueView {
+  models: SessionModel[];
+  /** Model the backend uses when neither the request nor the Project chooses. */
+  defaultModel: string;
+}
+
+/** The live OpenRouter catalogue filtered to tool-capable models. */
+export function listModels(): Promise<ModelCatalogueView> {
+  return request<ModelCatalogueView>('/api/models');
+}
+
 // --- Projects, Plans and Grill-Me -------------------------------------------
 
 export function getProject(id: string): Promise<Project> {

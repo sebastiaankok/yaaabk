@@ -48,6 +48,14 @@ describe('local SessionRuntime contract', () => {
     });
   });
 
+  it('injects the session OpenRouter key only into the runtime environment', async () => {
+    const fake = createFakeLocalRuntime();
+
+    await fake.runtime.start(fake.harness.spec({ openRouterKey: 'sk-or-session-1' }));
+
+    expect(fake.requests[0]?.env['OPENROUTER_API_KEY']).toBe('sk-or-session-1');
+  });
+
   it('points sessions at the session OpenCode config without touching Agent Jobs', async () => {
     const fake = createFakeLocalRuntime({ opencodeConfig: '/app/opencode-session.json' });
 

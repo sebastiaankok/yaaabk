@@ -194,6 +194,58 @@ describe('POST /api/projects/:id/grill', () => {
     expect(context.sessionRuntime.requests[0]?.prompt).toContain('# Existing plan');
   });
 
+  it('rejects a model outside the tool-capable catalogue', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill`, {
+      method: 'POST',
+      body: JSON.stringify({ idea: 'A todo app', model: 'openrouter/not-a-model' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid-model',
+      message: expect.stringContaining('openrouter/not-a-model'),
+    });
+    expect(context.sessionRuntime.requests).toHaveLength(0);
+  });
+
+  it('remembers the model the Project last used and reuses it when omitted', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    await startSession(context, session, projectId, {
+      idea: 'A todo app',
+      model: 'openrouter/chosen',
+    });
+    const reused = await startSession(context, session, projectId, { idea: 'Another idea' });
+
+    expect(reused.model).toBe('openrouter/chosen');
+    const project = await context.projects.get(projectId);
+    expect(project.ok && project.value.lastModel).toBe('openrouter/chosen');
+  });
+
+  it('fails start with the message naming the missing platform credential', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    context.sessionKeys.failNext(
+      'OpenRouter is not configured: add a management key in Settings to start a session.',
+    );
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill`, {
+      method: 'POST',
+      body: JSON.stringify({ idea: 'A todo app' }),
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'start-failed',
+      message: expect.stringContaining('management key in Settings'),
+    });
+    expect(context.sessionRuntime.requests).toHaveLength(0);
+  });
+
   it('returns 404 for an unknown project', async () => {
     const { context, session } = await signedIn();
 

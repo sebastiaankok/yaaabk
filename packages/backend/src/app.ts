@@ -1,6 +1,7 @@
 import type { AgentManager } from '@yaaabk/agents';
 import type { AuthModule } from '@yaaabk/auth';
 import type { CiTracker } from '@yaaabk/ci-tracker';
+import type { ModelCatalogue } from '@yaaabk/cost-control';
 import type { IssueSyncModule } from '@yaaabk/github';
 import type { GrillMeModule, GrillSessionsModule } from '@yaaabk/grill-me';
 import type { IssuesModule } from '@yaaabk/issues';
@@ -17,6 +18,7 @@ import { ciRoutes } from './ci-routes';
 import { grillRoutes, type GrillRoutesOptions } from './grill-routes';
 import { issueRoutes } from './issue-routes';
 import { issueSyncRoutes } from './issue-sync-routes';
+import { modelRoutes } from './model-routes';
 import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
 import { settingsRoutes } from './settings-routes';
@@ -56,6 +58,10 @@ export interface AppOptions {
   ciTracker: CiTracker;
   /** The Settings Module. Tests inject one over an in-memory store. */
   settings: SettingsModule;
+  /** The live OpenRouter model catalogue the Plan page offers. */
+  models: ModelCatalogue;
+  /** Model used when neither the request nor the Project chooses one. */
+  defaultModel: string;
   /** Forwarded to {@link authRoutes}. */
   authRoutesOptions?: AuthRoutesOptions;
   /** Origin allowed to call the API with credentials. Defaults to {@link DEFAULT_WEB_ORIGIN}. */
@@ -95,11 +101,13 @@ export function createApp(options: AppOptions): Hono {
     '/',
     grillRoutes(options.grillSessions, options.projects, options.plans, {
       ...options.grillRoutesOptions,
+      catalogue: options.models,
       ...(options.upgradeWebSocket === undefined
         ? {}
         : { upgradeWebSocket: options.upgradeWebSocket }),
     }),
   );
+  app.route('/', modelRoutes(options.models, options.defaultModel));
   app.route('/', ciRoutes(options.ciTracker));
   app.route('/', settingsRoutes(options.settings));
 

@@ -9,6 +9,7 @@ import {
   getProjectStats,
   getStatus,
   listIssueRuns,
+  listModels,
   listProjectRuns,
   listProjects,
   login,
@@ -70,6 +71,29 @@ describe('request options', () => {
       expect.stringMatching(/\/api\/auth\/login$/),
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
+  });
+});
+
+describe('listModels', () => {
+  it('returns the catalogue and default model', async () => {
+    const body = {
+      models: [
+        {
+          id: 'openrouter/anthropic/claude-sonnet-4.5',
+          name: 'Claude Sonnet 4.5',
+          contextLength: 200000,
+          promptUsdPerMillion: 3,
+          completionUsdPerMillion: 15,
+        },
+      ],
+      defaultModel: 'openrouter/anthropic/claude-sonnet-4.5',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(body)),
+    );
+
+    await expect(listModels()).resolves.toEqual(body);
   });
 });
 

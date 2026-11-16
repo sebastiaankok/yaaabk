@@ -14,8 +14,9 @@ them.
 - [Bun](https://bun.sh) **1.3+** — the only runtime needed for local development
 - Docker — optional, only for the containerised stack
 - For local Grill-Me sessions: [`ttyd`](https://github.com/tsl0922/ttyd) and
-  [OpenCode](https://opencode.ai) on `PATH`, plus an `OPENROUTER_API_KEY`.
-  `docker compose up` provides both binaries in the backend image.
+  [OpenCode](https://opencode.ai) on `PATH`, plus an OpenRouter management key
+  in Settings or `OPENROUTER_MANAGEMENT_KEY`. `docker compose up` provides both
+  binaries in the backend image.
 
 ## Developing locally
 
@@ -38,8 +39,9 @@ account: choose a username and password, scan the TOTP QR code with an
 authenticator app, then confirm a code. See [Authentication](#authentication).
 
 No configuration is needed to start the app. Grill-Me sessions additionally need
-`OPENROUTER_API_KEY` and the two binaries above. To change defaults, copy the
-example file to the repository root:
+an OpenRouter management key (Settings or `OPENROUTER_MANAGEMENT_KEY`) and the
+two binaries above. To change defaults, copy the example file to the repository
+root:
 
 ```sh
 cp .env.example .env
@@ -55,8 +57,9 @@ cp .env.example .env
 | `YAAABK_GITHUB_OWNER` | _unset_ | **Required**: account new Project repositories are created under. For a GitHub App, the account it is installed on. |
 | `YAAABK_GITHUB_OWNER_TYPE` | `org` | Whether that account is an `org` or the authenticated `user` |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
-| `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per issue |
-| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-issue budget in cents; overrides are capped at 500 |
+| `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per Issue and Grill-Me Session |
+| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
+| `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model used when neither the start request nor the Project's last-used choice supplies one |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
 | `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
@@ -228,7 +231,8 @@ through the reporting MCP server the image ships, not through stdout markers:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/projects/:id/grill` | Start a session, replacing the Project's previous one |
+| `GET /api/models` | The live OpenRouter catalogue filtered to tool-capable models, plus the default model |
+| `POST /api/projects/:id/grill` | Start a session with an optional model, replacing the Project's previous one |
 | `GET /api/projects/:id/grill` | The live session, or 404 when none is running |
 | `GET /api/projects/:id/grill/:sessionId/terminal` | Upgrade to the terminal WebSocket |
 | `POST /api/grill-sessions/:sessionId/report` | Store a PRD and/or Issue list as drafts (session bearer token) |
@@ -243,7 +247,14 @@ drafts, and a `force` request publishes what exists. The session remembers the
 Plan it created, so retrying Finish after a failed Issue publish reuses that
 version instead of creating another. Cancel leaves no trace.
 
-The session runtime injects `YAAABK_API_URL`, `YAAABK_SESSION_ID` and a
+Starting a session mints a budget-limited, expiring OpenRouter key for it. The
+plaintext key goes only into the runtime as `OPENROUTER_API_KEY`; the session
+stores only its hash and revokes it on Finish, Cancel, replacement or a failed
+start. The model is the start request's choice, then the Project's last-used
+model, then `YAAABK_DEFAULT_MODEL`; a requested model outside the tool-capable
+catalogue is rejected with a `400`.
+
+The session runtime also injects `YAAABK_API_URL`, `YAAABK_SESSION_ID` and a
 per-session `YAAABK_REPORT_TOKEN`; the report routes accept that bearer token
 instead of the Developer's cookie. `packages/grill-mcp` exposes `report_prd`,
 `report_issues` and `session_status` over stdio, and the image's session OpenCode
@@ -515,7 +526,8 @@ This builds the backend and frontend images, exposes the frontend on
 <http://localhost:5173>, and mounts a named volume for the SQLite data
 directory. The backend is built with the `dev` stage, which includes ttyd and
 OpenCode so `docker compose` can run local grill sessions; set
-`OPENROUTER_API_KEY` in the environment (or `.env`) for the selected model.
+`OPENROUTER_MANAGEMENT_KEY` in the environment (or `.env`) so each session can
+mint its own budgeted key.
 
 ## CI
 

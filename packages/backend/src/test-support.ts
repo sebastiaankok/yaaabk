@@ -10,10 +10,12 @@ import {
   type AuthStore,
 } from '@yaaabk/auth';
 import {
+  createFakeSessionKeys,
   createFakeSessionRuntime,
   createFakeSpawner,
   createGrillMeModule,
   createGrillSessionsModule,
+  type FakeSessionKeys,
   type FakeSessionRuntime,
   type FakeSpawner,
   type GrillMeModule,
@@ -46,6 +48,7 @@ import {
   type AgentManager,
 } from '@yaaabk/agents';
 import { createCiTracker, silentLogger as ciLogger, type CiTracker } from '@yaaabk/ci-tracker';
+import type { ModelCatalogue, SessionModel } from '@yaaabk/cost-control';
 import {
   createFakeGitHubVerifier,
   createFakeOpenRouterVerifier,
@@ -69,6 +72,58 @@ export const TEST_PASSWORD = 'vX7$qmPz2!Lw9Rt';
 /** The only code the fake TOTP accepts. */
 export const TEST_CODE = '123456';
 
+/** The default model the test app reports. */
+export const TEST_DEFAULT_MODEL = 'openrouter/default-model';
+
+/** A scripted model catalogue for route tests. */
+export interface FakeModelCatalogue extends ModelCatalogue {
+  readonly calls: number;
+  set(models: SessionModel[]): void;
+  fail(message: string): void;
+}
+
+function createFakeModelCatalogue(): FakeModelCatalogue {
+  let models: SessionModel[] = [
+    {
+      id: TEST_DEFAULT_MODEL,
+      name: 'Default model',
+      contextLength: 200000,
+      promptUsdPerMillion: 3,
+      completionUsdPerMillion: 15,
+    },
+    {
+      id: 'openrouter/chosen',
+      name: 'Chosen model',
+      contextLength: 200000,
+      promptUsdPerMillion: 3,
+      completionUsdPerMillion: 15,
+    },
+  ];
+  let failure: string | undefined;
+  let calls = 0;
+  return {
+    get calls() {
+      return calls;
+    },
+    set(next) {
+      models = next;
+    },
+    fail(message) {
+      failure = message;
+    },
+    async list() {
+      calls += 1;
+      if (failure !== undefined) {
+        return {
+          ok: false,
+          error: { kind: 'server', operation: 'list', message: failure },
+        };
+      }
+      return { ok: true, value: models };
+    },
+  };
+}
+
 /** A fixed instant so session lifetimes are deterministic. */
 export const TEST_NOW = Date.UTC(2026, 0, 1, 12);
 
@@ -83,6 +138,8 @@ export interface TestContext {
   grillMe: GrillMeModule;
   grillSessions: GrillSessionsModule;
   sessionRuntime: FakeSessionRuntime;
+  sessionKeys: FakeSessionKeys;
+  models: FakeModelCatalogue;
   agents: AgentManager;
   ciTracker: CiTracker;
   pulls: FakeGitHubPulls;
@@ -194,11 +251,13 @@ export function createTestContext(
   });
 
   const sessionRuntime = createFakeSessionRuntime();
+  const sessionKeys = createFakeSessionKeys();
   const grillSessions = createGrillSessionsModule({
     runtime: sessionRuntime,
     plans,
     issues,
-    defaultModel: 'openrouter/default-model',
+    keys: sessionKeys,
+    defaultModel: TEST_DEFAULT_MODEL,
     ids: () => `grill-${Math.random().toString(16).slice(2, 10)}`,
     clock: () => new Date(clock.ms),
     logger: silent,
@@ -222,6 +281,7 @@ export function createTestContext(
     openRouterVerifier: createFakeOpenRouterVerifier(),
     githubVerifier: createFakeGitHubVerifier(),
   });
+  const models = createFakeModelCatalogue();
   const ciTracker = createCiTracker({
     projects: projectStore,
     issues,
@@ -250,6 +310,8 @@ export function createTestContext(
       agents,
       ciTracker,
       settings,
+      models,
+      defaultModel: TEST_DEFAULT_MODEL,
       authRoutesOptions,
     }),
     auth,
@@ -261,6 +323,8 @@ export function createTestContext(
     grillMe,
     grillSessions,
     sessionRuntime,
+    sessionKeys,
+    models,
     agents,
     ciTracker,
     pulls,
