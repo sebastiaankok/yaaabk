@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import type {
+  InstallationTokenPermissions,
+  InstallationTokenProviderOptions,
+} from '@yaaabk/github';
 import {
   createGitHubTokenResolver,
   GITHUB_CREDENTIALS_UNSET_MESSAGE,
   type GitHubCredentials,
 } from './github-token';
 
+type MintOptions = InstallationTokenProviderOptions & {
+  permissions?: InstallationTokenPermissions;
+};
+
 /** An App whose minting never happens; tests assert on the calls. */
-function resolver(
-  mint: (options: { appId: string; privateKey: string; installationId: string }) => Promise<string>,
-  env: NodeJS.ProcessEnv = {},
-) {
-  const minted: Array<{ appId: string; privateKey: string; installationId: string }> = [];
+function resolver(mint: (options: MintOptions) => Promise<string>, env: NodeJS.ProcessEnv = {}) {
+  const minted: MintOptions[] = [];
   const resolve = createGitHubTokenResolver({
     env,
     mintInstallationToken: (options) => {
@@ -18,6 +23,7 @@ function resolver(
         appId: options.appId,
         privateKey: options.privateKey,
         installationId: options.installationId,
+        ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
       });
       return mint(options);
     },
@@ -39,6 +45,24 @@ describe('createGitHubTokenResolver', () => {
 
     expect(resolved).toEqual({ ok: true, token: 'ghs_installation_token' });
     expect(minted).toEqual([{ appId: '12345', privateKey: 'key', installationId: '67890' }]);
+  });
+
+  it('forwards the requested permissions when minting a scoped token', async () => {
+    const { resolve, minted } = resolver(async () => 'ghs_review');
+
+    const resolved = await resolve(APP, {
+      permissions: { contents: 'read', pull_requests: 'write' },
+    });
+
+    expect(resolved).toEqual({ ok: true, token: 'ghs_review' });
+    expect(minted).toEqual([
+      {
+        appId: '12345',
+        privateKey: 'key',
+        installationId: '67890',
+        permissions: { contents: 'read', pull_requests: 'write' },
+      },
+    ]);
   });
 
   it('blames the missing Installation ID, not a missing PAT', async () => {

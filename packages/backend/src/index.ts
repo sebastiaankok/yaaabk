@@ -2,7 +2,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
-import { createAgentManager, createSqliteAgentStore } from '@yaaabk/agents';
+import { createAgentManager, createSqliteAgentStore, type AgentTokenScope } from '@yaaabk/agents';
 import {
   createAuthModule,
   createBcryptHasher,
@@ -30,6 +30,7 @@ import {
   createIssueSyncModule,
   type GitHubIssues,
   type GitHubPulls,
+  type InstallationTokenPermissions,
   type InstallationTokenProvider,
 } from '@yaaabk/github';
 import { createIssuesModule, createSqliteIssueStore } from '@yaaabk/issues';
@@ -52,6 +53,7 @@ import { createApp } from './app';
 import {
   createGitHubTokenResolver,
   GITHUB_OWNER_UNSET_MESSAGE,
+  type GitHubTokenRequest,
   type ResolvedGitHubToken,
 } from './github-token';
 
@@ -105,7 +107,10 @@ function mintInstallationToken({
   appId,
   privateKey,
   installationId,
-}: InstallationTokenProviderOptions): Promise<string> {
+  permissions,
+}: InstallationTokenProviderOptions & {
+  permissions?: InstallationTokenPermissions;
+}): Promise<string> {
   const key = `${appId}:${installationId}`;
   if (installationTokens === undefined || installationTokenKey !== key) {
     installationTokens = createInstallationTokenProvider({
@@ -115,7 +120,7 @@ function mintInstallationToken({
     });
     installationTokenKey = key;
   }
-  return installationTokens.token();
+  return installationTokens.token(permissions);
 }
 
 /**
@@ -127,14 +132,20 @@ function mintInstallationToken({
 const resolveTokenFor = createGitHubTokenResolver({ mintInstallationToken });
 
 /** The token a GitHub call should use, or the reason there is none. */
-function resolveGithubToken(settingsModule: SettingsModule): Promise<ResolvedGitHubToken> {
+function resolveGithubToken(
+  settingsModule: SettingsModule,
+  request?: GitHubTokenRequest,
+): Promise<ResolvedGitHubToken> {
   return settingsModule.credentials().then((stored) =>
-    resolveTokenFor({
-      githubAppId: stored.githubAppId,
-      githubPrivateKey: stored.githubPrivateKey,
-      githubInstallationId: stored.githubInstallationId,
-      githubPat: stored.githubPat,
-    }),
+    resolveTokenFor(
+      {
+        githubAppId: stored.githubAppId,
+        githubPrivateKey: stored.githubPrivateKey,
+        githubInstallationId: stored.githubInstallationId,
+        githubPat: stored.githubPat,
+      },
+      request,
+    ),
   );
 }
 
@@ -274,6 +285,10 @@ function resolveGitHubPulls(settingsModule: SettingsModule): GitHubPulls {
       const built = await build();
       return built.ok ? built.client.mergePullRequest(...args) : fail('mergePullRequest', built);
     },
+    createReview: async (...args) => {
+      const built = await build();
+      return built.ok ? built.client.createReview(...args) : fail('createReview', built);
+    },
   };
 }
 
@@ -293,15 +308,45 @@ ensureInClusterCaTrusted();
 const k8s = createK8sClient({ connection: detectK8sConnection() });
 
 /**
- * The GitHub token agent Jobs clone and push with, resolved per dispatch.
- *
- * Resolved per call so a credential entered in Settings takes effect without a
- * restart; prefers a short-lived GitHub App installation token, which dies
+ * The GitHub token the scaffold push clones and pushes with, resolved per
+ * create. Resolved per call so a credential entered in Settings takes effect
+ * without a restart; prefers a short-lived App installation token, which dies
  * within the hour even if a run's Secret leaks.
  */
-const resolveGithubTokenForAgents = async (): Promise<string | undefined> => {
+const resolveGithubTokenForScaffold = async (): Promise<string | undefined> => {
   try {
     const resolved = await resolveGithubToken(settings);
+    return resolved.ok ? resolved.token : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The permission each kind of agent Job needs. Implement-issue runs push code,
+ * open pull requests and manage Issues; a review run only reads code and posts
+ * a review, so a leaked review token cannot push or merge.
+ */
+const AGENT_TOKEN_PERMISSIONS: Record<AgentTokenScope, InstallationTokenPermissions> = {
+  'implement-issue': {
+    contents: 'write',
+    pull_requests: 'write',
+    issues: 'write',
+    workflows: 'write',
+    metadata: 'read',
+  },
+  review: {
+    contents: 'read',
+    pull_requests: 'write',
+  },
+};
+
+/** The GitHub token an agent Job clones and pushes with, scoped to its kind. */
+const resolveGithubTokenForAgents = async (scope: AgentTokenScope): Promise<string | undefined> => {
+  try {
+    const resolved = await resolveGithubToken(settings, {
+      permissions: AGENT_TOKEN_PERMISSIONS[scope],
+    });
     return resolved.ok ? resolved.token : undefined;
   } catch {
     return undefined;
@@ -316,7 +361,7 @@ const projects = createProjectsModule({
   // Resolved per create so a credential entered in Settings takes effect
   // without a restart, and a short-lived App installation token is minted
   // fresh for the scaffold push rather than snapshotted at startup.
-  githubToken: resolveGithubTokenForAgents,
+  githubToken: resolveGithubTokenForScaffold,
 });
 
 const plans = createPlansModule({ store: createSqlitePlanStore(database) });
@@ -353,7 +398,7 @@ const agents = createAgentManager({
   issues,
   projects: projectStore,
   k8s,
-  githubToken: await resolveGithubTokenForAgents(),
+  githubToken: resolveGithubTokenForAgents,
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }
     : {}),
