@@ -140,8 +140,8 @@ This is a Bun workspace monorepo:
 
 Project templates live in [`templates/`](./templates). `@yaaabk/template` copies
 the bundled [`templates/svelte-bun`](./templates/svelte-bun) — a SvelteKit +
-Tailwind app served by a Bun + Hono API, with Docker, Kubernetes, ArgoCD and CI
-wiring — interpolates the project's values, and pushes the result to the new
+Tailwind app served by a Bun + Hono API, with Docker, Kubernetes (HTTPRoute) and
+CI wiring — interpolates the project's values, and pushes the result to the new
 project repository.
 
 Internal packages export TypeScript source directly and are bundled by their
@@ -198,9 +198,7 @@ Creating a Project runs a fixed sequence, reported to the caller through the
    `yaaabk-deploy` (write on `deployments`, `services`, `configmaps`, `secrets`,
    `httproutes` and read on `pods`/`pods/log`) ServiceAccounts, Roles, and
    RoleBindings inside the Project namespace.
-5. **argocd** — create the ArgoCD `Application` for the repository, in
-   `yaaabk` beside the backend.
-6. **persist** — record the Project.
+5. **persist** — record the Project.
 
 If any step fails the resources created so far are rolled back and no Project is
 recorded, so a failed creation never leaves a half-registered Project.
@@ -323,8 +321,9 @@ the pull requests labelled `automerge`, and reads the combined check state of
 each head commit plus the latest review through the `GitHubPulls` port:
 
 - **green, no review** — a review Agent is spawned to judge the pull request.
-- **green, approved** — the pull request is merged and its Issue is closed
-  locally and on GitHub.
+- **green, approved** — the pull request is merged, its Issue is closed locally
+  and on GitHub, and a deploy Job is spawned as `yaaabk-deploy` to apply the
+  manifests, wait for rollout, verify `/health`, and record the deployed commit SHA.
 - **changes requested** — a fix attempt is spawned on the same branch carrying
   the reviewer's summary as a distinct prompt section, until the rejection count
   reaches two or the Issue's attempt budget is spent; then the Issue is labelled

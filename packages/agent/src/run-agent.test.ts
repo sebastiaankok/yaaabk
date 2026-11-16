@@ -7,6 +7,7 @@ import type {
   Checks,
   Git,
   GitHub,
+  Kubectl,
   OpenCode,
   Reporter,
   SpendMeter,
@@ -30,12 +31,26 @@ const REVIEW_CONFIG: AgentConfig = {
   branch: 'agent/issue-42',
 };
 
+const DEPLOY_CONFIG: AgentConfig = {
+  kind: 'deploy',
+  issueNumber: 42,
+  repoUrl: 'https://github.com/acme/todo-app',
+  githubToken: 'gh-token',
+  openrouterApiKey: '',
+  maxAttempts: 3,
+  commitSha: 'merge-sha-7',
+  namespace: 'yaaabk-a1b2c3d4',
+  deploymentName: 'todo-app',
+  deployPath: 'deploy',
+  branch: 'main',
+};
+
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
 
 interface Fakes {
   deps: AgentDependencies;
   calls: string[];
-  reports: Array<{ prUrl: string | null; logs: string; costCents?: number }>;
+  reports: Array<{ prUrl: string | null; logs: string; costCents?: number; commitSha?: string }>;
   pullRequests: AgentPullRequest;
   reviews: Array<{ pullNumber: number; event: string; body: string }>;
 }
@@ -46,12 +61,18 @@ function fakes(
     checksPassed?: boolean;
     reviewExitCode?: number;
     verdict?: { event: 'approve' | 'request-changes'; body: string };
+    deployError?: string;
     /** USD the run's key has spent before and after the LLM call. */
     usage?: { before: number | undefined; after: number | undefined };
   } = {},
 ): Fakes {
   const calls: string[] = [];
-  const reports: Array<{ prUrl: string | null; logs: string; costCents?: number }> = [];
+  const reports: Array<{
+    prUrl: string | null;
+    logs: string;
+    costCents?: number;
+    commitSha?: string;
+  }> = [];
   const reviews: Array<{ pullNumber: number; event: string; body: string }> = [];
   const pullRequests: AgentPullRequest = {
     number: 7,
@@ -76,6 +97,9 @@ function fakes(
     async checkoutBranch(directory, branch) {
       calls.push(`checkout:${directory}:${branch}`);
     },
+    async checkoutCommit(directory, sha) {
+      calls.push(`checkout-commit:${directory}:${sha}`);
+    },
     async commitAll(directory, message) {
       calls.push(`commit:${directory}:${message}`);
     },
@@ -85,6 +109,20 @@ function fakes(
     async diff(directory) {
       calls.push(`diff:${directory}`);
       return 'diff --git a/src/a.ts b/src/a.ts';
+    },
+  };
+  const kubectl: Kubectl = {
+    async applyServerSide({ directory, namespace, path }) {
+      calls.push(`apply:${directory}:${namespace}:${path}`);
+    },
+    async waitForRollout({ namespace, deploymentName }) {
+      calls.push(`rollout:${namespace}:${deploymentName}`);
+    },
+    async checkHealth({ namespace, serviceName }) {
+      calls.push(`health:${namespace}:${serviceName}`);
+    },
+    async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
+      calls.push(`label:${namespace}:${deploymentName}:${labelKey}=${labelValue}`);
     },
   };
   const openCode: OpenCode = {
@@ -129,7 +167,16 @@ function fakes(
   };
 
   return {
-    deps: { git, openCode, checks, github, reporter, spend, directory: '/work/repo' },
+    deps: {
+      git,
+      kubectl,
+      openCode,
+      checks,
+      github,
+      reporter,
+      spend,
+      directory: '/work/repo',
+    },
     calls,
     reports,
     pullRequests,
@@ -273,5 +320,30 @@ describe('runAgent', () => {
     expect(reviews).toEqual([]);
     expect(calls).not.toContain('review-post:7:approve');
     expect(reports).toEqual([{ prUrl: null, logs: 'reviewed' }]);
+  });
+
+  it('deploys a merged commit: clones, checks out SHA, applies, waits for rollout, checks health, labels SHA, and reports success', async () => {
+    const { deps, calls, reports } = fakes();
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    expect(calls).toEqual([
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout-commit:/work/repo:merge-sha-7',
+      'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
+      'rollout:yaaabk-a1b2c3d4:todo-app',
+      'health:yaaabk-a1b2c3d4:todo-app',
+      'label:yaaabk-a1b2c3d4:todo-app:yaaabk.io/deployed-sha=merge-sha-7',
+      'report',
+    ]);
+    expect(outcome).toEqual({
+      ok: true,
+      prUrl: '',
+      branch: 'main',
+      commitSha: 'merge-sha-7',
+    });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.prUrl).toBeNull();
+    expect(reports[0]?.commitSha).toBe('merge-sha-7');
   });
 });

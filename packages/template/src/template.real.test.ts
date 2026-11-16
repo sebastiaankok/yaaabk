@@ -19,7 +19,7 @@ const PROJECT: TemplateProject = {
 };
 
 const silent = { info: () => {}, error: () => {} };
-const TOKENS = ['projectName', 'projectId', 'namespace', 'repoUrl', 'port', 'argoAppName'];
+const TOKENS = ['projectName', 'projectId', 'namespace', 'repoUrl', 'port'];
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -55,7 +55,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
 
     for (const relative of [
       'Dockerfile',
-      'deploy/namespace.yaml',
+      'deploy/httproute.yaml',
       'deploy/deployment.yaml',
       '.github/workflows/ci.yml',
       'server/src/app.ts',
@@ -63,8 +63,9 @@ describe('scaffold against the bundled svelte-bun template', () => {
     ]) {
       expect(files).toContain(relative);
     }
-    // The Application is created by the backend in yaaabk; the scaffold must
-    // not carry its own.
+    // The Namespace is provisioned by the backend and Ingress is replaced by HTTPRoute.
+    expect(files).not.toContain('deploy/namespace.yaml');
+    expect(files).not.toContain('deploy/ingress.yaml');
     expect(files).not.toContain('deploy/argo-app.yaml');
 
     for (const relative of files) {
@@ -79,7 +80,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
     // A deployment sets YAAABK_TEMPLATE_DIR; it must name the template
     // directory itself. Pointing it at the parent (the directory *holding*
     // svelte-bun) used to nest every file under `svelte-bun/`, leaving the
-    // repository with no `deploy/` at the root for ArgoCD to sync.
+    // repository with no `deploy/` at the root for the deploy Job to apply.
     const source = defaultTemplateSource();
     if (source.type !== 'directory') throw new Error('the default source is a directory');
     const workDir = await makeWorkDir();
@@ -116,10 +117,11 @@ describe('scaffold against the bundled svelte-bun template', () => {
     expect(rootPkg.name).toBe('todo-app');
     expect(rootPkg.scripts.build).toContain('@todo-app/web');
 
-    const namespaceManifest = await readFile(join(directory, 'deploy/namespace.yaml'), 'utf8');
-    expect(namespaceManifest).toContain('name: yaaabk-a1b2c3d4');
-    expect(namespaceManifest).toContain('yaaabk.io/project-name: todo-app');
-    expect(namespaceManifest).toContain('pod-security.kubernetes.io/enforce: restricted');
+    const httprouteManifest = await readFile(join(directory, 'deploy/httproute.yaml'), 'utf8');
+    expect(httprouteManifest).toContain('kind: HTTPRoute');
+    expect(httprouteManifest).toContain('name: todo-app');
+    expect(httprouteManifest).toContain('namespace: yaaabk-a1b2c3d4');
+    expect(httprouteManifest).toContain('name: internal');
 
     const deployment = await readFile(join(directory, 'deploy/deployment.yaml'), 'utf8');
     expect(deployment).toContain('containerPort: 3000');
@@ -130,5 +132,6 @@ describe('scaffold against the bundled svelte-bun template', () => {
     // GitHub Actions expressions must survive interpolation untouched.
     const ci = await readFile(join(directory, '.github/workflows/ci.yml'), 'utf8');
     expect(ci).toContain('${{ github.ref }}');
+    expect(ci).not.toContain('git commit -am');
   });
 });

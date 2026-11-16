@@ -21,7 +21,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoUrl: 'https://github.com/acme/todo-app',
     repoFullName: 'acme/todo-app',
     namespace: NS,
-    argoAppName: 'todo-app',
+    deployedCommitSha: null,
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
     ...overrides,
@@ -503,6 +503,110 @@ describe('review runs', () => {
     });
     const stored = await issues.get('project-1', issue.id);
     expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0 });
+    expect(stored.ok && stored.value.label).not.toBe('needs-human');
+  });
+});
+
+describe('deploy runs', () => {
+  it('dispatches a deploy run as yaaabk-deploy with an ephemeral emptyDir volume and contents:read token scope', async () => {
+    const { manager, issues, k8s, scopes } = await harness({
+      githubToken: (scope) =>
+        Promise.resolve(scope === 'deploy' ? 'ghs-deploy-readonly' : 'ghs-other'),
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+      branch: 'main',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+      attemptNumber: 1,
+      status: 'running',
+      jobName: 'yaaabk-deploy-issue-1-attempt-1',
+      pvcName: null,
+    });
+    expect(scopes).toEqual(['deploy']);
+
+    // No PVC should be created for a deploy run.
+    expect((await k8s.pvcs.get(NS, 'yaaabk-deploy-work-issue-1-1')).ok).toBe(false);
+
+    const secret = await k8s.secrets.get(NS, 'yaaabk-deploy-github-issue-1-1');
+    expect(secret.ok && secret.value.keys).toEqual(['GITHUB_TOKEN']);
+
+    const { spec, container } = await readJobContainer(k8s, NS, 'yaaabk-deploy-issue-1-attempt-1');
+    expect(spec.template.spec.serviceAccountName).toBe('yaaabk-deploy');
+    expect(container.env).toContainEqual({ name: 'AGENT_RUN_KIND', value: 'deploy' });
+    expect(container.env).toContainEqual({ name: 'COMMIT_SHA', value: 'sha-merged-7' });
+    expect(container.env).toContainEqual({ name: 'DEPLOY_NAMESPACE', value: NS });
+    expect(container.env).toContainEqual({ name: 'DEPLOY_PATH', value: 'deploy' });
+    expect(container.env).toContainEqual({ name: 'DEPLOYMENT_NAME', value: 'todo-app' });
+    expect(container.envFrom).toEqual([{ secretRef: { name: 'yaaabk-deploy-github-issue-1-1' } }]);
+
+    // Does not consume an implement attempt or reopen the Issue.
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0, status: 'open' });
+  });
+
+  it('refuses a deploy run without a commit SHA', async () => {
+    const { manager, issues } = await harness();
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, { kind: 'deploy' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
+  it('records the deployed commit SHA on the Project when the deploy Job reports success', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { container } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    expect(token).toBeDefined();
+
+    const reported = await manager.report(spawned.value.id, token!, {
+      logs: 'deployed sha-merged-7',
+      commitSha: 'sha-merged-7',
+    });
+
+    expect(reported.ok && reported.value).toMatchObject({
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+    });
+  });
+
+  it('marks a failed deploy run failed without retrying or escalating the Issue', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues, { maxAttempts: 2 });
+
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    await finishJob(k8s, NS, spawned.value.jobName!, 'failed');
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value).toMatchObject({
+      failed: 1,
+      dispatched: 0,
+      escalated: 0,
+    });
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0, status: 'open' });
     expect(stored.ok && stored.value.label).not.toBe('needs-human');
   });
 });

@@ -40,7 +40,6 @@ export function templateValues(project: TemplateProject): TemplateValues {
     namespace: projectNamespace(project.id),
     repoUrl: project.repoUrl,
     port: String(project.port ?? DEFAULT_PORT),
-    argoAppName: project.argoAppName ?? project.name,
   };
 }
 

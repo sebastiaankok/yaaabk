@@ -127,8 +127,6 @@ describe('POST /api/projects (streaming)', () => {
       'namespace:completed',
       'rbac:started',
       'rbac:completed',
-      'argocd:started',
-      'argocd:completed',
       'persist:started',
       'persist:completed',
     ]);

@@ -28,6 +28,7 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     kind: 'implement-issue',
     attemptNumber: 1,
     pullNumber: null,
+    commitSha: null,
     jobName: null,
     pvcName: null,
     openrouterSecretName: null,
@@ -77,6 +78,15 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       store.create(review);
 
       expect(store.get('run-1')).toEqual(review);
+    });
+
+    it('stores and reads back a deploy run with its commit SHA', () => {
+      const store = createStore();
+      const deploy = runRecord({ kind: 'deploy', commitSha: 'abc123', attemptNumber: 1 });
+
+      store.create(deploy);
+
+      expect(store.get('run-1')).toEqual(deploy);
     });
 
     it('stores and reads back a fix attempt with its reviewer feedback', () => {

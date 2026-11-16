@@ -44,8 +44,6 @@ Targets the `k3s-home` cluster (kubeconfig `~/.kube/configs/k3s.yaml`, context
 
 ```sh
 kubectl --context k3s-home apply -k deploy
-# The shared AppProject is cluster-scoped and applied separately:
-kubectl --context k3s-home apply -f deploy/appproject.yaml
 ```
 
 ## Deploy a release
@@ -75,21 +73,23 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with one namespaced RoleBinding in `yaaabk` (for ArgoCD
-  Applications, until ArgoCD is removed) and three narrow cluster-scoped
-  ClusterRoles:
+  `yaaabk-backend` with three narrow cluster-scoped ClusterRoles:
   - `yaaabk-backend-namespaces` (`create`, `get`, `delete` on Namespaces)
   - `yaaabk-backend-rbac` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on ServiceAccounts, Roles, and RoleBindings in Project Namespaces)
   - `yaaabk-backend-agent` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on Secrets, PVCs, and Jobs across Project Namespaces).
-- Agent Jobs, their PVCs, and their per-attempt Secrets run inside each
-  Project's own Namespace (`yaaabk-<short-uuid>`) under the Project's
+- Agent Jobs, their PVCs, and their per-run Secrets run inside each Project's
+  own Namespace (`yaaabk-<short-uuid>`) under the Project's
   `yaaabk-agent` ServiceAccount. Kubernetes mounts an auto-rotating
   ServiceAccount token into each Job, and `kubectl` is included in the agent
   image so Agents can debug their Project's workloads without any long-lived
   credential.
-- Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
+- Deploy Jobs run inside each Project's Namespace (`yaaabk-<short-uuid>`) under
+  the Project's `yaaabk-deploy` ServiceAccount with an ephemeral `emptyDir`
+  working volume and a `contents:read` GitHub token Secret. They cannot create
+  or delete Namespaces.
+- Agent and deploy Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
   (cluster-internal); browsers use `https://yaaabk.otohgunga.nl`.
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).
   Single backend replica, `Recreate` strategy — a lost node means lost data.
@@ -99,23 +99,10 @@ kubectl --context k3s-home auth can-i --list \
   Workflows is needed because every Project ships a CI workflow, and GitHub
   rejects the first scaffold push for an App without it. The backend mints
   short-lived installation tokens for repository management, scaffold pushes and
-  agent runs — no long-lived PAT is used or copied around. The PAT/env fallbacks
-  exist only for local dev. Note that registering an App is not installing it:
-  create one at <https://github.com/settings/apps>, install it on the `yaaabk`
-  org, then copy the installation id from the install confirmation URL into
-  Settings. Until then every create fails with "configured without an
+  agent/deploy runs — no long-lived PAT is used or copied around. The PAT/env
+  fallbacks exist only for local dev. Note that registering an App is not
+  installing it: create one at <https://github.com/settings/apps>, install it on
+  the `yaaabk` org, then copy the installation id from the install confirmation
+  URL into Settings. Until then every create fails with "configured without an
   Installation ID", and `YAAABK_GITHUB_OWNER` must still name the account repos
   are created under (`yaaabk`).
-- **ArgoCD**: each Project Application is created in `yaaabk`, not in
-  `argocd`. Applications outside ArgoCD's own namespace are only reconciled
-  when two things agree:
-  1. `application.namespaces` in `argocd-cmd-params-cm` includes `yaaabk`
-     (then restart `argocd-server` and `argocd-application-controller`);
-  2. the `yaaabk` AppProject's `spec.sourceNamespaces` includes `yaaabk`
-     (applied from `appproject.yaml`).
-
-  Without both, ArgoCD refuses the Application as a permission violation and it
-  sits unreconciled with an empty status — which looks like a successful create.
-  The controller must also read the project repositories — replace any
-  PAT-based repository credential with a GitHub App installation token secret
-  in the `argocd` namespace.

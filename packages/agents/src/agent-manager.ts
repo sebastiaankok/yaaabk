@@ -1,7 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { K8sClient, JobSpec } from '@yaaabk/k8s';
-import { PROJECT_AGENT_SERVICE_ACCOUNT, type ProjectStore } from '@yaaabk/projects';
+import {
+  DEPLOY_SOURCE_PATH,
+  PROJECT_AGENT_SERVICE_ACCOUNT,
+  PROJECT_DEPLOY_SERVICE_ACCOUNT,
+  type ProjectStore,
+} from '@yaaabk/projects';
 import {
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
@@ -85,6 +90,7 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     kind: run.kind,
     attemptNumber: run.attemptNumber,
     pullNumber: run.pullNumber,
+    commitSha: run.commitSha,
     reviewFeedback: run.reviewFeedback,
     jobName: run.jobName,
     pvcName: run.pvcName,
@@ -193,11 +199,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         throw agentsError('not-found', `No project with id "${run.projectId}"`);
       }
       const issue = await requireIssue(run.projectId, run.issueId);
-      // Agent Jobs, their PVCs and per-attempt Secrets all live in the
-      // Project's own namespace, running as its `yaaabk-agent` SA.
+      // Agent Jobs run in the Project's own namespace as `yaaabk-agent`; deploy
+      // Jobs run in the Project's namespace as `yaaabk-deploy`.
+      const isDeploy = run.kind === 'deploy';
       const namespace = project.namespace;
       const labels = runLabels(run);
-      const pvc = pvcName(run.issueId, run.attemptNumber, run.kind);
+      const pvc = isDeploy ? null : pvcName(run.issueId, run.attemptNumber, run.kind);
       const job = jobName(run.issueId, run.attemptNumber, run.kind);
       if (issue.githubNumber === null) {
         throw agentsError('issue-not-synced', `Issue "${run.issueId}" has no GitHub number yet`);
@@ -205,10 +212,15 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       if (run.kind === 'review' && run.pullNumber === null) {
         throw agentsError('invalid-input', `Review run "${run.id}" has no pull number`);
       }
+      if (isDeploy && run.commitSha === null) {
+        throw agentsError('invalid-input', `Deploy run "${run.id}" has no commit SHA`);
+      }
 
-      const pvcResult = await k8s.pvcs.create(namespace, pvc, { storage: pvcStorage, labels });
-      if (!pvcResult.ok) {
-        throw agentsError('kubernetes', `pvcs.create failed: ${pvcResult.error.message}`);
+      if (pvc !== null) {
+        const pvcResult = await k8s.pvcs.create(namespace, pvc, { storage: pvcStorage, labels });
+        if (!pvcResult.ok) {
+          throw agentsError('kubernetes', `pvcs.create failed: ${pvcResult.error.message}`);
+        }
       }
 
       const token = newToken();
@@ -219,19 +231,31 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         MAX_ATTEMPTS: String(issue.maxAttempts),
         AGENT_RUN_ID: run.id,
         AGENT_RUN_TOKEN: token,
-        YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
+        ...(isDeploy
+          ? {}
+          : {
+              YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
+            }),
       };
       if (options.apiUrl !== undefined) {
         env.YAAABK_API_URL = options.apiUrl;
       }
       if (run.branch !== null) {
         env.BRANCH = run.branch;
+      } else if (isDeploy) {
+        env.BRANCH = 'main';
       }
       if (run.pullNumber !== null) {
         env.PULL_NUMBER = String(run.pullNumber);
       }
       if (run.reviewFeedback !== null) {
         env.REVIEW_FEEDBACK = run.reviewFeedback;
+      }
+      if (isDeploy && run.commitSha !== null) {
+        env.COMMIT_SHA = run.commitSha;
+        env.DEPLOY_NAMESPACE = namespace;
+        env.DEPLOY_PATH = DEPLOY_SOURCE_PATH;
+        env.DEPLOYMENT_NAME = project.name;
       }
       const envFrom: JobSpec['envFrom'] = [];
       const githubToken = await githubTokenFor(run.kind);
@@ -251,12 +275,19 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         envFrom.push({ secretRef: { name: run.openrouterSecretName } });
       }
 
+      const volumes: NonNullable<JobSpec['volumes']> =
+        pvc === null
+          ? [{ name: WORKSPACE_VOLUME_NAME, emptyDir: {} }]
+          : [{ name: WORKSPACE_VOLUME_NAME, persistentVolumeClaim: { claimName: pvc } }];
+
       const jobResult = await k8s.jobs.create(namespace, job, {
         image,
         env,
         envFrom,
-        serviceAccountName: PROJECT_AGENT_SERVICE_ACCOUNT,
-        volumes: [{ name: WORKSPACE_VOLUME_NAME, persistentVolumeClaim: { claimName: pvc } }],
+        serviceAccountName: isDeploy
+          ? PROJECT_DEPLOY_SERVICE_ACCOUNT
+          : PROJECT_AGENT_SERVICE_ACCOUNT,
+        volumes,
         volumeMounts: [{ name: WORKSPACE_VOLUME_NAME, mountPath: WORKSPACE_MOUNT_PATH }],
         activeDeadlineSeconds,
         backoffLimit: 0,
@@ -298,6 +329,11 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     store.update({ ...run, status: 'failed', finishedAt });
     summary.failed += 1;
 
+    if (run.kind === 'deploy') {
+      // A failed deploy does not retry automatically or reopen the Issue (see #59).
+      return;
+    }
+
     const issue = await requireIssue(run.projectId, run.issueId);
 
     if (run.kind === 'review') {
@@ -334,8 +370,8 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
   /**
    * Records a run for an Issue and creates its record. An implement-issue run
-   * consumes one of the Issue's attempts; a review run does not, so reviewing a
-   * pull request can never spend the budget meant for implementing the Issue.
+   * consumes one of the Issue's attempts; review and deploy runs do not, so
+   * neither reviewing nor deploying can spend the implement budget.
    */
   async function schedule(projectId: string, issueId: string, spawnOptions: SpawnOptions = {}) {
     const project = projects.get(projectId);
@@ -359,10 +395,16 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         throw agentsError('invalid-input', 'A review run requires the pull request branch');
       }
     }
+    if (
+      kind === 'deploy' &&
+      (spawnOptions.commitSha === undefined || spawnOptions.commitSha.trim() === '')
+    ) {
+      throw agentsError('invalid-input', 'A deploy run requires the merged commit SHA');
+    }
 
     const attemptNumber =
-      kind === 'review'
-        ? store.listForIssue(projectId, issueId).filter((run) => run.kind === 'review').length + 1
+      kind === 'review' || kind === 'deploy'
+        ? store.listForIssue(projectId, issueId).filter((run) => run.kind === kind).length + 1
         : issue.attemptCount + 1;
 
     let secret: string | null = null;
@@ -383,6 +425,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       kind,
       attemptNumber,
       pullNumber: spawnOptions.pullNumber ?? null,
+      commitSha: spawnOptions.commitSha ?? null,
       reviewFeedback: spawnOptions.reviewFeedback ?? null,
       jobName: null,
       pvcName: null,
@@ -501,8 +544,21 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           ...(report.prUrl === undefined ? {} : { prUrl: report.prUrl }),
           ...(report.costCents === undefined ? {} : { costCents: report.costCents }),
           ...(report.logs === undefined ? {} : { logs: report.logs }),
+          ...(report.commitSha === undefined ? {} : { commitSha: report.commitSha }),
         };
         store.update(updated);
+
+        if (run.kind === 'deploy' && report.commitSha !== undefined) {
+          const project = projects.get(run.projectId);
+          if (project !== undefined && project.deployedCommitSha !== report.commitSha) {
+            projects.update({
+              ...project,
+              deployedCommitSha: report.commitSha,
+              updatedAt: now().toISOString(),
+            });
+          }
+        }
+
         return toPublicRun(updated);
       });
     },

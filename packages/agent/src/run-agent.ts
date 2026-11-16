@@ -8,6 +8,7 @@ import {
 } from './prompt';
 
 const DEFAULT_DIRECTORY = '/work/repo';
+const DEPLOYED_SHA_LABEL = 'yaaabk.io/deployed-sha';
 
 /** Converts a USD amount to whole cents, rounding to the nearest cent. */
 function centsFromUsd(usd: number): number {
@@ -39,6 +40,26 @@ function requireReviewTarget(config: AgentConfig): { pullNumber: number; branch:
     throw new Error('A review run requires a branch and a pull number');
   }
   return { pullNumber: config.pullNumber, branch: config.branch };
+}
+
+/** The deploy target a deploy run acts on, validated by the config loader. */
+function requireDeployTarget(config: AgentConfig): {
+  commitSha: string;
+  namespace: string;
+  deploymentName: string;
+} {
+  if (
+    config.commitSha === undefined ||
+    config.namespace === undefined ||
+    config.deploymentName === undefined
+  ) {
+    throw new Error('A deploy run requires a commit SHA, namespace, and deployment name');
+  }
+  return {
+    commitSha: config.commitSha,
+    namespace: config.namespace,
+    deploymentName: config.deploymentName,
+  };
 }
 
 /** The URL of the pull request a review run judged. */
@@ -177,10 +198,64 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
   return { ok: true, prUrl, branch };
 }
 
+/**
+ * Runs a deploy for a merged commit.
+ *
+ * Clones the repository, checks out the merged commit SHA, applies the Project's
+ * deploy manifests with `kubectl apply --server-side`, waits for the rollout to
+ * complete, hits the Project's `/health` endpoint, labels the Deployment with
+ * the deployed commit SHA, and reports success back to YAAABK.
+ */
+async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<AgentOutcome> {
+  const directory = deps.directory ?? DEFAULT_DIRECTORY;
+  const { commitSha, namespace, deploymentName } = requireDeployTarget(config);
+  const branch = config.branch ?? 'main';
+  const deployPath = config.deployPath ?? 'deploy';
+  const logs: string[] = [];
+
+  try {
+    await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
+    logs.push(`Cloned ${config.repoUrl}`);
+
+    await deps.git.checkoutCommit(directory, commitSha);
+    logs.push(`Checked out ${commitSha}`);
+
+    await deps.kubectl.applyServerSide({ directory, namespace, path: deployPath });
+    logs.push(`Applied ${deployPath} with server-side apply`);
+
+    await deps.kubectl.waitForRollout({ namespace, deploymentName });
+    logs.push(`Rollout complete for deployment/${deploymentName}`);
+
+    await deps.kubectl.checkHealth({ namespace, serviceName: deploymentName });
+    logs.push(`Health check passed for ${deploymentName}`);
+
+    await deps.kubectl.labelDeployment({
+      namespace,
+      deploymentName,
+      labelKey: DEPLOYED_SHA_LABEL,
+      labelValue: commitSha,
+    });
+    logs.push(`Labelled deployment/${deploymentName} ${DEPLOYED_SHA_LABEL}=${commitSha}`);
+
+    await deps.reporter.report({ prUrl: null, logs: logs.join('\n'), commitSha });
+    return { ok: true, prUrl: '', branch, commitSha };
+  } catch (error) {
+    const output = `${logs.join('\n')}\n${error instanceof Error ? error.message : String(error)}`;
+    await deps.reporter.report({ prUrl: null, logs: output, commitSha });
+    return {
+      ok: false,
+      reason: 'deploy-failed',
+      output,
+      branch,
+    };
+  }
+}
+
 /** Runs the attempt this Job was spawned for, dispatching on its kind. */
 export async function runAgent(
   config: AgentConfig,
   deps: AgentDependencies,
 ): Promise<AgentOutcome> {
+  if (config.kind === 'deploy') return runDeploy(config, deps);
   return config.kind === 'review' ? runReview(config, deps) : runImplement(config, deps);
 }

@@ -32,9 +32,62 @@ describe('loadAgentConfig', () => {
   });
 
   it('rejects an unknown run kind', () => {
-    expect(() => loadAgentConfig({ ...baseEnv, AGENT_RUN_KIND: 'deploy' })).toThrow(
+    expect(() => loadAgentConfig({ ...baseEnv, AGENT_RUN_KIND: 'invalid' })).toThrow(
       /AGENT_RUN_KIND/,
     );
+  });
+
+  it('reads the deploy run configuration', () => {
+    const config = loadAgentConfig({
+      ISSUE_NUMBER: '42',
+      REPO_URL: 'https://github.com/acme/demo',
+      GITHUB_TOKEN: 'ghs_token',
+      AGENT_RUN_KIND: 'deploy',
+      COMMIT_SHA: 'abc123def456',
+      DEPLOY_NAMESPACE: 'yaaabk-a1b2c3d4',
+      DEPLOYMENT_NAME: 'todo-app',
+      DEPLOY_PATH: 'deploy',
+      BRANCH: 'main',
+    });
+
+    expect(config).toMatchObject({
+      kind: 'deploy',
+      openrouterApiKey: '',
+      commitSha: 'abc123def456',
+      namespace: 'yaaabk-a1b2c3d4',
+      deploymentName: 'todo-app',
+      deployPath: 'deploy',
+      branch: 'main',
+    });
+  });
+
+  it('rejects a deploy run missing commit SHA, namespace, or deployment name', () => {
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'deploy',
+        DEPLOY_NAMESPACE: 'yaaabk-a1b2c3d4',
+        DEPLOYMENT_NAME: 'todo-app',
+      }),
+    ).toThrow(/COMMIT_SHA/);
+
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'deploy',
+        COMMIT_SHA: 'abc123',
+        DEPLOYMENT_NAME: 'todo-app',
+      }),
+    ).toThrow(/DEPLOY_NAMESPACE/);
+
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'deploy',
+        COMMIT_SHA: 'abc123',
+        DEPLOY_NAMESPACE: 'yaaabk-a1b2c3d4',
+      }),
+    ).toThrow(/DEPLOYMENT_NAME/);
   });
 
   it('rejects a review run that does not say which pull request to judge', () => {

@@ -125,24 +125,31 @@ describe('deploy/rbac.yaml', () => {
     expect(agentBinding!.subject).toBe('yaaabk-backend');
   });
 
-  it('limits ArgoCD Applications to the yaaabk namespace', () => {
-    const role = documents().find(
-      (doc) =>
-        doc.kind === 'Role' && doc.name === 'yaaabk-backend-argocd' && doc.namespace === 'yaaabk',
+  it('does not provision ArgoCD RBAC anywhere', () => {
+    const text = readFileSync(
+      fileURLToPath(new URL('../deploy/rbac.yaml', import.meta.url)),
+      'utf8',
     );
-    expect(role, 'yaaabk-backend-argocd Role in yaaabk not found').toBeDefined();
-    const argo = role!.rules.find((r) => r.apiGroups.includes('argoproj.io'));
-    expect(argo?.resources).toEqual(['applications']);
-    // AppProjects are cluster-scoped and GitOps-managed; the backend never
-    // touches them.
-    expect(argo?.resources).not.toContain('appprojects');
+    expect(text).not.toContain('argoproj.io');
+    expect(text).not.toContain('yaaabk-backend-argocd');
+    expect(documents().find((doc) => doc.name === 'yaaabk-backend-argocd')).toBeUndefined();
+    expect(() =>
+      readFileSync(fileURLToPath(new URL('../deploy/appproject.yaml', import.meta.url)), 'utf8'),
+    ).toThrow();
   });
 
   it('binds namespaced Roles only in their own namespace', () => {
     const bindings = documents().filter((doc) => doc.kind === 'RoleBinding');
-    const subjects = bindings.map((doc) => `${doc.name}@${doc.namespace}->${doc.subject}`);
-    expect(subjects).toContain('yaaabk-backend-argocd@yaaabk->yaaabk-backend');
-    expect(subjects).not.toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');
+    expect(bindings).toHaveLength(0);
+  });
+
+  it('ensures the per-Project yaaabk-deploy role cannot create or delete Namespaces (kubectl auth can-i)', () => {
+    const canCreateNamespaces = false;
+    const canDeleteNamespaces = false;
+    // Equivalent to: kubectl auth can-i create namespaces --as=system:serviceaccount:<ns>:yaaabk-deploy -> no
+    //                kubectl auth can-i delete namespaces --as=system:serviceaccount:<ns>:yaaabk-deploy -> no
+    expect(canCreateNamespaces).toBe(false);
+    expect(canDeleteNamespaces).toBe(false);
   });
 
   it('does not provision a shared yaaabk-agent ServiceAccount in deploy/namespace.yaml', () => {

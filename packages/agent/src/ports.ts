@@ -46,6 +46,8 @@ export interface Git {
    * picks up the pull request it is continuing.
    */
   checkoutBranch(directory: string, branch: string): Promise<void>;
+  /** Checks out a specific commit SHA in detached HEAD. */
+  checkoutCommit(directory: string, commitSha: string): Promise<void>;
   /** Stages and commits every change. */
   commitAll(directory: string, message: string): Promise<void>;
   /** Pushes `branch` to `origin`, force-updating it when `force` is set. */
@@ -55,6 +57,26 @@ export interface Git {
    * review sees exactly what the change introduces.
    */
   diff(directory: string): Promise<string>;
+}
+
+export interface Kubectl {
+  /** Applies the manifests in `path` with `kubectl apply --server-side`. */
+  applyServerSide(input: { directory: string; namespace: string; path: string }): Promise<void>;
+  /** Waits for the rollout of `deploymentName` to complete. */
+  waitForRollout(input: {
+    namespace: string;
+    deploymentName: string;
+    timeoutSeconds?: number;
+  }): Promise<void>;
+  /** Hits `/health` on `serviceName` (via `wget`) and verifies HTTP 200. */
+  checkHealth(input: { namespace: string; serviceName: string }): Promise<void>;
+  /** Labels the Deployment with `labelKey=labelValue`. */
+  labelDeployment(input: {
+    namespace: string;
+    deploymentName: string;
+    labelKey: string;
+    labelValue: string;
+  }): Promise<void>;
 }
 
 export interface OpenCode {
@@ -111,12 +133,18 @@ export interface Reporter {
    * whole cents, when the meter could measure it; omitting it leaves the run's
    * cost unrecorded rather than zero.
    */
-  report(input: { prUrl: string | null; logs: string; costCents?: number }): Promise<void>;
+  report(input: {
+    prUrl: string | null;
+    logs: string;
+    costCents?: number;
+    commitSha?: string;
+  }): Promise<void>;
 }
 
 /** Everything the orchestrator needs, injected so it stays testable. */
 export interface AgentDependencies {
   git: Git;
+  kubectl: Kubectl;
   openCode: OpenCode;
   checks: Checks;
   github: GitHub;
@@ -131,10 +159,10 @@ export interface AgentDependencies {
 
 /** The outcome of one implementation attempt. */
 export type AgentOutcome =
-  | { ok: true; prUrl: string; branch: string }
+  | { ok: true; prUrl: string; branch: string; commitSha?: string }
   | {
       ok: false;
-      reason: 'implementation-failed' | 'checks-failed' | 'review-failed';
+      reason: 'implementation-failed' | 'checks-failed' | 'review-failed' | 'deploy-failed';
       output: string;
       branch: string;
     };

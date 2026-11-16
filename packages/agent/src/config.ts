@@ -1,10 +1,10 @@
 /** Default number of implementation attempts before a human is asked to step in. */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** What the Job is running: implementing an Issue, or reviewing a pull request. */
-export type AgentRunKind = 'implement-issue' | 'review';
+/** What the Job is running: implementing an Issue, reviewing a pull request, or deploying a merged commit. */
+export type AgentRunKind = 'implement-issue' | 'review' | 'deploy';
 
-export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review'];
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review', 'deploy'];
 
 /** Narrows an unknown value to an {@link AgentRunKind}. */
 export function isAgentRunKind(value: unknown): value is AgentRunKind {
@@ -20,7 +20,7 @@ export interface AgentConfig {
   repoUrl: string;
   /** Short-lived token used to clone, push branches and open pull requests. */
   githubToken: string;
-  /** Per-issue key used for LLM calls; carries the issue budget. */
+  /** Per-issue key used for LLM calls; carries the issue budget. Empty for deploy runs. */
   openrouterApiKey: string;
   /** Maximum implementation attempts allowed for the issue. */
   maxAttempts: number;
@@ -31,9 +31,9 @@ export interface AgentConfig {
   /** Base URL of the YAAABK API, when the Job was given one. */
   apiUrl?: string;
   /**
-   * The branch to work on: a fix attempt's pull request branch, or the branch a
-   * review checks out. Absent for a fresh implement attempt, which branches from
-   * the default branch.
+   * The branch to work on: a fix attempt's pull request branch, the branch a
+   * review checks out, or `main` for a deploy run. Absent for a fresh implement
+   * attempt, which branches from the default branch.
    */
   branch?: string;
   /** The pull request a review judges, when the Job is a review run. */
@@ -43,6 +43,14 @@ export interface AgentConfig {
    * response to a request-changes review.
    */
   reviewFeedback?: string;
+  /** Merged commit SHA to deploy, when the Job is a deploy run. */
+  commitSha?: string;
+  /** Path within the repository to apply, for a deploy run. Defaults to `deploy`. */
+  deployPath?: string;
+  /** Kubernetes namespace to deploy into, for a deploy run. */
+  namespace?: string;
+  /** Deployment name to wait for and label, for a deploy run. */
+  deploymentName?: string;
   /**
    * Base URL for OpenRouter's API, used to read the run's key usage. Defaults
    * to `https://openrouter.ai/api/v1`; overridable for tests and proxies.
@@ -90,6 +98,10 @@ export function loadAgentConfig(env: Env): AgentConfig {
   const branch = optional(env, 'BRANCH');
   const pullNumber = optional(env, 'PULL_NUMBER');
   const reviewFeedback = optional(env, 'REVIEW_FEEDBACK');
+  const commitSha = optional(env, 'COMMIT_SHA');
+  const namespace = optional(env, 'DEPLOY_NAMESPACE');
+  const deploymentName = optional(env, 'DEPLOYMENT_NAME');
+  const deployPath = optional(env, 'DEPLOY_PATH');
   const openrouterBaseUrl = optional(env, 'OPENROUTER_BASE_URL');
   const rawKind = optional(env, 'AGENT_RUN_KIND') ?? 'implement-issue';
   if (!isAgentRunKind(rawKind)) {
@@ -101,6 +113,17 @@ export function loadAgentConfig(env: Env): AgentConfig {
     }
     if (pullNumber === undefined) {
       throw new Error('Missing required environment variable: PULL_NUMBER for a review run');
+    }
+  }
+  if (rawKind === 'deploy') {
+    if (commitSha === undefined) {
+      throw new Error('Missing required environment variable: COMMIT_SHA for a deploy run');
+    }
+    if (namespace === undefined) {
+      throw new Error('Missing required environment variable: DEPLOY_NAMESPACE for a deploy run');
+    }
+    if (deploymentName === undefined) {
+      throw new Error('Missing required environment variable: DEPLOYMENT_NAME for a deploy run');
     }
   }
   let parsedPullNumber: number | undefined;
@@ -115,7 +138,10 @@ export function loadAgentConfig(env: Env): AgentConfig {
     issueNumber: positiveInt(env, 'ISSUE_NUMBER'),
     repoUrl: require(env, 'REPO_URL'),
     githubToken: require(env, 'GITHUB_TOKEN'),
-    openrouterApiKey: require(env, 'OPENROUTER_API_KEY'),
+    openrouterApiKey:
+      rawKind === 'deploy'
+        ? (optional(env, 'OPENROUTER_API_KEY') ?? '')
+        : require(env, 'OPENROUTER_API_KEY'),
     maxAttempts: positiveInt(env, 'MAX_ATTEMPTS', DEFAULT_MAX_ATTEMPTS),
     ...(runId === undefined ? {} : { runId }),
     ...(runToken === undefined ? {} : { runToken }),
@@ -123,6 +149,10 @@ export function loadAgentConfig(env: Env): AgentConfig {
     ...(branch === undefined ? {} : { branch }),
     ...(parsedPullNumber === undefined ? {} : { pullNumber: parsedPullNumber }),
     ...(reviewFeedback === undefined ? {} : { reviewFeedback }),
+    ...(commitSha === undefined ? {} : { commitSha }),
+    ...(namespace === undefined ? {} : { namespace }),
+    ...(deploymentName === undefined ? {} : { deploymentName }),
+    ...(deployPath === undefined ? {} : { deployPath }),
     ...(openrouterBaseUrl === undefined ? {} : { openrouterBaseUrl }),
   };
 }

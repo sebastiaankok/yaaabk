@@ -285,8 +285,12 @@
           <dd><code>{project.namespace}</code></dd>
         </div>
         <div class="flex gap-1">
-          <dt class="font-medium">ArgoCD</dt>
-          <dd><code>{project.argoAppName}</code></dd>
+          <dt class="font-medium">Deployed</dt>
+          <dd>
+            {#if project.deployedCommitSha}<code>{project.deployedCommitSha}</code>{:else}<span
+                >Not yet deployed</span
+              >{/if}
+          </dd>
         </div>
       </dl>
     </header>

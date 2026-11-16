@@ -15,10 +15,10 @@
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed';
 
 /** What an Agent run is for. */
-export type AgentRunKind = 'implement-issue' | 'review';
+export type AgentRunKind = 'implement-issue' | 'review' | 'deploy';
 
 /** Every valid {@link AgentRunKind}, for validation and the UI. */
-export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review'];
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review', 'deploy'];
 
 /** Narrows an unknown value to an {@link AgentRunKind}. */
 export function isAgentRunKind(value: unknown): value is AgentRunKind {
@@ -29,7 +29,7 @@ export function isAgentRunKind(value: unknown): value is AgentRunKind {
  * The GitHub token scope a run needs. Kept distinct from {@link AgentRunKind}
  * so a new kind can reuse an existing scope rather than minting a new one.
  */
-export type AgentTokenScope = 'implement-issue' | 'review';
+export type AgentTokenScope = 'implement-issue' | 'review' | 'deploy';
 
 /** Every valid {@link AgentRunStatus}, for validation and the UI. */
 export const AGENT_RUN_STATUSES: readonly AgentRunStatus[] = [
@@ -68,6 +68,8 @@ export interface AgentRun {
   attemptNumber: number;
   /** The pull request a review run judges, once dispatched. */
   pullNumber: number | null;
+  /** The merged commit SHA a deploy run deploys, once dispatched. */
+  commitSha: string | null;
   /**
    * The reviewer's summary a fix attempt must address, when it was spawned in
    * response to a request-changes review. `null` for a fresh implement attempt.
@@ -115,11 +117,14 @@ export interface StoredAgentRun extends AgentRun {
 export interface SpawnOptions {
   /**
    * What the run is for. Defaults to `implement-issue`; `review` judges a pull
-   * request instead of implementing the Issue, and requires `pullNumber`.
+   * request instead of implementing the Issue, and `deploy` deploys the merged
+   * commit of a closed pull request.
    */
   kind?: AgentRunKind;
   /** The pull request a review run judges. Required when `kind` is `review`. */
   pullNumber?: number;
+  /** The merged commit SHA to deploy. Required when `kind` is `deploy`. */
+  commitSha?: string;
   /**
    * OpenRouter key the Job uses for its LLM calls. When given, the module
    * creates a per-attempt Secret the Job reads it from.
@@ -177,6 +182,8 @@ export interface AgentReport {
   costCents?: number;
   /** Captured agent output. */
   logs?: string;
+  /** Commit SHA deployed by a successful deploy run. */
+  commitSha?: string;
 }
 
 /** The kinds of failure an Agent Manager command can report. */
@@ -202,7 +209,8 @@ export interface AgentManager {
    * {@link reconcile} dispatches it.
    *
    * A `review` run judges the pull request identified by `pullNumber` and does
-   * not consume the Issue's implement-attempt budget.
+   * not consume the Issue's implement-attempt budget. A `deploy` run deploys
+   * `commitSha` as `yaaabk-deploy` and records the SHA on the Project.
    */
   spawn(
     projectId: string,

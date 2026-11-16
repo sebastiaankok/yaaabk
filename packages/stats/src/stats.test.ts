@@ -33,6 +33,7 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
     kind: 'implement-issue',
     attemptNumber: 1,
     pullNumber: null,
+    commitSha: null,
     jobName: null,
     pvcName: null,
     openrouterSecretName: null,

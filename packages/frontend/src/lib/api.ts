@@ -247,9 +247,8 @@ export function deleteProject(id: string): Promise<{ ok: boolean }> {
 }
 
 /**
- * Transfers the Project's repository to the Developer's GitHub account and
- * repoints ArgoCD at the new location. An empty `repoName` keeps the Project
- * name.
+ * Transfers the Project's repository to the Developer's GitHub account. An
+ * empty `repoName` keeps the Project name.
  */
 export function exportProject(
   id: string,

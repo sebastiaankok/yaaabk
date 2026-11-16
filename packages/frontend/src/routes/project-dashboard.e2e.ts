@@ -8,7 +8,7 @@ const PROJECT = {
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
-  argoAppName: 'todo-app',
+  deployedCommitSha: 'abc1234',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -45,7 +45,8 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'https://github.com/acme/todo-app',
   );
   await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
-  await expect(page.getByText('ArgoCD application')).toBeVisible();
+  await expect(page.getByText('Deployed commit')).toBeVisible();
+  await expect(page.getByText('abc1234')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Grill-Me' })).toHaveAttribute(
     'href',
     '/projects/p1/plan',

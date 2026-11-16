@@ -70,7 +70,6 @@ kubectl kustomize deploy \
     -e "s#(image: ${REGISTRY}/yaaabk-(backend|frontend|agent)):[A-Za-z0-9._-]+#\1:${TAG}#g" \
     -e "s#(value: ${REGISTRY}/yaaabk-agent):[A-Za-z0-9._-]+#\1:${TAG}#g" \
   | kubectl --context "$CONTEXT" apply -f -
-kubectl --context "$CONTEXT" apply -f deploy/appproject.yaml
 
 echo "▶ waiting for rollout"
 kubectl --context "$CONTEXT" rollout status deployment/yaaabk-backend --timeout=5m

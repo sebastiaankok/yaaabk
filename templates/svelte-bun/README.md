@@ -5,16 +5,15 @@ An application scaffolded by [YAAABK](https://github.com) from the
 
 - Project id: `{{projectId}}`
 - Kubernetes namespace: `{{namespace}}`
-- ArgoCD application: `{{argoAppName}}`
 - API port: `{{port}}`
 
 ## Layout
 
-| Path      | What it is                                               |
-| --------- | -------------------------------------------------------- |
-| `web/`    | SvelteKit + Tailwind single-page app                     |
-| `server/` | Bun + Hono API that also serves `web/build`              |
-| `deploy/` | Kubernetes manifests, including the ArgoCD `Application` |
+| Path      | What it is                                                       |
+| --------- | ---------------------------------------------------------------- |
+| `web/`    | SvelteKit + Tailwind single-page app                             |
+| `server/` | Bun + Hono API that also serves `web/build`                      |
+| `deploy/` | Kubernetes manifests applied by the YAAABK deploy Job            |
 
 ## Developing locally
 
@@ -33,7 +32,6 @@ bun run build
 
 ## Deploying
 
-`deploy/deployment.yaml` references an image from a container registry. Replace
-`ghcr.io/your-org/{{projectName}}` with your registry, then let ArgoCD sync the
-`deploy/` directory into the `{{namespace}}` namespace. CI builds and pushes a
-new image tag on every push to `main` and commits the updated manifest.
+After your pull request passes CI and review and is merged, YAAABK automatically
+spawns a deploy Job in `{{namespace}}` that applies `deploy/` with server-side
+apply, waits for the rollout, and verifies the `/health` endpoint.

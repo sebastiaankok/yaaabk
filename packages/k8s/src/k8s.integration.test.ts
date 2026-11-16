@@ -6,12 +6,8 @@ import type { JobInfo, K8sResult } from './types';
  * Exercises every operation against a real cluster. Skipped by default; run it
  * with `bun run test:integration` against a kind or minikube cluster whose
  * kubeconfig is reachable.
- *
- * The ArgoCD case additionally needs the Application CRD installed; set
- * `YAAABK_K8S_INTEGRATION_ARGOCD=1` once ArgoCD is present.
  */
 const enabled = process.env.YAAABK_K8S_INTEGRATION === '1';
-const argoEnabled = process.env.YAAABK_K8S_INTEGRATION_ARGOCD === '1';
 
 const namespace = `yaaabk-it-${Date.now().toString(36)}`;
 const k8s = createK8sClient({ connection: { mode: 'kubeconfig' } });
@@ -120,19 +116,6 @@ describe.skipIf(!enabled)('K8s Client against a real cluster', () => {
 
     expect(finished.phase).toBe('succeeded');
     expect(finished.succeeded).toBe(1);
-  });
-
-  it.skipIf(!argoEnabled)('creates an ArgoCD Application', async () => {
-    const result = await k8s.applications.create(namespace, 'it-app', {
-      source: {
-        repoURL: 'https://github.com/yaaabk/template-svelte-bun',
-        path: 'deploy',
-        targetRevision: 'main',
-      },
-      destination: { namespace },
-    });
-
-    expect(result.ok).toBe(true);
   });
 
   it('reports a conflict when a namespace already exists', async () => {

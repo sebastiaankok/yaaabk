@@ -119,8 +119,12 @@
           <dd><code>{project.namespace}</code></dd>
         </div>
         <div>
-          <dt class="text-neutral-500">ArgoCD application</dt>
-          <dd><code>{project.argoAppName}</code></dd>
+          <dt class="text-neutral-500">Deployed commit</dt>
+          <dd>
+            {#if project.deployedCommitSha}<code>{project.deployedCommitSha}</code>{:else}<span
+                class="text-neutral-500">Not yet deployed</span
+              >{/if}
+          </dd>
         </div>
       </dl>
     </section>
@@ -158,8 +162,8 @@
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="export-heading">
       <h2 id="export-heading" class="mb-1 text-sm font-semibold">Export project</h2>
       <p class="mb-3 text-sm text-neutral-600">
-        Transfer this repository to your own GitHub account. YAAABK grants you access, moves the
-        repository and repoints ArgoCD so deployments keep flowing.
+        Transfer this repository to your own GitHub account. YAAABK grants you access and moves the
+        repository.
       </p>
       {#if exportSuccess !== null}
         <p class="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
@@ -207,7 +211,7 @@
       <h2 id="danger-heading" class="mb-3 text-sm font-semibold text-red-700">Danger zone</h2>
       {#if confirming}
         <p class="mb-3 text-sm text-neutral-600">
-          This deletes the GitHub repository, namespace and ArgoCD application. It cannot be undone.
+          This deletes the GitHub repository and namespace. It cannot be undone.
         </p>
         <div class="flex gap-2">
           <button

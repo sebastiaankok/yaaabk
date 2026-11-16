@@ -8,6 +8,7 @@ import type {
   Checks,
   Git,
   GitHub,
+  Kubectl,
   OpenCode,
   Reporter,
   SpendMeter,
@@ -42,6 +43,9 @@ export function createGit(): Git {
       await Bun.$`git -C ${directory} fetch origin ${branch}`.quiet();
       await Bun.$`git -C ${directory} checkout ${branch}`.quiet();
     },
+    async checkoutCommit(directory, commitSha) {
+      await Bun.$`git -C ${directory} checkout ${commitSha}`.quiet();
+    },
     async commitAll(directory, message) {
       await Bun.$`git -C ${directory} add -A`.quiet();
       await Bun.$`git -C ${directory} -c user.name=yaaabk -c user.email=agent@yaaabk.io commit -m ${message}`.quiet();
@@ -55,6 +59,26 @@ export function createGit(): Git {
       // branch it forked from, which is what a reviewer needs to see.
       const result = await Bun.$`git -C ${directory} diff origin/HEAD...HEAD`.quiet();
       return result.stdout.toString();
+    },
+  };
+}
+
+/** The real `kubectl` + `wget` adapter for the deploy run. */
+export function createKubectl(): Kubectl {
+  return {
+    async applyServerSide({ directory, namespace, path }) {
+      const manifestPath = join(directory, path);
+      await Bun.$`kubectl apply --server-side --namespace ${namespace} -f ${manifestPath}`.quiet();
+    },
+    async waitForRollout({ namespace, deploymentName, timeoutSeconds = 180 }) {
+      await Bun.$`kubectl rollout status deployment/${deploymentName} --namespace ${namespace} --timeout=${`${timeoutSeconds}s`}`.quiet();
+    },
+    async checkHealth({ namespace, serviceName }) {
+      const healthUrl = `http://${serviceName}.${namespace}.svc.cluster.local/health`;
+      await Bun.$`wget -q -O - --timeout=5 ${healthUrl}`.quiet();
+    },
+    async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
+      await Bun.$`kubectl label deployment ${deploymentName} --namespace ${namespace} ${`${labelKey}=${labelValue}`} --overwrite`.quiet();
     },
   };
 }
@@ -185,7 +209,7 @@ export function createReporter(
 ): Reporter {
   const doFetch = options.fetch ?? globalThis.fetch;
   return {
-    async report({ prUrl, logs, costCents }) {
+    async report({ prUrl, logs, costCents, commitSha }) {
       if (
         config.apiUrl === undefined ||
         config.runId === undefined ||
@@ -201,6 +225,7 @@ export function createReporter(
           prUrl,
           logs,
           ...(costCents === undefined ? {} : { costCents }),
+          ...(commitSha === undefined ? {} : { commitSha }),
         }),
       });
     },
@@ -249,6 +274,7 @@ export function createOpenRouterMeter(
 export function createDependencies(config: AgentConfig): AgentDependencies {
   return {
     git: createGit(),
+    kubectl: createKubectl(),
     openCode: createOpenCode(),
     checks: createChecks(),
     github: createGitHub(config),
