@@ -6,9 +6,9 @@ import { isValidProjectName, type TemplateModule } from '@yaaabk/template';
 import {
   DEFAULT_BRANCH,
   MAX_DESCRIPTION_LENGTH,
-  PROJECT_AGENT_ROLE_RULES,
+  PROJECT_AGENT_CLUSTER_ROLE,
   PROJECT_AGENT_SERVICE_ACCOUNT,
-  PROJECT_DEPLOY_ROLE_RULES,
+  PROJECT_DEPLOY_CLUSTER_ROLE,
   PROJECT_DEPLOY_SERVICE_ACCOUNT,
   PROJECT_NAME_LABEL,
   PROJECT_PSA_LABELS,
@@ -207,7 +207,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           if (!result.ok) {
             throw projectError('kubernetes', result.error.message);
           }
-          // Deleting the namespace cascades to its ServiceAccounts, Roles,
+          // Deleting the namespace cascades to its ServiceAccounts,
           // RoleBindings, Secrets and workloads, so it is the single undo for
           // cluster state if a later step fails.
           undo.push(() =>
@@ -217,22 +217,31 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
 
         await step('rbac', async () => {
           const identities = [
-            { name: PROJECT_AGENT_SERVICE_ACCOUNT, rules: PROJECT_AGENT_ROLE_RULES },
-            { name: PROJECT_DEPLOY_SERVICE_ACCOUNT, rules: PROJECT_DEPLOY_ROLE_RULES },
+            {
+              serviceAccount: PROJECT_AGENT_SERVICE_ACCOUNT,
+              clusterRole: PROJECT_AGENT_CLUSTER_ROLE,
+            },
+            {
+              serviceAccount: PROJECT_DEPLOY_SERVICE_ACCOUNT,
+              clusterRole: PROJECT_DEPLOY_CLUSTER_ROLE,
+            },
           ] as const;
 
           for (const identity of identities) {
-            const sa = await k8s.serviceAccounts.create(namespace, identity.name);
+            const sa = await k8s.serviceAccounts.create(namespace, identity.serviceAccount);
             if (!sa.ok) {
               throw projectError('kubernetes', sa.error.message);
             }
-            const role = await k8s.roles.create(namespace, identity.name, identity.rules);
-            if (!role.ok) {
-              throw projectError('kubernetes', role.error.message);
-            }
-            const rb = await k8s.roleBindings.create(namespace, identity.name, {
-              roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: identity.name },
-              subjects: [{ kind: 'ServiceAccount', name: identity.name, namespace }],
+            // Bind the fixed ClusterRole instead of creating a Role: RBAC
+            // forbids granting permissions the caller does not hold, and the
+            // backend deliberately does not hold project workload permissions.
+            const rb = await k8s.roleBindings.create(namespace, identity.serviceAccount, {
+              roleRef: {
+                apiGroup: 'rbac.authorization.k8s.io',
+                kind: 'ClusterRole',
+                name: identity.clusterRole,
+              },
+              subjects: [{ kind: 'ServiceAccount', name: identity.serviceAccount, namespace }],
             });
             if (!rb.ok) {
               throw projectError('kubernetes', rb.error.message);
@@ -385,7 +394,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           throw projectError('not-found', `No project with id "${id}"`);
         }
 
-        // Delete the Project Namespace (cascading to its ServiceAccounts, Roles,
+        // Delete the Project Namespace (cascading to its ServiceAccounts,
         // RoleBindings, Secrets and workloads) and the GitHub repository.
         await requireOk('kubernetes', 'namespaces.delete', () =>
           k8s.namespaces.delete(project.namespace),

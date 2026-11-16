@@ -194,10 +194,11 @@ Creating a Project runs a fixed sequence, reported to the caller through the
 2. **scaffold** — push the `templates/svelte-bun` template to it.
 3. **namespace** — create the `yaaabk-<short-uuid>` namespace with the `restricted`
    Pod Security Admission labels and `yaaabk.io/project-name`.
-4. **rbac** — provision the `yaaabk-agent` (read-only plus `pods/exec`) and
+4. **rbac** — create the `yaaabk-agent` (read-only plus `pods/exec`) and
    `yaaabk-deploy` (write on `deployments`, `services`, `configmaps`, `secrets`,
-   `httproutes` and read on `pods`/`pods/log`) ServiceAccounts, Roles, and
-   RoleBindings inside the Project namespace.
+   `httproutes` and read on `pods`/`pods/log`) ServiceAccounts, and bind each to
+   the fixed `yaaabk-project-agent`/`yaaabk-project-deploy` ClusterRoles with a
+   RoleBinding inside the Project namespace.
 5. **persist** — record the Project.
 
 If any step fails the resources created so far are rolled back and no Project is

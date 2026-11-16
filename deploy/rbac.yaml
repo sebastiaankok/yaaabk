@@ -30,8 +30,56 @@ subjects:
     name: yaaabk-backend
     namespace: yaaabk
 ---
-# Cluster-scoped RBAC provisioning: the backend manages ServiceAccounts, Roles,
-# and RoleBindings inside Project Namespaces.
+# Per-Project permission sets, defined here rather than minted per Project.
+# Kubernetes forbids creating a Role that grants permissions the creator does not
+# hold, so the backend binds these fixed ClusterRoles into each Project Namespace
+# with a RoleBinding instead. That keeps the grant auditable in git and stops the
+# backend from inventing new permissions.
+#
+# `yaaabk-agent`: read-only (get/list/watch) on core resources, deployments, and
+# httproutes, plus create on pods/exec. Never grants secrets read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: yaaabk-project-agent
+rules:
+  - apiGroups: ['']
+    resources: [pods, pods/log, services, configmaps, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [pods/exec]
+    verbs: [create]
+---
+# `yaaabk-deploy`: full write on deployments, services, configmaps, secrets, and
+# httproutes, plus read on pods/pods/log. Cannot create or delete Namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: yaaabk-project-deploy
+rules:
+  - apiGroups: ['']
+    resources: [services, configmaps, secrets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [pods, pods/log]
+    verbs: [get, list]
+---
+# Cluster-scoped RBAC provisioning: the backend manages ServiceAccounts and
+# RoleBindings inside Project Namespaces. It may `bind` only the two fixed
+# per-Project ClusterRoles above (`bind` is the RBAC verb for creating a binding
+# to a role the caller does not itself hold); it cannot create or escalate Roles.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -41,8 +89,12 @@ rules:
     resources: [serviceaccounts]
     verbs: [create, get, list, watch, patch, delete]
   - apiGroups: [rbac.authorization.k8s.io]
-    resources: [roles, rolebindings]
+    resources: [rolebindings]
     verbs: [create, get, list, watch, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    resourceNames: [yaaabk-project-agent, yaaabk-project-deploy]
+    verbs: [bind]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

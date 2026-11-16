@@ -73,12 +73,18 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with three narrow cluster-scoped ClusterRoles:
+  `yaaabk-backend` with three narrow cluster-scoped ClusterRoles of its own:
   - `yaaabk-backend-namespaces` (`create`, `get`, `delete` on Namespaces)
   - `yaaabk-backend-rbac` (`create`, `get`, `list`, `watch`, `patch`, `delete`
-    on ServiceAccounts, Roles, and RoleBindings in Project Namespaces)
+    on ServiceAccounts and RoleBindings in Project Namespaces, plus `bind` on
+    only the `yaaabk-project-agent` and `yaaabk-project-deploy` ClusterRoles)
   - `yaaabk-backend-agent` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on Secrets, PVCs, and Jobs across Project Namespaces).
+- Per-Project permissions live in the fixed `yaaabk-project-agent` and
+  `yaaabk-project-deploy` ClusterRoles. Project creation only creates the
+  ServiceAccounts and a RoleBinding to each, so the backend never needs to hold
+  (or mint) the permissions it delegates — Kubernetes rejects a Role granting
+  permissions its creator does not have.
 - Agent Jobs, their PVCs, and their per-run Secrets run inside each Project's
   own Namespace (`yaaabk-<short-uuid>`) under the Project's
   `yaaabk-agent` ServiceAccount. Kubernetes mounts an auto-rotating
