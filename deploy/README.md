@@ -75,9 +75,9 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with exactly two namespaced RoleBindings: agent Jobs, PVCs
-  and per-attempt Secrets in `yaaabk`, and ArgoCD Applications in
-  `yaaabk-apps`. It holds **no** cluster-wide rights: namespaces and
+  `yaaabk-backend` with exactly two namespaced RoleBindings, both in
+  `yaaabk`: one for agent Jobs, PVCs and per-attempt Secrets, one for ArgoCD
+  Applications. It holds **no** cluster-wide rights: namespaces and
   AppProjects are managed by ArgoCD from Git, and the `yaaabk-agent`
   ServiceAccount (deploy-managed) needs no Kubernetes API access at all.
 - Agent Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
@@ -94,8 +94,16 @@ kubectl --context k3s-home auth can-i --list \
   then every create fails with "configured without an Installation ID", and
   `YAAABK_GITHUB_OWNER` must still name the account repos are created under
   (`yaaabk`).
-- **ArgoCD**: the controller must be configured to reconcile Applications in
-  `yaaabk-apps` (`application.namespaces: yaaabk-apps` in
-  `argocd-cmd-params-cm`) and to read the project repositories — replace any
+- **ArgoCD**: each Project Application is created in `yaaabk`, not in
+  `argocd`. Applications outside ArgoCD's own namespace are only reconciled
+  when two things agree:
+  1. `application.namespaces` in `argocd-cmd-params-cm` includes `yaaabk`
+     (then restart `argocd-server` and `argocd-application-controller`);
+  2. the `yaaabk` AppProject's `spec.sourceNamespaces` includes `yaaabk`
+     (applied from `appproject.yaml`).
+
+  Without both, ArgoCD refuses the Application as a permission violation and it
+  sits unreconciled with an empty status — which looks like a successful create.
+  The controller must also read the project repositories — replace any
   PAT-based repository credential with a GitHub App installation token secret
   in the `argocd` namespace.

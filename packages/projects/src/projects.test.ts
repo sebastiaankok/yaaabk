@@ -128,9 +128,9 @@ describe('create', () => {
     expect((await k8s.roleBindings.get(project.namespace, 'yaaabk-agent')).ok).toBe(false);
     expect((await k8s.secrets.get(project.namespace, 'yaaabk-github')).ok).toBe(false);
 
-    // The Application lives in the ArgoCD apps namespace and defers to the
+    // The Application lives in `yaaabk` beside the backend and defers to the
     // shared AppProject, which YAAABK does not create or modify.
-    const application = await k8s.applications.get('yaaabk-apps', 'todo-app');
+    const application = await k8s.applications.get('yaaabk', 'todo-app');
     expect(application.ok).toBe(true);
 
     const argoProject = await k8s.argoProjects.get('yaaabk');
@@ -139,7 +139,7 @@ describe('create', () => {
     const storedApplication = await k8s.objectApi.read({
       apiVersion: 'argoproj.io/v1alpha1',
       kind: 'Application',
-      metadata: { name: 'todo-app', namespace: 'yaaabk-apps' },
+      metadata: { name: 'todo-app', namespace: 'yaaabk' },
     });
     expect(storedApplication.spec).toMatchObject({ project: 'yaaabk' });
 
@@ -216,7 +216,7 @@ describe('create', () => {
 
   it('rolls back created resources when a later step fails', async () => {
     const { module, store, k8s, repositories } = harness({
-      seed: [existingApplication('todo-app', 'yaaabk-apps')],
+      seed: [existingApplication('todo-app', 'yaaabk')],
     });
 
     const result = await module.create(INPUT);
@@ -225,7 +225,7 @@ describe('create', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('kubernetes');
     expect(store.list()).toHaveLength(0);
-    expect((await k8s.applications.get('yaaabk-apps', 'todo-app')).ok).toBe(true);
+    expect((await k8s.applications.get('yaaabk', 'todo-app')).ok).toBe(true);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 });
@@ -346,7 +346,7 @@ describe('export', () => {
     const storedApplication = await k8s.objectApi.read({
       apiVersion: 'argoproj.io/v1alpha1',
       kind: 'Application',
-      metadata: { name: 'todo-app', namespace: 'yaaabk-apps' },
+      metadata: { name: 'todo-app', namespace: 'yaaabk' },
     });
     expect(storedApplication.spec).toMatchObject({
       source: { repoURL: 'https://github.com/dev/todo' },
@@ -407,7 +407,7 @@ describe('remove', () => {
     expect(store.get(created.value.id)).toBeUndefined();
     // Deleting the Application lets ArgoCD prune the scaffold, which includes
     // the Project namespace manifest; YAAABK itself deletes nothing else.
-    expect((await k8s.applications.get('yaaabk-apps', created.value.argoAppName)).ok).toBe(false);
+    expect((await k8s.applications.get('yaaabk', created.value.argoAppName)).ok).toBe(false);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 
@@ -415,7 +415,7 @@ describe('remove', () => {
     const { module, k8s } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
-    await k8s.applications.delete('yaaabk-apps', created.value.argoAppName);
+    await k8s.applications.delete('yaaabk', created.value.argoAppName);
 
     const result = await module.remove(created.value.id);
 

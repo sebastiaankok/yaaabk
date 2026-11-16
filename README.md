@@ -195,7 +195,10 @@ Creating a Project runs a fixed sequence, reported to the caller through the
    bound to the `edit` ClusterRole within that namespace only.
 5. **secret** — copy the GitHub token in as `yaaabk-github` (skipped when no
    token is configured).
-6. **argocd** — create the ArgoCD `Application` for the repository.
+6. **argocd** — create the ArgoCD `Application` for the repository, in
+   `yaaabk` beside the backend. The Application's *destination* is the
+   Project's own `yaaabk-<id>` namespace, which ArgoCD creates from the
+   scaffold's Namespace manifest.
 7. **persist** — record the Project.
 
 If any step fails the resources created so far are rolled back and no Project is

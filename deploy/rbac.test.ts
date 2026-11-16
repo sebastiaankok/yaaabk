@@ -68,14 +68,12 @@ describe('deploy/rbac.yaml', () => {
     expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
   });
 
-  it('limits ArgoCD Applications to the yaaabk-apps namespace', () => {
+  it('limits ArgoCD Applications to the yaaabk namespace', () => {
     const role = documents().find(
       (doc) =>
-        doc.kind === 'Role' &&
-        doc.name === 'yaaabk-backend-argocd' &&
-        doc.namespace === 'yaaabk-apps',
+        doc.kind === 'Role' && doc.name === 'yaaabk-backend-argocd' && doc.namespace === 'yaaabk',
     );
-    expect(role, 'yaaabk-backend-argocd Role in yaaabk-apps not found').toBeDefined();
+    expect(role, 'yaaabk-backend-argocd Role in yaaabk not found').toBeDefined();
     const argo = role!.rules.find((r) => r.apiGroups.includes('argoproj.io'));
     expect(argo?.resources).toEqual(['applications']);
     // AppProjects are cluster-scoped and GitOps-managed; the backend never
@@ -87,6 +85,6 @@ describe('deploy/rbac.yaml', () => {
     const bindings = documents().filter((doc) => doc.kind === 'RoleBinding');
     const subjects = bindings.map((doc) => `${doc.name}@${doc.namespace}->${doc.subject}`);
     expect(subjects).toContain('yaaabk-backend-agent@yaaabk->yaaabk-backend');
-    expect(subjects).toContain('yaaabk-backend-argocd@yaaabk-apps->yaaabk-backend');
+    expect(subjects).toContain('yaaabk-backend-argocd@yaaabk->yaaabk-backend');
   });
 });

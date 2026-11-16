@@ -63,8 +63,8 @@ describe('scaffold against the bundled svelte-bun template', () => {
     ]) {
       expect(files).toContain(relative);
     }
-    // The Application is created by the backend in yaaabk-apps; the scaffold
-    // must not carry its own.
+    // The Application is created by the backend in yaaabk; the scaffold must
+    // not carry its own.
     expect(files).not.toContain('deploy/argo-app.yaml');
 
     for (const relative of files) {

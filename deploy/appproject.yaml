@@ -11,6 +11,11 @@
 # Applications against this project. `destinations` allows any namespace so
 # ArgoCD may create the Project namespaces the scaffold's Namespace manifest
 # declares; the whitelist pins exactly what a Project Application may manage.
+#
+# `sourceNamespaces` is what lets an Application live outside ArgoCD's own
+# namespace: every Project Application is created in `yaaabk`, so that
+# namespace must be listed here — and in `application.namespaces` on the
+# controller and server — or ArgoCD silently refuses to reconcile them.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -18,6 +23,8 @@ metadata:
   namespace: argocd
 spec:
   description: YAAABK-managed Projects
+  sourceNamespaces:
+    - yaaabk
   sourceRepos:
     - '*'
   destinations:

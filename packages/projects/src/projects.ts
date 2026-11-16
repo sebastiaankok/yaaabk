@@ -7,7 +7,7 @@ import {
   ARGO_DESTINATION_SERVER,
   ARGO_SOURCE_PATH,
   ARGOCD_APP_PROJECT_NAME,
-  ARGOCD_APPS_NAMESPACE,
+  ARGOCD_APPLICATION_NAMESPACE,
   DEFAULT_BRANCH,
   MAX_DESCRIPTION_LENGTH,
   PROJECT_NAME_LABEL,
@@ -204,11 +204,12 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         });
 
         await step('argocd', async () => {
-          // The Application lands in the dedicated apps namespace and defers
-          // to the shared, GitOps-managed AppProject; the destination is the
+          // The Application lands beside the backend, in `yaaabk`, and defers
+          // to the shared, GitOps-managed AppProject. Its destination is the
           // Project namespace, which ArgoCD creates from the scaffold's
-          // Namespace manifest.
-          const result = await k8s.applications.create(ARGOCD_APPS_NAMESPACE, name, {
+          // Namespace manifest — the Application resource and what it deploys
+          // are deliberately in different namespaces.
+          const result = await k8s.applications.create(ARGOCD_APPLICATION_NAMESPACE, name, {
             project: ARGOCD_APP_PROJECT_NAME,
             source: { repoURL: repository.url, path: ARGO_SOURCE_PATH, targetRevision: branch },
             destination: { server: argoServer, namespace },
@@ -223,7 +224,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           // state.
           undo.push(() =>
             requireOk('kubernetes', 'applications.delete', () =>
-              k8s.applications.delete(ARGOCD_APPS_NAMESPACE, name),
+              k8s.applications.delete(ARGOCD_APPLICATION_NAMESPACE, name),
             ),
           );
         });
@@ -355,7 +356,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
 
         const syncPolicy = { automated: { prune: true, selfHeal: true } } as const;
         const application = await k8s.applications.update(
-          ARGOCD_APPS_NAMESPACE,
+          ARGOCD_APPLICATION_NAMESPACE,
           project.argoAppName,
           {
             project: ARGOCD_APP_PROJECT_NAME,
@@ -391,7 +392,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         // includes the Project namespace manifest, so the namespace and its
         // contents cascade away. YAAABK deletes nothing else cluster-side.
         await requireOk('kubernetes', 'applications.delete', () =>
-          k8s.applications.delete(ARGOCD_APPS_NAMESPACE, project.argoAppName),
+          k8s.applications.delete(ARGOCD_APPLICATION_NAMESPACE, project.argoAppName),
         );
         await requireOk('repository', 'repository.delete', () =>
           repositories.delete(project.repoFullName),
