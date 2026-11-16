@@ -22,6 +22,14 @@ export interface AgentPullRequest {
   url: string;
 }
 
+/** A formal review verdict the review run posts. */
+export type ReviewEvent = 'approve' | 'request-changes';
+
+export interface ReviewVerdict {
+  event: ReviewEvent;
+  body: string;
+}
+
 export interface CloneInput {
   repoUrl: string;
   token: string;
@@ -42,6 +50,11 @@ export interface Git {
   commitAll(directory: string, message: string): Promise<void>;
   /** Pushes `branch` to `origin`, force-updating it when `force` is set. */
   push(directory: string, branch: string, options?: { force?: boolean }): Promise<void>;
+  /**
+   * The pull request branch's diff against the branch it forked from, so a
+   * review sees exactly what the change introduces.
+   */
+  diff(directory: string): Promise<string>;
 }
 
 export interface OpenCode {
@@ -49,6 +62,15 @@ export interface OpenCode {
   implement(input: { directory: string; prompt: string }): Promise<{
     exitCode: number;
     output: string;
+  }>;
+  /**
+   * Runs OpenCode with the review-pr prompt and reads back the verdict the
+   * agent wrote to `.yaaabk/review.json`.
+   */
+  review(input: { directory: string; prompt: string }): Promise<{
+    exitCode: number;
+    output: string;
+    verdict: ReviewVerdict;
   }>;
 }
 
@@ -65,6 +87,8 @@ export interface GitHub {
     body: string;
     labels: string[];
   }): Promise<AgentPullRequest>;
+  /** Posts a formal approve / request-changes review on a pull request. */
+  createReview(input: { pullNumber: number; event: ReviewEvent; body: string }): Promise<void>;
 }
 
 export interface Reporter {
@@ -90,7 +114,7 @@ export type AgentOutcome =
   | { ok: true; prUrl: string; branch: string }
   | {
       ok: false;
-      reason: 'implementation-failed' | 'checks-failed';
+      reason: 'implementation-failed' | 'checks-failed' | 'review-failed';
       output: string;
       branch: string;
     };

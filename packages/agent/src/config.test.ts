@@ -11,12 +11,61 @@ const baseEnv = {
 describe('loadAgentConfig', () => {
   it('reads the issue the agent is scoped to', () => {
     expect(loadAgentConfig(baseEnv)).toEqual({
+      kind: 'implement-issue',
       issueNumber: 42,
       repoUrl: 'https://github.com/acme/demo',
       githubToken: 'ghs_token',
       openrouterApiKey: 'sk-or-key',
       maxAttempts: 3,
     });
+  });
+
+  it('reads the review mode and the pull request it judges', () => {
+    const config = loadAgentConfig({
+      ...baseEnv,
+      AGENT_RUN_KIND: 'review',
+      PULL_NUMBER: '7',
+      BRANCH: 'agent/issue-42',
+    });
+
+    expect(config).toMatchObject({ kind: 'review', pullNumber: 7, branch: 'agent/issue-42' });
+  });
+
+  it('rejects an unknown run kind', () => {
+    expect(() => loadAgentConfig({ ...baseEnv, AGENT_RUN_KIND: 'deploy' })).toThrow(
+      /AGENT_RUN_KIND/,
+    );
+  });
+
+  it('rejects a review run that does not say which pull request to judge', () => {
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'review',
+        BRANCH: 'agent/issue-42',
+      }),
+    ).toThrow(/PULL_NUMBER/);
+  });
+
+  it('rejects a review run without a branch to check out', () => {
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'review',
+        PULL_NUMBER: '7',
+      }),
+    ).toThrow(/BRANCH/);
+  });
+
+  it('rejects a pull number that is not a positive integer', () => {
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'review',
+        BRANCH: 'agent/issue-42',
+        PULL_NUMBER: '0',
+      }),
+    ).toThrow(/PULL_NUMBER/);
   });
 
   it('defaults the attempt budget to 3 and allows an override', () => {

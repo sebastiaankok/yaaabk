@@ -122,6 +122,76 @@ describe('checkState', () => {
   });
 });
 
+describe('createReview', () => {
+  it('posts a review and normalises the verdict', async () => {
+    const { pulls, calls } = client(() => ({
+      id: 99,
+      body: 'Looks good.',
+      state: 'APPROVE',
+      submitted_at: '2026-01-01T00:00:00Z',
+    }));
+
+    const result = await pulls.createReview('acme/todo-app', 7, {
+      event: 'approve',
+      body: 'Looks good.',
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        id: 99,
+        event: 'approve',
+        body: 'Looks good.',
+        submittedAt: '2026-01-01T00:00:00Z',
+      },
+    });
+    expect(calls[0]).toEqual({
+      method: 'POST',
+      path: '/repos/acme/todo-app/pulls/7/reviews',
+      body: { event: 'APPROVE', body: 'Looks good.' },
+    });
+  });
+
+  it('maps a request-changes verdict', async () => {
+    const { pulls, calls } = client(() => ({
+      id: 100,
+      body: 'Please fix the typo.',
+      state: 'REQUEST_CHANGES',
+      submitted_at: '2026-01-01T00:00:00Z',
+    }));
+
+    const result = await pulls.createReview('acme/todo-app', 7, {
+      event: 'request-changes',
+      body: 'Please fix the typo.',
+    });
+
+    expect(result.ok && result.value.event).toBe('request-changes');
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      body: { event: 'REQUEST_CHANGES', body: 'Please fix the typo.' },
+    });
+  });
+
+  it('maps a GitHub failure to a typed error', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ message: 'Pull request not found' }), {
+        status: 404,
+      })) as typeof fetch;
+    const pulls = createGitHubPullsClient({ token: 't', fetch: fetchImpl });
+
+    const result = await pulls.createReview('acme/todo-app', 7, {
+      event: 'approve',
+      body: 'Looks good.',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('not-found');
+      expect(result.error.operation).toBe('create-review');
+    }
+  });
+});
+
 describe('mergePullRequest', () => {
   it('merges with the requested method and reports the merge commit', async () => {
     const { pulls, calls } = client(() => ({ merged: true, sha: 'merge-sha' }));

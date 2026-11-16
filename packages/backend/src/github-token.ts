@@ -1,4 +1,7 @@
-import type { InstallationTokenProviderOptions } from '@yaaabk/github';
+import type {
+  InstallationTokenPermissions,
+  InstallationTokenProviderOptions,
+} from '@yaaabk/github';
 import type { DecryptedSettings } from '@yaaabk/settings';
 
 /** Why no GitHub token could be resolved, so callers can name the real gap. */
@@ -18,14 +21,29 @@ export interface GitHubTokenResolverOptions {
   /**
    * Mints an installation token for the given App. Injected so the resolution
    * rules are unit-testable without a private key or a network call.
+   *
+   * `permissions` narrows the token to what the caller needs; omitting it keeps
+   * the installation's full grant.
    */
-  mintInstallationToken(options: InstallationTokenProviderOptions): Promise<string>;
+  mintInstallationToken(
+    options: InstallationTokenProviderOptions & {
+      permissions?: InstallationTokenPermissions;
+    },
+  ): Promise<string>;
   /** Environment fallback for the token; defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
 }
 
+/** The token resolution options a caller may add. */
+export interface GitHubTokenRequest {
+  permissions?: InstallationTokenPermissions;
+}
+
 /** The resolver: credentials in, token or reason out. */
-export type GitHubTokenResolver = (credentials: GitHubCredentials) => Promise<ResolvedGitHubToken>;
+export type GitHubTokenResolver = (
+  credentials: GitHubCredentials,
+  request?: GitHubTokenRequest,
+) => Promise<ResolvedGitHubToken>;
 
 /** Where an App with no Installation ID is installed from. */
 export const GITHUB_APP_INSTALL_URL = 'https://github.com/apps/yaaabk/installations/new';
@@ -53,7 +71,7 @@ export function createGitHubTokenResolver({
   mintInstallationToken,
   env = process.env,
 }: GitHubTokenResolverOptions): GitHubTokenResolver {
-  return async (credentials) => {
+  return async (credentials, request = {}) => {
     const appId = credentials.githubAppId ?? '';
     const privateKey = credentials.githubPrivateKey ?? '';
     const installationId = credentials.githubInstallationId ?? '';
@@ -68,7 +86,12 @@ export function createGitHubTokenResolver({
       try {
         return {
           ok: true,
-          token: await mintInstallationToken({ appId, privateKey, installationId }),
+          token: await mintInstallationToken({
+            appId,
+            privateKey,
+            installationId,
+            ...(request.permissions === undefined ? {} : { permissions: request.permissions }),
+          }),
         };
       } catch (cause) {
         appFailure = {

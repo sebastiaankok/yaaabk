@@ -125,4 +125,80 @@ describe('createInstallationTokenProvider', () => {
     // The JWT holder (not the installation) is asked for the new token.
     expect(requests[1]!.url).toBe('https://api.github.com/app/installations/67890/access_tokens');
   });
+
+  it('sends the requested permissions when a scope is given', async () => {
+    const { fetch, requests } = recordingFetch([
+      {
+        status: 201,
+        body: { token: 'ghs_scoped', expires_at: '2026-01-01T01:00:00Z' },
+      },
+    ]);
+    const provider = createInstallationTokenProvider({
+      appId: '12345',
+      privateKey: APP_PRIVATE_KEY,
+      installationId: '67890',
+      fetch,
+      now: () => new Date('2026-01-01T00:00:00Z'),
+    });
+
+    await provider.token({ contents: 'read', pull_requests: 'write' });
+
+    expect(JSON.parse(requests[0]!.body ?? '{}')).toEqual({
+      permissions: { contents: 'read', pull_requests: 'write' },
+    });
+  });
+
+  it('omits permissions when no scope is given', async () => {
+    const { fetch, requests } = recordingFetch([
+      {
+        status: 201,
+        body: { token: 'ghs_global', expires_at: '2026-01-01T01:00:00Z' },
+      },
+    ]);
+    const provider = createInstallationTokenProvider({
+      appId: '12345',
+      privateKey: APP_PRIVATE_KEY,
+      installationId: '67890',
+      fetch,
+      now: () => new Date('2026-01-01T00:00:00Z'),
+    });
+
+    await provider.token();
+
+    expect(JSON.parse(requests[0]!.body ?? '{}')).toEqual({});
+  });
+
+  it('caches a token per scope', async () => {
+    const responses: Array<{ status: number; body: unknown }> = [
+      { status: 201, body: { token: 'ghs_review', expires_at: '2026-01-01T01:00:00Z' } },
+      { status: 201, body: { token: 'ghs_implement', expires_at: '2026-01-01T01:00:00Z' } },
+      { status: 201, body: { token: 'ghs_review_again', expires_at: '2026-01-01T02:00:00Z' } },
+    ];
+    const { fetch, requests } = recordingFetch(responses);
+    const provider = createInstallationTokenProvider({
+      appId: '12345',
+      privateKey: APP_PRIVATE_KEY,
+      installationId: '67890',
+      fetch,
+      now: () => new Date('2026-01-01T00:00:00Z'),
+    });
+
+    const review = await provider.token({ contents: 'read', pull_requests: 'write' });
+    const implement = await provider.token({
+      contents: 'write',
+      issues: 'write',
+      pull_requests: 'write',
+      workflows: 'write',
+    });
+    const reviewAgain = await provider.token({
+      pull_requests: 'write',
+      contents: 'read',
+    });
+
+    expect(review).toBe('ghs_review');
+    expect(implement).toBe('ghs_implement');
+    // Permission order does not define identity: the same scope reuses its token.
+    expect(reviewAgain).toBe(review);
+    expect(requests).toHaveLength(2);
+  });
 });

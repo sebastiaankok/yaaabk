@@ -12,7 +12,9 @@ import {
   DEFAULT_MAX_CONCURRENT_CLUSTER,
   DEFAULT_MAX_CONCURRENT_PER_PROJECT,
   DEFAULT_PVC_STORAGE,
+  IMPLEMENT_SKILL_PATH,
   OPENROUTER_SECRET_KEY,
+  REVIEW_SKILL_PATH,
   WORKSPACE_MOUNT_PATH,
   WORKSPACE_VOLUME_NAME,
   githubTokenSecretName,
@@ -22,9 +24,11 @@ import {
 } from './config';
 import { agentsError, consoleLogger, toAgentsError, type AgentsLogger } from './errors';
 import type {
+  AgentGithubTokenResolver,
   AgentManager,
   AgentReport,
   AgentRun,
+  AgentRunKind,
   AgentStore,
   AgentsResult,
   Capacity,
@@ -54,11 +58,14 @@ export interface AgentManagerOptions {
   /** Base URL the Job reports back to, exposed to it as `YAAABK_API_URL`. */
   apiUrl?: string;
   /**
-   * GitHub token each attempt clones and pushes with, written to a per-attempt
-   * Secret in the agent namespace. Prefer a short-lived App installation
-   * token; when omitted the Job simply gets no `GITHUB_TOKEN`.
+   * GitHub token each run clones with, written to a per-run Secret in the agent
+   * namespace. Prefer a short-lived App installation token; when omitted the
+   * Job simply gets no `GITHUB_TOKEN`.
+   *
+   * A function is asked for a token scoped to the run's kind: implement-issue
+   * runs push and open pull requests, review runs only clone and post a review.
    */
-  githubToken?: string;
+  githubToken?: string | AgentGithubTokenResolver;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
@@ -79,7 +86,9 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     id: run.id,
     projectId: run.projectId,
     issueId: run.issueId,
+    kind: run.kind,
     attemptNumber: run.attemptNumber,
+    pullNumber: run.pullNumber,
     jobName: run.jobName,
     pvcName: run.pvcName,
     openrouterSecretName: run.openrouterSecretName,
@@ -133,7 +142,16 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       'yaaabk.io/project-id': run.projectId,
       'yaaabk.io/issue-id': run.issueId,
       'yaaabk.io/run-id': run.id,
+      'yaaabk.io/run-kind': run.kind,
     };
+  }
+
+  /** The run's GitHub token, scoped to what its kind needs. */
+  async function githubTokenFor(kind: AgentRunKind): Promise<string | undefined> {
+    const configured = options.githubToken;
+    if (configured === undefined) return undefined;
+    const token = typeof configured === 'function' ? await configured(kind) : configured;
+    return token === '' ? undefined : token;
   }
 
   /** Running attempts per Project and cluster-wide. */
@@ -182,10 +200,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       // Project namespace is untouched.
       const namespace = AGENT_NAMESPACE;
       const labels = runLabels(run);
-      const pvc = pvcName(run.issueId, run.attemptNumber);
-      const job = jobName(run.issueId, run.attemptNumber);
+      const pvc = pvcName(run.issueId, run.attemptNumber, run.kind);
+      const job = jobName(run.issueId, run.attemptNumber, run.kind);
       if (issue.githubNumber === null) {
         throw agentsError('issue-not-synced', `Issue "${run.issueId}" has no GitHub number yet`);
+      }
+      if (run.kind === 'review' && run.pullNumber === null) {
+        throw agentsError('invalid-input', `Review run "${run.id}" has no pull number`);
       }
 
       const pvcResult = await k8s.pvcs.create(namespace, pvc, { storage: pvcStorage, labels });
@@ -195,11 +216,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
       const token = newToken();
       const env: Record<string, string> = {
+        AGENT_RUN_KIND: run.kind,
         ISSUE_NUMBER: String(issue.githubNumber),
         REPO_URL: project.repoUrl,
         MAX_ATTEMPTS: String(issue.maxAttempts),
         AGENT_RUN_ID: run.id,
         AGENT_RUN_TOKEN: token,
+        YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
       };
       if (options.apiUrl !== undefined) {
         env.YAAABK_API_URL = options.apiUrl;
@@ -207,13 +230,17 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       if (run.branch !== null) {
         env.BRANCH = run.branch;
       }
+      if (run.pullNumber !== null) {
+        env.PULL_NUMBER = String(run.pullNumber);
+      }
       const envFrom: JobSpec['envFrom'] = [];
-      if (options.githubToken !== undefined && options.githubToken !== '') {
-        // A fresh token per attempt, in its own short-lived Secret: nothing
+      const githubToken = await githubTokenFor(run.kind);
+      if (githubToken !== undefined) {
+        // A fresh token per run, in its own short-lived Secret: nothing
         // long-lived with repository access is ever copied around.
-        const githubSecret = githubTokenSecretName(run.issueId, run.attemptNumber);
+        const githubSecret = githubTokenSecretName(run.issueId, run.attemptNumber, run.kind);
         const githubResult = await k8s.secrets.create(namespace, githubSecret, {
-          GITHUB_TOKEN: options.githubToken,
+          GITHUB_TOKEN: githubToken,
         });
         if (!githubResult.ok) {
           throw agentsError('kubernetes', `secrets.create failed: ${githubResult.error.message}`);
@@ -265,13 +292,34 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     return canDispatch(run.projectId) ? dispatch(run) : run;
   }
 
-  /** Marks a run terminal and decides whether to retry or escalate its Issue. */
+  /** Marks a run terminal and decides whether to retry or escalate. */
   async function failRun(run: StoredAgentRun, summary: ReconcileSummary): Promise<void> {
     const finishedAt = now().toISOString();
     store.update({ ...run, status: 'failed', finishedAt });
     summary.failed += 1;
 
     const issue = await requireIssue(run.projectId, run.issueId);
+
+    if (run.kind === 'review') {
+      // A review run retries like any other, but never changes the Issue: the
+      // CI Tracker owns the merge decision and decides what a missing review
+      // means.
+      const reviews = store
+        .listForIssue(run.projectId, run.issueId)
+        .filter((candidate) => candidate.kind === 'review');
+      if (reviews.length < issue.maxAttempts) {
+        const retry = await schedule(run.projectId, run.issueId, {
+          kind: 'review',
+          ...(run.pullNumber === null ? {} : { pullNumber: run.pullNumber }),
+          ...(run.branch === null ? {} : { branch: run.branch }),
+        });
+        if (retry.status === 'running') {
+          summary.dispatched += 1;
+        }
+      }
+      return;
+    }
+
     if (issue.attemptCount < issue.maxAttempts) {
       const retry = await schedule(run.projectId, run.issueId);
       if (retry.status === 'running') {
@@ -285,8 +333,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   }
 
   /**
-   * Records an attempt for an Issue: increments its attempt count, marks it
-   * in progress and creates the run record. Shared by {@link spawn} and retries.
+   * Records a run for an Issue and creates its record. An implement-issue run
+   * consumes one of the Issue's attempts; a review run does not, so reviewing a
+   * pull request can never spend the budget meant for implementing the Issue.
    */
   async function schedule(projectId: string, issueId: string, spawnOptions: SpawnOptions = {}) {
     const project = projects.get(projectId);
@@ -301,10 +350,24 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       );
     }
 
-    const attemptNumber = issue.attemptCount + 1;
+    const kind = spawnOptions.kind ?? 'implement-issue';
+    if (kind === 'review') {
+      if (spawnOptions.pullNumber === undefined) {
+        throw agentsError('invalid-input', 'A review run requires the pull request number');
+      }
+      if (spawnOptions.branch === undefined) {
+        throw agentsError('invalid-input', 'A review run requires the pull request branch');
+      }
+    }
+
+    const attemptNumber =
+      kind === 'review'
+        ? store.listForIssue(projectId, issueId).filter((run) => run.kind === 'review').length + 1
+        : issue.attemptCount + 1;
+
     let secret: string | null = null;
     if (spawnOptions.openrouterApiKey !== undefined) {
-      secret = openrouterSecretName(issueId, attemptNumber);
+      secret = openrouterSecretName(issueId, attemptNumber, kind);
       const secretResult = await k8s.secrets.create(AGENT_NAMESPACE, secret, {
         [OPENROUTER_SECRET_KEY]: spawnOptions.openrouterApiKey,
       });
@@ -317,7 +380,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       id: newId(),
       projectId,
       issueId,
+      kind,
       attemptNumber,
+      pullNumber: spawnOptions.pullNumber ?? null,
       jobName: null,
       pvcName: null,
       openrouterSecretName: secret,
@@ -333,10 +398,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     };
     store.create(run);
 
-    await issues.update(projectId, issueId, {
-      status: 'in_progress',
-      attemptCount: attemptNumber,
-    });
+    if (kind === 'implement-issue') {
+      await issues.update(projectId, issueId, {
+        status: 'in_progress',
+        attemptCount: attemptNumber,
+      });
+    }
 
     return toPublicRun(await dispatchIfCapacity(run));
   }

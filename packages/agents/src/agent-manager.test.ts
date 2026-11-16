@@ -3,10 +3,10 @@ import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from 
 import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
 import { AGENT_NAMESPACE, createInMemoryProjectStore, type Project } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
-import { DEFAULT_ACTIVE_DEADLINE_SECONDS } from './config';
+import { DEFAULT_ACTIVE_DEADLINE_SECONDS, REVIEW_SKILL_PATH } from './config';
 import { silentLogger } from './errors';
 import { createInMemoryAgentStore } from './in-memory-agent-store';
-import type { AgentManager } from './types';
+import type { AgentGithubTokenResolver, AgentManager } from './types';
 
 const NOW = new Date('2026-01-01T12:00:00.000Z');
 /** The namespace agent infrastructure lives in; no longer the Project's. */
@@ -32,6 +32,8 @@ interface Harness {
   manager: AgentManager;
   issues: IssuesModule;
   k8s: MockK8sClient;
+  /** Every token scope the manager asked for, in order. */
+  scopes: string[];
 }
 
 async function harness(
@@ -39,7 +41,7 @@ async function harness(
     maxPerProject?: number;
     maxCluster?: number;
     projects?: Project[];
-    githubToken?: string;
+    githubToken?: string | AgentGithubTokenResolver;
   } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
@@ -57,6 +59,15 @@ async function harness(
 
   let runSequence = 0;
   let tokenSequence = 0;
+  const scopes: string[] = [];
+  const configuredToken = options.githubToken;
+  const githubToken: AgentGithubTokenResolver | string | undefined =
+    typeof configuredToken === 'function'
+      ? async (scope) => {
+          scopes.push(scope);
+          return configuredToken(scope);
+        }
+      : configuredToken;
   const managerOptions: AgentManagerOptions = {
     store: createInMemoryAgentStore(),
     issues,
@@ -68,12 +79,12 @@ async function harness(
     logger: silentLogger,
     ...(options.maxPerProject === undefined ? {} : { maxPerProject: options.maxPerProject }),
     ...(options.maxCluster === undefined ? {} : { maxCluster: options.maxCluster }),
-    ...(options.githubToken === undefined ? {} : { githubToken: options.githubToken }),
+    ...(githubToken === undefined ? {} : { githubToken }),
   };
   const k8s = managerOptions.k8s as MockK8sClient;
   const manager = createAgentManager(managerOptions);
 
-  return { manager, issues, k8s };
+  return { manager, issues, k8s, scopes };
 }
 
 /** Creates an Issue and gives it a GitHub number, as an approved sync would. */
@@ -363,5 +374,91 @@ describe('report', () => {
     expect(reported.ok && reported.value).toMatchObject({ prUrl, costCents: 123 });
     const runs = await manager.runs('project-1', issue.id);
     expect(runs.ok && runs.value[0]).toMatchObject({ prUrl, costCents: 123 });
+  });
+});
+
+describe('review runs', () => {
+  it('dispatches a review run without consuming an implement attempt', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      kind: 'review',
+      pullNumber: 7,
+      attemptNumber: 1,
+      status: 'running',
+      jobName: 'agent-review-issue-1-1',
+      pvcName: 'agent-review-work-issue-1-1',
+    });
+
+    // Reviewing a pull request must never spend the Issue's implement budget.
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0 });
+
+    const { spec, container } = await readJobContainer(k8s, NS, 'agent-review-issue-1-1');
+    expect(container.env).toContainEqual({ name: 'AGENT_RUN_KIND', value: 'review' });
+    expect(container.env).toContainEqual({ name: 'PULL_NUMBER', value: '7' });
+    expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
+    expect(container.env).toContainEqual({ name: 'YAAABK_SKILL_PATH', value: REVIEW_SKILL_PATH });
+    expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
+  });
+
+  it('mints a token scoped to the run kind', async () => {
+    const { manager, issues, k8s, scopes } = await harness({
+      githubToken: (scope) => Promise.resolve(scope === 'review' ? 'ghs-review' : 'ghs-implement'),
+    });
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+
+    expect(scopes).toEqual(['review']);
+    const secret = await k8s.secrets.get(NS, 'agent-review-github-issue-1-1');
+    expect(secret.ok && secret.value.keys).toEqual(['GITHUB_TOKEN']);
+  });
+
+  it('refuses a review run that does not say which pull request to judge', async () => {
+    const { manager, issues } = await harness();
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, { kind: 'review' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
+  it('retries a failed review without escalating the Issue', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues, { maxAttempts: 2 });
+
+    const first = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!first.ok) throw new Error('spawn failed');
+
+    await finishJob(k8s, NS, first.value.jobName!, 'failed');
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value).toMatchObject({
+      failed: 1,
+      dispatched: 1,
+      escalated: 0,
+    });
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0 });
+    expect(stored.ok && stored.value.label).not.toBe('needs-human');
   });
 });

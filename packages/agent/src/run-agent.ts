@@ -1,8 +1,26 @@
 import type { AgentConfig } from './config';
 import { AUTOMERGE_LABEL, defaultBranch, type AgentDependencies, type AgentOutcome } from './ports';
-import { buildImplementPrompt, pullRequestBody, pullRequestTitle } from './prompt';
+import {
+  buildImplementPrompt,
+  buildReviewPrompt,
+  pullRequestBody,
+  pullRequestTitle,
+} from './prompt';
 
 const DEFAULT_DIRECTORY = '/work/repo';
+
+/** The pull request a review run judges, validated by the config loader. */
+function requireReviewTarget(config: AgentConfig): { pullNumber: number; branch: string } {
+  if (config.pullNumber === undefined || config.branch === undefined) {
+    throw new Error('A review run requires a branch and a pull number');
+  }
+  return { pullNumber: config.pullNumber, branch: config.branch };
+}
+
+/** The URL of the pull request a review run judged. */
+function pullRequestUrl(repoUrl: string, pullNumber: number): string {
+  return `${repoUrl.replace(/\.git$/, '')}/pull/${pullNumber}`;
+}
 
 /**
  * Runs one implementation attempt for an Issue.
@@ -16,10 +34,7 @@ const DEFAULT_DIRECTORY = '/work/repo';
  * A non-zero OpenCode exit or failing checks is reported as a failure and no
  * pull request is opened, so a broken attempt never lands a red PR.
  */
-export async function runAgent(
-  config: AgentConfig,
-  deps: AgentDependencies,
-): Promise<AgentOutcome> {
+async function runImplement(config: AgentConfig, deps: AgentDependencies): Promise<AgentOutcome> {
   const directory = deps.directory ?? DEFAULT_DIRECTORY;
   const fix = config.branch !== undefined;
   const branch = config.branch ?? (deps.branchFor ?? defaultBranch)(config);
@@ -66,4 +81,56 @@ export async function runAgent(
 
   await deps.reporter.report({ prUrl: pullRequest.url, logs: logs.join('\n') });
   return { ok: true, prUrl: pullRequest.url, branch };
+}
+
+/**
+ * Runs one review of an Agent-opened pull request.
+ *
+ * The Job checks out the pull request branch, lets OpenCode judge the diff
+ * against the Issue, then posts the verdict it wrote as a formal GitHub review.
+ * The runner — not the reviewer — holds the posting authority, so a review run
+ * can never push code or merge.
+ */
+async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<AgentOutcome> {
+  const directory = deps.directory ?? DEFAULT_DIRECTORY;
+  const { pullNumber, branch } = requireReviewTarget(config);
+  const issue = await deps.github.fetchIssue(config.issueNumber);
+  const logs: string[] = [];
+
+  await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
+  await deps.git.checkoutBranch(directory, branch);
+
+  const diff = await deps.git.diff(directory);
+  const reviewed = await deps.openCode.review({
+    directory,
+    prompt: buildReviewPrompt(issue, { pullNumber, branch, diff }),
+  });
+  logs.push(reviewed.output);
+  if (reviewed.exitCode !== 0) {
+    await deps.reporter.report({ prUrl: null, logs: logs.join('\n') });
+    return {
+      ok: false,
+      reason: 'review-failed',
+      output: reviewed.output,
+      branch,
+    };
+  }
+
+  await deps.github.createReview({
+    pullNumber,
+    event: reviewed.verdict.event,
+    body: reviewed.verdict.body,
+  });
+
+  const prUrl = pullRequestUrl(config.repoUrl, pullNumber);
+  await deps.reporter.report({ prUrl, logs: logs.join('\n') });
+  return { ok: true, prUrl, branch };
+}
+
+/** Runs the attempt this Job was spawned for, dispatching on its kind. */
+export async function runAgent(
+  config: AgentConfig,
+  deps: AgentDependencies,
+): Promise<AgentOutcome> {
+  return config.kind === 'review' ? runReview(config, deps) : runImplement(config, deps);
 }

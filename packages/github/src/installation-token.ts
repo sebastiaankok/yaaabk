@@ -16,10 +16,34 @@ export interface InstallationTokenProviderOptions {
   now?: () => Date;
 }
 
+/** A GitHub permission a scoped installation token may request. */
+export type InstallationTokenPermission = 'read' | 'write' | 'admin';
+
+/**
+ * The permissions a token is narrowed to, keyed by GitHub permission name
+ * (`contents`, `pull_requests`, `issues`, …).
+ */
+export type InstallationTokenPermissions = Record<string, InstallationTokenPermission>;
+
 /** An Installation Token Provider mints short-lived GitHub tokens. */
 export interface InstallationTokenProvider {
-  /** A token valid for roughly an hour, cached until it nears expiry. */
-  token(): Promise<string>;
+  /**
+   * A token valid for roughly an hour, cached per scope until it nears expiry.
+   *
+   * When `permissions` is given the token is narrowed to those permissions, so
+   * a review Job cannot push and a deploy Job cannot review. Omitting it keeps
+   * the installation's full grant.
+   */
+  token(permissions?: InstallationTokenPermissions): Promise<string>;
+}
+
+/** A stable identity for a scope: same permissions in any order. */
+function permissionKey(permissions: InstallationTokenPermissions | undefined): string {
+  if (permissions === undefined) return '';
+  return Object.keys(permissions)
+    .sort()
+    .map((name) => `${name}:${permissions[name]}`)
+    .join(',');
 }
 
 /**
@@ -35,7 +59,7 @@ export function createInstallationTokenProvider(
   const apiBaseUrl = (options.apiBaseUrl ?? 'https://api.github.com').replace(/\/$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
-  let cached: { token: string; expiresAt: number } | undefined;
+  const cached = new Map<string, { token: string; expiresAt: number }>();
 
   /** Signs the App JWT GitHub requires to act as the App itself. */
   async function appToken(): Promise<string> {
@@ -49,13 +73,17 @@ export function createInstallationTokenProvider(
   }
 
   return {
-    async token() {
+    async token(permissions) {
+      const cacheKey = permissionKey(permissions);
+      const existing = cached.get(cacheKey);
       // Refresh five minutes before expiry so a call never races the token's
       // death.
-      if (cached !== undefined && now().getTime() < cached.expiresAt - 5 * 60 * 1000) {
-        return cached.token;
+      if (existing !== undefined && now().getTime() < existing.expiresAt - 5 * 60 * 1000) {
+        return existing.token;
       }
       const jwt = await appToken();
+      const payload: { permissions?: InstallationTokenPermissions } =
+        permissions === undefined ? {} : { permissions };
       const response = await doFetch(
         `${apiBaseUrl}/app/installations/${encodeURIComponent(options.installationId)}/access_tokens`,
         {
@@ -64,7 +92,9 @@ export function createInstallationTokenProvider(
             authorization: `Bearer ${jwt}`,
             accept: 'application/vnd.github+json',
             'x-github-api-version': '2022-11-28',
+            'content-type': 'application/json',
           },
+          body: JSON.stringify(payload),
         },
       );
       if (!response.ok) {
@@ -74,8 +104,8 @@ export function createInstallationTokenProvider(
       if (body.token === undefined || body.expires_at === undefined) {
         throw new Error('GitHub installation token response was missing token or expiry');
       }
-      cached = { token: body.token, expiresAt: Date.parse(body.expires_at) };
-      return cached.token;
+      cached.set(cacheKey, { token: body.token, expiresAt: Date.parse(body.expires_at) });
+      return body.token;
     },
   };
 }
