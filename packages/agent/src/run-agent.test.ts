@@ -9,6 +9,7 @@ import type {
   GitHub,
   OpenCode,
   Reporter,
+  SpendMeter,
 } from './ports';
 import { AUTOMERGE_LABEL } from './ports';
 import { runAgent } from './run-agent';
@@ -34,7 +35,7 @@ const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' 
 interface Fakes {
   deps: AgentDependencies;
   calls: string[];
-  reports: Array<{ prUrl: string | null; logs: string }>;
+  reports: Array<{ prUrl: string | null; logs: string; costCents?: number }>;
   pullRequests: AgentPullRequest;
   reviews: Array<{ pullNumber: number; event: string; body: string }>;
 }
@@ -45,14 +46,24 @@ function fakes(
     checksPassed?: boolean;
     reviewExitCode?: number;
     verdict?: { event: 'approve' | 'request-changes'; body: string };
+    /** USD the run's key has spent before and after the LLM call. */
+    usage?: { before: number | undefined; after: number | undefined };
   } = {},
 ): Fakes {
   const calls: string[] = [];
-  const reports: Array<{ prUrl: string | null; logs: string }> = [];
+  const reports: Array<{ prUrl: string | null; logs: string; costCents?: number }> = [];
   const reviews: Array<{ pullNumber: number; event: string; body: string }> = [];
   const pullRequests: AgentPullRequest = {
     number: 7,
     url: 'https://github.com/acme/todo-app/pull/7',
+  };
+  // A meter that reports whatever the test set, or nothing when unset.
+  const usage = overrides.usage ?? { before: undefined, after: undefined };
+  const meterReads: Array<number | undefined> = [usage.before, usage.after];
+  const spend: SpendMeter = {
+    async usageUsd() {
+      return meterReads.shift();
+    },
   };
 
   const git: Git = {
@@ -118,7 +129,7 @@ function fakes(
   };
 
   return {
-    deps: { git, openCode, checks, github, reporter, directory: '/work/repo' },
+    deps: { git, openCode, checks, github, reporter, spend, directory: '/work/repo' },
     calls,
     reports,
     pullRequests,
@@ -149,6 +160,22 @@ describe('runAgent', () => {
       branch: 'agent/issue-42',
     });
     expect(reports).toEqual([{ prUrl: pullRequests.url, logs: 'implemented\nchecks ok' }]);
+  });
+
+  it('reports the LLM spend of the attempt in whole cents', async () => {
+    // The run's key spent $0.50 before the model call and $0.75 after it, so
+    // the attempt cost 25 cents.
+    const { deps, reports } = fakes({ usage: { before: 0.5, after: 0.75 } });
+
+    await runAgent(CONFIG, deps);
+
+    expect(reports).toEqual([
+      {
+        prUrl: 'https://github.com/acme/todo-app/pull/7',
+        logs: 'implemented\nchecks ok',
+        costCents: 25,
+      },
+    ]);
   });
 
   it('reports a failed attempt and opens no pull request when checks fail', async () => {
@@ -218,6 +245,22 @@ describe('runAgent', () => {
     // The review run reports the pull request it judged, never a new one.
     expect(reports).toEqual([
       { prUrl: 'https://github.com/acme/todo-app/pull/7', logs: 'reviewed' },
+    ]);
+  });
+
+  it('reports the LLM spend of a review in whole cents', async () => {
+    // The review key spent $1.00 before the model call and $1.10 after it, so
+    // the review cost 10 cents.
+    const { deps, reports } = fakes({ usage: { before: 1.0, after: 1.1 } });
+
+    await runAgent(REVIEW_CONFIG, deps);
+
+    expect(reports).toEqual([
+      {
+        prUrl: 'https://github.com/acme/todo-app/pull/7',
+        logs: 'reviewed',
+        costCents: 10,
+      },
     ]);
   });
 

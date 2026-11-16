@@ -141,6 +141,29 @@ describe('computeProjectStats', () => {
     ]);
   });
 
+  it('counts review-run spend alongside implement-issue spend', () => {
+    // A review run's LLM spend is attributed to its Issue just like an
+    // implement attempt, so it shows up in the same cost totals.
+    const stats = computeProjectStats(
+      [issue({ title: 'Schema' })],
+      [
+        run({ id: 'impl', issueId: 'schema', kind: 'implement-issue', costCents: 30 }),
+        run({
+          id: 'review',
+          issueId: 'schema',
+          kind: 'review',
+          attemptNumber: 1,
+          pullNumber: 7,
+          costCents: 10,
+        }),
+      ],
+      { now: NOW },
+    );
+
+    expect(stats.agents.totalCostCents).toBe(40);
+    expect(stats.costByIssue).toEqual([{ issueId: 'schema', title: 'Schema', costCents: 40 }]);
+  });
+
   it('summarises the duration of completed runs in seconds', () => {
     const stats = computeProjectStats(
       [issue({ title: 'Schema' })],

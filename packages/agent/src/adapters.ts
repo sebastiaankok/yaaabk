@@ -10,6 +10,7 @@ import type {
   GitHub,
   OpenCode,
   Reporter,
+  SpendMeter,
 } from './ports';
 import { REVIEW_VERDICT_PATH } from './prompt';
 
@@ -178,9 +179,13 @@ export function createGitHub(config: AgentConfig): GitHub {
 }
 
 /** The real reporter: POST the outcome back to YAAABK. */
-export function createReporter(config: AgentConfig): Reporter {
+export function createReporter(
+  config: AgentConfig,
+  options: { fetch?: typeof fetch } = {},
+): Reporter {
+  const doFetch = options.fetch ?? globalThis.fetch;
   return {
-    async report({ prUrl, logs }) {
+    async report({ prUrl, logs, costCents }) {
       if (
         config.apiUrl === undefined ||
         config.runId === undefined ||
@@ -188,11 +193,54 @@ export function createReporter(config: AgentConfig): Reporter {
       ) {
         return;
       }
-      await fetch(`${config.apiUrl}/api/agent-runs/${config.runId}/report`, {
+      await doFetch(`${config.apiUrl}/api/agent-runs/${config.runId}/report`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: config.runToken, prUrl, logs }),
+        body: JSON.stringify({
+          token: config.runToken,
+          prUrl,
+          logs,
+          ...(costCents === undefined ? {} : { costCents }),
+        }),
       });
+    },
+  };
+}
+
+/** OpenRouter's response shape for the current key's usage. */
+interface KeyUsagePayload {
+  data?: { usage?: number };
+}
+
+/**
+ * The real spend meter: reads the run's OpenRouter key usage.
+ *
+ * `GET /api/v1/key` returns the authenticated key's total spend in USD, so the
+ * agent diffs it across the model call to price the attempt. Any failure (no
+ * key, network, malformed body) yields `undefined`, so metering never breaks a
+ * run.
+ */
+export function createOpenRouterMeter(
+  config: AgentConfig,
+  options: { fetch?: typeof fetch } = {},
+): SpendMeter {
+  const base = (config.openrouterBaseUrl ?? 'https://openrouter.ai/api/v1').replace(/\/$/, '');
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const headers = {
+    authorization: `Bearer ${config.openrouterApiKey}`,
+    accept: 'application/json',
+  };
+  return {
+    async usageUsd() {
+      try {
+        const response = await doFetch(`${base}/key`, { headers });
+        if (!response.ok) return undefined;
+        const body = (await response.json()) as KeyUsagePayload;
+        const usage = body.data?.usage;
+        return typeof usage === 'number' && Number.isFinite(usage) ? usage : undefined;
+      } catch {
+        return undefined;
+      }
     },
   };
 }
@@ -205,5 +253,6 @@ export function createDependencies(config: AgentConfig): AgentDependencies {
     checks: createChecks(),
     github: createGitHub(config),
     reporter: createReporter(config),
+    spend: createOpenRouterMeter(config),
   };
 }
