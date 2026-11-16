@@ -11,6 +11,7 @@ import type {
   Kubectl,
   OpenCode,
   Reporter,
+  ReviewVerdict,
   SpendMeter,
 } from './ports';
 import { REVIEW_VERDICT_PATH } from './prompt';
@@ -117,39 +118,108 @@ export function createKubectl(): Kubectl {
   };
 }
 
-/** The real OpenCode adapter, running the implement-issue skill. */
-export function createOpenCode(): OpenCode {
+/** One OpenCode invocation, expressed as the command and its arguments. */
+export interface OpenCodeRunRequest {
+  directory: string;
+  args: string[];
+}
+
+/** The result of running OpenCode once. */
+export interface OpenCodeRunResult {
+  exitCode: number;
+  stdout: string;
+}
+
+/**
+ * Runs one OpenCode command. Injectable so the invocation can be asserted
+ * without spawning the real CLI.
+ */
+export type OpenCodeRunner = (request: OpenCodeRunRequest) => Promise<OpenCodeRunResult>;
+
+/** Reads the verdict a review run wrote for its pull request. */
+export type OpenCodeVerdictReader = (directory: string) => Promise<ReviewVerdict>;
+
+export interface OpenCodeAdapterOptions {
+  run?: OpenCodeRunner;
+  readVerdict?: OpenCodeVerdictReader;
+}
+
+/**
+ * The non-interactive OpenCode arguments every Agent run uses.
+ *
+ * `--model` is explicit because the runtime has no default model, and `--auto`
+ * approves routine permission prompts so a Job cannot hang waiting for a human
+ * who is not attached to it.
+ */
+export function openCodeRunArgs(model: string, prompt: string): string[] {
+  return ['run', '--model', model, '--auto', prompt];
+}
+
+/** Runs OpenCode through Bun's shell, returning its exit code and output. */
+const runWithBun: OpenCodeRunner = async ({ directory, args }) => {
+  const result = await Bun.$`opencode ${args}`.cwd(directory).nothrow().quiet();
+  return { exitCode: result.exitCode, stdout: result.stdout.toString() };
+};
+
+/** Reads and validates the verdict the review skill writes to the workspace. */
+async function readVerdictFile(directory: string): Promise<ReviewVerdict> {
+  const verdictFile = Bun.file(join(directory, REVIEW_VERDICT_PATH));
+  if (!(await verdictFile.exists())) {
+    throw new Error(`The review agent did not write ${REVIEW_VERDICT_PATH}`);
+  }
+  const raw = (await verdictFile.json()) as { event?: unknown; body?: unknown };
+  if (
+    (raw.event !== 'approve' && raw.event !== 'request-changes') ||
+    typeof raw.body !== 'string' ||
+    raw.body.trim() === ''
+  ) {
+    throw new Error(
+      `${REVIEW_VERDICT_PATH} must contain {"event": "approve" | "request-changes", "body": "…"}`,
+    );
+  }
+  return { event: raw.event, body: raw.body };
+}
+
+/**
+ * The real OpenCode adapter, running the implement-issue and review-pr skills.
+ *
+ * Every invocation names the configured model and runs non-interactively: the
+ * Job has no TTY, so a permission prompt would otherwise wait forever.
+ */
+export function createOpenCode(
+  config: { model?: string },
+  options: OpenCodeAdapterOptions = {},
+): OpenCode {
+  const run = options.run ?? runWithBun;
+  const readVerdict = options.readVerdict ?? readVerdictFile;
+
+  /** The model to invoke, failing with the configuration to set when absent. */
+  function requireModel(): string {
+    const model = config.model?.trim();
+    if (model === undefined || model === '') {
+      throw new Error('Set AGENT_MODEL to the OpenCode model in provider/model form');
+    }
+    return model;
+  }
+
   /** Runs OpenCode with `prompt` and returns its exit code and output. */
-  async function run(directory: string, prompt: string) {
-    const result = await Bun.$`opencode run ${prompt}`.cwd(directory).nothrow().quiet();
-    return { exitCode: result.exitCode, output: result.stdout.toString() };
+  async function invoke(directory: string, prompt: string) {
+    const result = await run({ directory, args: openCodeRunArgs(requireModel(), prompt) });
+    return { exitCode: result.exitCode, output: result.stdout };
   }
 
   return {
     async implement({ directory, prompt }) {
-      return run(directory, prompt);
+      return invoke(directory, prompt);
     },
 
     async review({ directory, prompt }) {
-      const result = await run(directory, prompt);
-      const verdictFile = Bun.file(join(directory, REVIEW_VERDICT_PATH));
-      if (!(await verdictFile.exists())) {
-        throw new Error(`The review agent did not write ${REVIEW_VERDICT_PATH}`);
-      }
-      const raw = (await verdictFile.json()) as { event?: unknown; body?: unknown };
-      if (
-        (raw.event !== 'approve' && raw.event !== 'request-changes') ||
-        typeof raw.body !== 'string' ||
-        raw.body.trim() === ''
-      ) {
-        throw new Error(
-          `${REVIEW_VERDICT_PATH} must contain {"event": "approve" | "request-changes", "body": "…"}`,
-        );
-      }
+      const result = await invoke(directory, prompt);
+      const verdict = await readVerdict(directory);
       return {
         exitCode: result.exitCode,
         output: result.output,
-        verdict: { event: raw.event, body: raw.body },
+        verdict,
       };
     },
   };
@@ -310,7 +380,7 @@ export function createDependencies(config: AgentConfig): AgentDependencies {
   return {
     git: createGit(),
     kubectl: createKubectl(),
-    openCode: createOpenCode(),
+    openCode: createOpenCode(config),
     checks: createChecks(),
     github: createGitHub(config),
     reporter: createReporter(config),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenRouterMeter, createReporter } from './adapters';
+import { createOpenCode, createOpenRouterMeter, createReporter } from './adapters';
 import type { AgentConfig } from './config';
 
 const CONFIG: AgentConfig = {
@@ -24,6 +24,68 @@ function stubFetch(responder: (url: string, init: RequestInit) => Response | Pro
   }) as unknown as typeof fetch;
   return { calls, fetch: fn };
 }
+
+describe('createOpenCode', () => {
+  /** Records the command OpenCode would have been spawned with. */
+  function recordingRunner(result: { exitCode?: number; stdout?: string } = {}) {
+    const requests: Array<{ directory: string; args: string[] }> = [];
+    return {
+      requests,
+      run: async (request: { directory: string; args: string[] }) => {
+        requests.push(request);
+        return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? 'done' };
+      },
+    };
+  }
+
+  it('runs OpenCode with the configured model and automatic approvals', async () => {
+    const runner = recordingRunner();
+
+    const openCode = createOpenCode({ model: 'openrouter/chosen' }, { run: runner.run });
+    const result = await openCode.implement({
+      directory: '/work/repo',
+      prompt: 'Implement issue #42',
+    });
+
+    expect(runner.requests).toEqual([
+      {
+        directory: '/work/repo',
+        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Implement issue #42'],
+      },
+    ]);
+    expect(result).toEqual({ exitCode: 0, output: 'done' });
+  });
+
+  it('runs a review with the same explicit model and automatic approvals', async () => {
+    const runner = recordingRunner();
+    const verdict = { event: 'approve' as const, body: 'Looks good.' };
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      { run: runner.run, readVerdict: async () => verdict },
+    );
+    const result = await openCode.review({
+      directory: '/work/repo',
+      prompt: 'Review pull request #7',
+    });
+
+    expect(runner.requests).toEqual([
+      {
+        directory: '/work/repo',
+        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Review pull request #7'],
+      },
+    ]);
+    expect(result).toEqual({ exitCode: 0, output: 'done', verdict });
+  });
+
+  it('refuses to run without a configured model', async () => {
+    const openCode = createOpenCode({}, { run: recordingRunner().run });
+
+    await expect(
+      openCode.implement({ directory: '/work/repo', prompt: 'Implement issue #42' }),
+    ).rejects.toThrow(/AGENT_MODEL/);
+  });
+});
 
 describe('createOpenRouterMeter', () => {
   it('reads the run key usage in USD from OpenRouter', async () => {

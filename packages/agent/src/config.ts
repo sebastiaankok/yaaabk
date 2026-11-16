@@ -22,6 +22,11 @@ export interface AgentConfig {
   githubToken: string;
   /** Per-issue key used for LLM calls; carries the issue budget. Empty for deploy runs. */
   openrouterApiKey: string;
+  /**
+   * OpenCode model to invoke in `provider/model` form. Required for runs that
+   * call a model (implement and review); absent for deploy runs.
+   */
+  model?: string;
   /** Maximum implementation attempts allowed for the issue. */
   maxAttempts: number;
   /** YAAABK run id, when the Job was given one, so it can report back. */
@@ -86,6 +91,22 @@ function optional(env: Env, name: string): string | undefined {
 }
 
 /**
+ * Reads the provider credential the model call authenticates with.
+ *
+ * Names the setting to fix rather than only the variable, because an Agent run
+ * that starts without it can do nothing useful.
+ */
+function requireProviderCredential(env: Env): string {
+  const value = env['OPENROUTER_API_KEY'];
+  if (value === undefined || value.trim() === '') {
+    throw new Error(
+      'Missing required environment variable: OPENROUTER_API_KEY (the OpenRouter provider credential)',
+    );
+  }
+  return value;
+}
+
+/**
  * Reads and validates the agent's configuration from the environment.
  *
  * Called at container start so a misconfigured Job fails immediately rather
@@ -106,6 +127,11 @@ export function loadAgentConfig(env: Env): AgentConfig {
   const rawKind = optional(env, 'AGENT_RUN_KIND') ?? 'implement-issue';
   if (!isAgentRunKind(rawKind)) {
     throw new Error(`AGENT_RUN_KIND must be one of ${AGENT_RUN_KINDS.join(', ')}`);
+  }
+  // Only implement and review runs invoke a model, so only they need one.
+  let model: string | undefined;
+  if (rawKind !== 'deploy') {
+    model = require(env, 'AGENT_MODEL');
   }
   if (rawKind === 'review') {
     if (branch === undefined) {
@@ -141,7 +167,8 @@ export function loadAgentConfig(env: Env): AgentConfig {
     openrouterApiKey:
       rawKind === 'deploy'
         ? (optional(env, 'OPENROUTER_API_KEY') ?? '')
-        : require(env, 'OPENROUTER_API_KEY'),
+        : requireProviderCredential(env),
+    ...(model === undefined ? {} : { model }),
     maxAttempts: positiveInt(env, 'MAX_ATTEMPTS', DEFAULT_MAX_ATTEMPTS),
     ...(runId === undefined ? {} : { runId }),
     ...(runToken === undefined ? {} : { runToken }),
