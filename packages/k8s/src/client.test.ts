@@ -314,6 +314,38 @@ describe('service accounts', () => {
   });
 });
 
+describe('roles', () => {
+  it('creates a namespaced Role with RBAC rules, reads it back, and deletes it', async () => {
+    const client = createK8sClient({ objectApi: createInMemoryObjectApi(), logger: silentLogger });
+    const rules = [
+      {
+        apiGroups: [''],
+        resources: ['pods', 'pods/log', 'services', 'configmaps', 'events'],
+        verbs: ['get', 'list', 'watch'],
+      },
+      {
+        apiGroups: [''],
+        resources: ['pods/exec'],
+        verbs: ['create'],
+      },
+    ];
+
+    const created = await client.roles.create('project-a', 'yaaabk-agent', rules);
+
+    expect(created).toEqual({
+      ok: true,
+      value: { name: 'yaaabk-agent', namespace: 'project-a', labels: {}, rules },
+    });
+    expect(await client.roles.get('project-a', 'yaaabk-agent')).toEqual(created);
+
+    expect(await client.roles.delete('project-a', 'yaaabk-agent')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect((await client.roles.get('project-a', 'yaaabk-agent')).ok).toBe(false);
+  });
+});
+
 describe('role bindings', () => {
   it('binds a service account to a role and reads the binding back', async () => {
     const client = createK8sClient({ objectApi: createInMemoryObjectApi(), logger: silentLogger });

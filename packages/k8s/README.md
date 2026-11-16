@@ -23,7 +23,7 @@ Every operation resolves to a `K8sResult` — `{ ok: true, value }` or
 `{ ok: false, error }` — so callers branch on `ok` instead of catching
 exceptions. Nothing throws across the module boundary.
 
-Supported resources: Namespaces, Secrets, ServiceAccounts, RoleBindings, Jobs
+Supported resources: Namespaces, Secrets, ServiceAccounts, Roles, RoleBindings, Jobs
 (including status watch), PersistentVolumeClaims, and ArgoCD `Application`
 custom resources.
 

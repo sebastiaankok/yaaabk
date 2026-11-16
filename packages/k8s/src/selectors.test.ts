@@ -27,6 +27,12 @@ describe('resourcePath', () => {
     expect(resourcePath('v1', 'Secret', 'project-a')).toBe('/api/v1/namespaces/project-a/secrets');
   });
 
+  it('builds a namespaced path for rbac roles', () => {
+    expect(resourcePath('rbac.authorization.k8s.io/v1', 'Role', 'project-a')).toBe(
+      '/apis/rbac.authorization.k8s.io/v1/namespaces/project-a/roles',
+    );
+  });
+
   it('builds a path for a custom resource', () => {
     expect(resourcePath('argoproj.io/v1alpha1', 'Application', 'project-a')).toBe(
       '/apis/argoproj.io/v1alpha1/namespaces/project-a/applications',

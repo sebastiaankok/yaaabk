@@ -53,6 +53,7 @@ export const KINDS = {
   namespace: { apiVersion: 'v1', kind: 'Namespace' },
   secret: { apiVersion: 'v1', kind: 'Secret' },
   serviceAccount: { apiVersion: 'v1', kind: 'ServiceAccount' },
+  role: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role' },
   roleBinding: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding' },
   job: { apiVersion: 'batch/v1', kind: 'Job' },
   pvc: { apiVersion: 'v1', kind: 'PersistentVolumeClaim' },

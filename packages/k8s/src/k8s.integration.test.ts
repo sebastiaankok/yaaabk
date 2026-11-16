@@ -74,7 +74,17 @@ describe.skipIf(!enabled)('K8s Client against a real cluster', () => {
     expect(JSON.stringify(fetched)).not.toContain('integration-secret');
   });
 
-  it('creates a service account and binds it to a role', async () => {
+  it('creates a role, binds a service account to it, and deletes both', async () => {
+    const roleRules = [
+      {
+        apiGroups: [''],
+        resources: ['pods', 'pods/log'],
+        verbs: ['get', 'list', 'watch'],
+      },
+    ];
+    const role = await k8s.roles.create(namespace, 'agent', roleRules);
+    expect(role.ok).toBe(true);
+
     const account = await k8s.serviceAccounts.create(namespace, 'agent');
     expect(account.ok).toBe(true);
 
@@ -83,9 +93,12 @@ describe.skipIf(!enabled)('K8s Client against a real cluster', () => {
       subjects: [{ kind: 'ServiceAccount', name: 'agent', namespace }],
     });
 
+    expect(binding.ok && binding.value.roleRef.name).toBe('agent');
     expect(binding.ok && binding.value.subjects).toEqual([
       { kind: 'ServiceAccount', name: 'agent', namespace },
     ]);
+
+    expect(await k8s.roles.delete(namespace, 'agent')).toEqual({ ok: true, value: undefined });
   });
 
   it('creates a persistent volume claim', async () => {

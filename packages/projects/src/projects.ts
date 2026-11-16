@@ -10,7 +10,12 @@ import {
   ARGOCD_APPLICATION_NAMESPACE,
   DEFAULT_BRANCH,
   MAX_DESCRIPTION_LENGTH,
+  PROJECT_AGENT_ROLE_RULES,
+  PROJECT_AGENT_SERVICE_ACCOUNT,
+  PROJECT_DEPLOY_ROLE_RULES,
+  PROJECT_DEPLOY_SERVICE_ACCOUNT,
   PROJECT_NAME_LABEL,
+  PROJECT_PSA_LABELS,
 } from './config';
 import { consoleLogger, projectError, toProjectError, type ProjectsLogger } from './errors';
 import { DuplicateProjectNameError } from './in-memory-project-store';
@@ -203,6 +208,46 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           workingDirectory = result.value.directory;
         });
 
+        await step('namespace', async () => {
+          const result = await k8s.namespaces.create(namespace, {
+            labels: { [PROJECT_NAME_LABEL]: name, ...PROJECT_PSA_LABELS },
+          });
+          if (!result.ok) {
+            throw projectError('kubernetes', result.error.message);
+          }
+          // Deleting the namespace cascades to its ServiceAccounts, Roles,
+          // RoleBindings, Secrets and workloads, so it is the single undo for
+          // cluster state if a later step fails.
+          undo.push(() =>
+            requireOk('kubernetes', 'namespaces.delete', () => k8s.namespaces.delete(namespace)),
+          );
+        });
+
+        await step('rbac', async () => {
+          const identities = [
+            { name: PROJECT_AGENT_SERVICE_ACCOUNT, rules: PROJECT_AGENT_ROLE_RULES },
+            { name: PROJECT_DEPLOY_SERVICE_ACCOUNT, rules: PROJECT_DEPLOY_ROLE_RULES },
+          ] as const;
+
+          for (const identity of identities) {
+            const sa = await k8s.serviceAccounts.create(namespace, identity.name);
+            if (!sa.ok) {
+              throw projectError('kubernetes', sa.error.message);
+            }
+            const role = await k8s.roles.create(namespace, identity.name, identity.rules);
+            if (!role.ok) {
+              throw projectError('kubernetes', role.error.message);
+            }
+            const rb = await k8s.roleBindings.create(namespace, identity.name, {
+              roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: identity.name },
+              subjects: [{ kind: 'ServiceAccount', name: identity.name, namespace }],
+            });
+            if (!rb.ok) {
+              throw projectError('kubernetes', rb.error.message);
+            }
+          }
+        });
+
         await step('argocd', async () => {
           // The Application lands beside the backend, in `yaaabk`, and defers
           // to the shared, GitOps-managed AppProject. Its destination is the
@@ -388,11 +433,13 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           throw projectError('not-found', `No project with id "${id}"`);
         }
 
-        // Deleting the Application lets ArgoCD prune the scaffold, which
-        // includes the Project namespace manifest, so the namespace and its
-        // contents cascade away. YAAABK deletes nothing else cluster-side.
+        // Delete the ArgoCD Application and the Project Namespace (cascading
+        // to its ServiceAccounts, Roles, RoleBindings, Secrets and workloads).
         await requireOk('kubernetes', 'applications.delete', () =>
           k8s.applications.delete(ARGOCD_APPLICATION_NAMESPACE, project.argoAppName),
+        );
+        await requireOk('kubernetes', 'namespaces.delete', () =>
+          k8s.namespaces.delete(project.namespace),
         );
         await requireOk('repository', 'repository.delete', () =>
           repositories.delete(project.repoFullName),

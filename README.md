@@ -192,17 +192,15 @@ Creating a Project runs a fixed sequence, reported to the caller through the
 1. **repository** — create the backing GitHub repository (the `Repository` port;
    a GitHub REST adapter ships with the module).
 2. **scaffold** — push the `templates/svelte-bun` template to it.
-3. **namespace** — create the `yaaabk-<short-uuid>` namespace, labelled
-   `yaaabk.io/project-name`.
-4. **service-account** and **role-binding** — the `yaaabk-agent` ServiceAccount
-   bound to the `edit` ClusterRole within that namespace only.
-5. **secret** — copy the GitHub token in as `yaaabk-github` (skipped when no
-   token is configured).
-6. **argocd** — create the ArgoCD `Application` for the repository, in
-   `yaaabk` beside the backend. The Application's *destination* is the
-   Project's own `yaaabk-<id>` namespace, which ArgoCD creates from the
-   scaffold's Namespace manifest.
-7. **persist** — record the Project.
+3. **namespace** — create the `yaaabk-<short-uuid>` namespace with the `restricted`
+   Pod Security Admission labels and `yaaabk.io/project-name`.
+4. **rbac** — provision the `yaaabk-agent` (read-only plus `pods/exec`) and
+   `yaaabk-deploy` (write on `deployments`, `services`, `configmaps`, `secrets`,
+   `httproutes` and read on `pods`/`pods/log`) ServiceAccounts, Roles, and
+   RoleBindings inside the Project namespace.
+5. **argocd** — create the ArgoCD `Application` for the repository, in
+   `yaaabk` beside the backend.
+6. **persist** — record the Project.
 
 If any step fails the resources created so far are rolled back and no Project is
 recorded, so a failed creation never leaves a half-registered Project.

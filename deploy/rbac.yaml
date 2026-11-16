@@ -1,16 +1,61 @@
-# Namespace-scoped access for the backend, nothing more.
-#
-# Everything the backend does happens in `yaaabk`: it provisions agent Jobs,
-# PVCs and per-attempt Secrets there, and it creates each Project's ArgoCD
-# Application there too. No ClusterRoleBindings exist: the backend can neither
-# read other namespaces' Secrets nor escalate itself, and everything
-# cluster-scoped (namespaces, AppProjects) is managed by ArgoCD from Git
-# instead.
+# Namespace-scoped access for the backend in `yaaabk`, plus narrow cluster-scoped
+# Roles for provisioning Project Namespaces and their per-Project RBAC.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: yaaabk-backend
   namespace: yaaabk
+---
+# Cluster-scoped Namespace lifecycle management: the backend creates, reads and
+# deletes each Project's `yaaabk-<short-uuid>` Namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: yaaabk-backend-namespaces
+rules:
+  - apiGroups: ['']
+    resources: [namespaces]
+    verbs: [create, get, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: yaaabk-backend-namespaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: yaaabk-backend-namespaces
+subjects:
+  - kind: ServiceAccount
+    name: yaaabk-backend
+    namespace: yaaabk
+---
+# Cluster-scoped RBAC provisioning: the backend manages ServiceAccounts, Roles,
+# and RoleBindings inside Project Namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: yaaabk-backend-rbac
+rules:
+  - apiGroups: ['']
+    resources: [serviceaccounts]
+    verbs: [create, get, list, watch, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [create, get, list, watch, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: yaaabk-backend-rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: yaaabk-backend-rbac
+subjects:
+  - kind: ServiceAccount
+    name: yaaabk-backend
+    namespace: yaaabk
 ---
 # Agent execution: Jobs, their working PVCs and the per-attempt GitHub /
 # OpenRouter token Secrets. `secrets` appears twice (create/delete and the

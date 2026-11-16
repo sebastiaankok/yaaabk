@@ -43,6 +43,19 @@ export interface SecretInfo extends ResourceMeta {
 
 export type ServiceAccountInfo = ResourceMeta;
 
+/** A single RBAC policy rule granting verbs on resources within a Role. */
+export interface PolicyRule {
+  apiGroups: string[];
+  resources: string[];
+  resourceNames?: string[];
+  verbs: string[];
+  nonResourceURLs?: string[];
+}
+
+export interface RoleInfo extends ResourceMeta {
+  rules: PolicyRule[];
+}
+
 export interface RoleRef {
   apiGroup: string;
   kind: string;
@@ -219,6 +232,11 @@ export interface K8sClient {
   serviceAccounts: {
     create(namespace: string, name: string): Promise<K8sResult<ServiceAccountInfo>>;
     get(namespace: string, name: string): Promise<K8sResult<ServiceAccountInfo>>;
+    delete(namespace: string, name: string): Promise<K8sResult<void>>;
+  };
+  roles: {
+    create(namespace: string, name: string, rules: PolicyRule[]): Promise<K8sResult<RoleInfo>>;
+    get(namespace: string, name: string): Promise<K8sResult<RoleInfo>>;
     delete(namespace: string, name: string): Promise<K8sResult<void>>;
   };
   roleBindings: {
