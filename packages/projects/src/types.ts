@@ -26,8 +26,8 @@ export interface Project {
   repoFullName: string;
   /** Kubernetes namespace hosting the Project, `yaaabk-<short-uuid>`. */
   namespace: string;
-  /** ArgoCD Application name. */
-  argoAppName: string;
+  /** Commit SHA of the last successful deploy, or `null` if never deployed. */
+  deployedCommitSha: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,8 +77,7 @@ export type ProjectsResult<T> = { ok: true; value: T } | { ok: false; error: Pro
  * `persist` is last: nothing is written to the store until every external
  * resource exists, so a failed creation never leaves a half-registered Project.
  */
-export type ProvisioningStep =
-  'repository' | 'scaffold' | 'namespace' | 'rbac' | 'argocd' | 'persist';
+export type ProvisioningStep = 'repository' | 'scaffold' | 'namespace' | 'rbac' | 'persist';
 
 /**
  * A step lifecycle event, emitted so the UI can show creation progress.
@@ -117,8 +116,7 @@ export interface ProjectsModule {
   remove(id: string): Promise<ProjectsResult<void>>;
   /**
    * Transfers the Project's repository out of YAAABK to a Developer's GitHub
-   * account and repoints ArgoCD at the new location, so the app keeps
-   * deploying after the Project leaves the platform.
+   * account.
    */
   export(id: string, input: ExportProjectInput): Promise<ProjectsResult<Project>>;
 }

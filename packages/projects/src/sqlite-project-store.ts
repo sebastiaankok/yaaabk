@@ -28,23 +28,23 @@ interface ProjectRow {
   repo_url: string;
   repo_full_name: string;
   namespace: string;
-  argo_app_name: string;
+  deployed_commit_sha: string | null;
   created_at: string;
   updated_at: string;
 }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
-  id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL UNIQUE,
-  description    TEXT NOT NULL,
-  skill_level    TEXT NOT NULL,
-  repo_url       TEXT NOT NULL,
-  repo_full_name TEXT NOT NULL,
-  namespace      TEXT NOT NULL,
-  argo_app_name  TEXT NOT NULL,
-  created_at     TEXT NOT NULL,
-  updated_at     TEXT NOT NULL
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL UNIQUE,
+  description        TEXT NOT NULL,
+  skill_level        TEXT NOT NULL,
+  repo_url           TEXT NOT NULL,
+  repo_full_name     TEXT NOT NULL,
+  namespace          TEXT NOT NULL,
+  deployed_commit_sha TEXT,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS projects_created_at ON projects (created_at DESC);
@@ -59,7 +59,7 @@ function toProject(row: ProjectRow): Project {
     repoUrl: row.repo_url,
     repoFullName: row.repo_full_name,
     namespace: row.namespace,
-    argoAppName: row.argo_app_name,
+    deployedCommitSha: row.deployed_commit_sha ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -80,13 +80,21 @@ function isUniqueNameViolation(error: unknown): boolean {
 export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore {
   database.exec(SCHEMA);
 
+  const columns = database.prepare('PRAGMA table_info(projects)').all() as Array<{ name: string }>;
+  if (columns.some((col) => col.name === 'argo_app_name')) {
+    database.exec('ALTER TABLE projects DROP COLUMN argo_app_name');
+  }
+  if (!columns.some((col) => col.name === 'deployed_commit_sha')) {
+    database.exec('ALTER TABLE projects ADD COLUMN deployed_commit_sha TEXT');
+  }
+
   return {
     create(project) {
       try {
         database
           .prepare(
             `INSERT INTO projects
-               (id, name, description, skill_level, repo_url, repo_full_name, namespace, argo_app_name, created_at, updated_at)
+               (id, name, description, skill_level, repo_url, repo_full_name, namespace, deployed_commit_sha, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
@@ -97,7 +105,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
             project.repoUrl,
             project.repoFullName,
             project.namespace,
-            project.argoAppName,
+            project.deployedCommitSha,
             project.createdAt,
             project.updatedAt,
           );
@@ -133,7 +141,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         .prepare(
           `UPDATE projects
              SET name = ?, description = ?, skill_level = ?, repo_url = ?, repo_full_name = ?,
-                 namespace = ?, argo_app_name = ?, created_at = ?, updated_at = ?
+                 namespace = ?, deployed_commit_sha = ?, created_at = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -143,7 +151,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
           project.repoUrl,
           project.repoFullName,
           project.namespace,
-          project.argoAppName,
+          project.deployedCommitSha,
           project.createdAt,
           project.updatedAt,
           project.id,

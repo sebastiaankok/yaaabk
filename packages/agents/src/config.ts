@@ -34,7 +34,9 @@ export const IMPLEMENT_SKILL_PATH = '/app/skills/implement-issue/SKILL.md';
 export const REVIEW_SKILL_PATH = '/app/skills/review-pr/SKILL.md';
 
 function prefix(kind: AgentRunKind): string {
-  return kind === 'review' ? 'agent-review' : 'agent';
+  if (kind === 'review') return 'agent-review';
+  if (kind === 'deploy') return 'yaaabk-deploy';
+  return 'agent';
 }
 
 /** The Job name for a run. */

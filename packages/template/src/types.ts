@@ -34,8 +34,6 @@ export interface TemplateProject {
   repoUrl: string;
   /** Port the scaffolded backend listens on. Defaults to 3000. */
   port?: number;
-  /** ArgoCD Application name. Defaults to the project name. */
-  argoAppName?: string;
   /** Branch the scaffold is pushed to. Defaults to `main`. */
   branch?: string;
   /**

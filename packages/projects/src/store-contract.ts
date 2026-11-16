@@ -29,7 +29,7 @@ export function projectRecord(overrides: Partial<Project> = {}): Project {
     repoUrl: 'https://github.com/acme/todo-app',
     repoFullName: 'acme/todo-app',
     namespace: 'yaaabk-a1b2c3d4',
-    argoAppName: 'todo-app',
+    deployedCommitSha: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

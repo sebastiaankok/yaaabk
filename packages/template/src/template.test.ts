@@ -180,13 +180,12 @@ describe('scaffold error handling', () => {
 });
 
 describe('scaffold git details', () => {
-  it('interpolates the port and ArgoCD name, and pushes the requested branch', async () => {
+  it('interpolates the port and pushes the requested branch', async () => {
     const { module, git } = await scaffoldFixture();
 
     const result = await module.scaffold({
       ...PROJECT,
       port: 8080,
-      argoAppName: 'todo',
       branch: 'scaffold/init',
     });
 
@@ -196,7 +195,6 @@ describe('scaffold git details', () => {
 
     const readme = await readFile(join(result.value.directory, 'README.md'), 'utf8');
     expect(readme).toContain('API port: 8080');
-    expect(readme).toContain('ArgoCD application: todo');
 
     const push = git.calls.find((call) => call.op === 'push');
     expect(push).toMatchObject({ url: PROJECT.repoUrl, branch: 'scaffold/init' });

@@ -75,7 +75,6 @@ describe('applyProvisioningEvent', () => {
       'scaffold',
       'namespace',
       'rbac',
-      'argocd',
       'persist',
     ]);
   });

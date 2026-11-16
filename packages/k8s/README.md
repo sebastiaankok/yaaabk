@@ -24,8 +24,7 @@ Every operation resolves to a `K8sResult` — `{ ok: true, value }` or
 exceptions. Nothing throws across the module boundary.
 
 Supported resources: Namespaces, Secrets, ServiceAccounts, Roles, RoleBindings, Jobs
-(including status watch), PersistentVolumeClaims, and ArgoCD `Application`
-custom resources.
+(including status watch), and PersistentVolumeClaims.
 
 ### Configuration
 
@@ -67,5 +66,4 @@ bun run test:integration   # needs a real kind/minikube kubeconfig
 
 The integration suite is skipped unless `YAAABK_K8S_INTEGRATION=1` (set by the
 `test:integration` script). It needs a reachable kubeconfig and creates and
-deletes a `yaaabk-it-*` namespace. The ArgoCD case additionally requires the
-`Application` CRD and `YAAABK_K8S_INTEGRATION_ARGOCD=1`.
+deletes a `yaaabk-it-*` namespace.

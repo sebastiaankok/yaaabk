@@ -1,7 +1,7 @@
 import type { AgentManager } from '@yaaabk/agents';
 import type { GitHubIssues, GitHubMergeMethod, GitHubPulls } from '@yaaabk/github';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
-import type { Project, ProjectStore } from '@yaaabk/projects';
+import { DEFAULT_BRANCH, type Project, type ProjectStore } from '@yaaabk/projects';
 import { issueNumberFromBranch } from '@yaaabk/shared';
 import {
   AUTOMERGE_LABEL,
@@ -100,7 +100,8 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
     project: Project,
     issue: Issue,
     pullNumber: number,
-  ): Promise<boolean> {
+    fallbackSha: string,
+  ): Promise<{ ok: true; sha: string } | { ok: false }> {
     const input = options.mergeMethod === undefined ? {} : { method: options.mergeMethod };
     const merged = await pulls.mergePullRequest(project.repoFullName, pullNumber, input);
     if (!merged.ok) {
@@ -109,7 +110,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
         pull: pullNumber,
         kind: merged.error.kind,
       });
-      return false;
+      return { ok: false };
     }
     const updated = await issues.update(project.id, issue.id, {
       status: 'closed',
@@ -117,7 +118,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
     });
     if (!updated.ok) {
       logger.error('ci close failed', { projectId: project.id, issueId: issue.id });
-      return false;
+      return { ok: false };
     }
     if (issue.githubNumber !== null) {
       const closed = await githubIssues.updateIssue(project.repoFullName, issue.githubNumber, {
@@ -131,7 +132,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
         });
       }
     }
-    return true;
+    return { ok: true, sha: merged.value.sha ?? fallbackSha };
   }
 
   /** Spawns a fix attempt on the pull request branch, carrying reviewer feedback. */
@@ -205,6 +206,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
         merged: 0,
         reviewSpawned: 0,
         fixSpawned: 0,
+        deploySpawned: 0,
         needsHuman: 0,
       };
       if (!enabled) return { ok: true, value: summary };
@@ -325,12 +327,33 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
                 });
               }
               break;
-            case 'merge':
-              if (await mergeAndClose(project, issue, pull.number)) {
+            case 'merge': {
+              const mergedResult = await mergeAndClose(project, issue, pull.number, pull.headSha);
+              if (mergedResult.ok) {
+                const spawnedDeploy = await agents.spawn(project.id, issue.id, {
+                  kind: 'deploy',
+                  commitSha: mergedResult.sha,
+                  branch: DEFAULT_BRANCH,
+                });
+                if (spawnedDeploy.ok) {
+                  summary.deploySpawned += 1;
+                  logger.info('ci spawned deploy', {
+                    projectId: project.id,
+                    issueId: issue.id,
+                    commitSha: mergedResult.sha,
+                  });
+                } else {
+                  logger.error('ci spawn deploy failed', {
+                    projectId: project.id,
+                    issueId: issue.id,
+                    kind: spawnedDeploy.error.kind,
+                  });
+                }
                 watches.set(key, { ...watch, action: 'merged' });
                 summary.merged += 1;
               }
               break;
+            }
             case 'fix':
               if (action === 'fix-spawned') break;
               if (await spawnFix(project, issue, pull.headRef, reviewBody)) {

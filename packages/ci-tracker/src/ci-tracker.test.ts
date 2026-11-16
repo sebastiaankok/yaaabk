@@ -31,7 +31,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoUrl: `https://github.com/${REPO}`,
     repoFullName: REPO,
     namespace: 'yaaabk-a1b2c3d4',
-    argoAppName: 'todo-app',
+    deployedCommitSha: null,
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
     ...overrides,
@@ -191,20 +191,30 @@ async function review(h: Harness, event: 'approve' | 'request-changes', body = '
 }
 
 describe('poll', () => {
-  it('merges a passing pull request and closes its Issue locally and on GitHub', async () => {
+  it('merges a passing pull request, closes its Issue, and spawns a deploy run', async () => {
     const h = await harness();
     watch(h);
     await review(h, 'approve');
 
     const result = await h.tracker.poll();
 
-    expect(result).toMatchObject({ ok: true, value: { pulls: 1, merged: 1 } });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { pulls: 1, merged: 1, deploySpawned: 1 },
+    });
     expect(h.pulls.merged(REPO, 7)).toBe(true);
     const issue = await h.issues.get(h.projectId, h.issueId);
     expect(issue.ok && issue.value).toMatchObject({ status: 'closed' });
     expect(h.githubIssues.issues(REPO).find((i) => i.number === h.githubNumber)?.state).toBe(
       'closed',
     );
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value).toHaveLength(1);
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      kind: 'deploy',
+      commitSha: 'merge-7',
+      branch: 'main',
+    });
   });
 
   it('spawns a review Agent when checks are green and no review exists', async () => {

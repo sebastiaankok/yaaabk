@@ -76,6 +76,7 @@ export function agentRoutes(agents: AgentManager, projects: ProjectsModule): Hon
       prUrl: typeof input.prUrl === 'string' ? input.prUrl : undefined,
       costCents: asOptionalNumber(input.costCents ?? input.cost_cents),
       logs: typeof input.logs === 'string' ? input.logs : undefined,
+      commitSha: typeof input.commitSha === 'string' ? input.commitSha : undefined,
     });
     return result.ok
       ? c.json(result.value)

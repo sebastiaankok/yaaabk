@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMockK8sClient, KINDS, type K8sObject, type MockK8sClient } from '@yaaabk/k8s';
+import { createMockK8sClient, type K8sObject, type MockK8sClient } from '@yaaabk/k8s';
 import { createFakeGitBackend, createTemplateModule, silentLogger } from '@yaaabk/template';
 import type { FakeGitBackend } from '@yaaabk/template';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -79,9 +79,13 @@ function harness(overrides: HarnessOverrides = {}): Harness {
   return { module, store, k8s, repositories, git, clock };
 }
 
-/** A cluster object that already occupies an Application's name. */
-function existingApplication(name: string, namespace: string): K8sObject {
-  return { ...KINDS.application, metadata: { name, namespace }, spec: {} };
+/** A cluster object that already occupies a ServiceAccount's name. */
+function existingServiceAccount(name: string, namespace: string): K8sObject {
+  return {
+    apiVersion: 'v1',
+    kind: 'ServiceAccount',
+    metadata: { name, namespace },
+  };
 }
 
 let templateDir: string;
@@ -120,7 +124,7 @@ describe('create', () => {
       repoFullName: 'acme/todo-app',
       repoUrl: 'https://github.com/acme/todo-app',
       namespace: 'yaaabk-a1b2c3d4',
-      argoAppName: 'todo-app',
+      deployedCommitSha: null,
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),
     });
@@ -188,6 +192,7 @@ describe('create', () => {
         resources: ['httproutes'],
         verbs: ['get', 'list', 'watch'],
       });
+      expect(agentRole.value.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
     }
 
     const deployRole = await k8s.roles.get(project.namespace, PROJECT_DEPLOY_SERVICE_ACCOUNT);
@@ -218,22 +223,13 @@ describe('create', () => {
         verbs: ['get', 'list'],
       });
       expect(deployRole.value.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
+      // The deploy Job cannot create or delete Namespaces.
+      const allDeployVerbs = deployRole.value.rules.flatMap((r) =>
+        r.resources.includes('namespaces') ? r.verbs : [],
+      );
+      expect(allDeployVerbs).not.toContain('create');
+      expect(allDeployVerbs).not.toContain('delete');
     }
-
-    // The Application lives in `yaaabk` beside the backend and defers to the
-    // shared AppProject, which YAAABK does not create or modify.
-    const application = await k8s.applications.get('yaaabk', 'todo-app');
-    expect(application.ok).toBe(true);
-
-    const argoProject = await k8s.argoProjects.get('yaaabk');
-    expect(argoProject.ok).toBe(false);
-
-    const storedApplication = await k8s.objectApi.read({
-      apiVersion: 'argoproj.io/v1alpha1',
-      kind: 'Application',
-      metadata: { name: 'todo-app', namespace: 'yaaabk' },
-    });
-    expect(storedApplication.spec).toMatchObject({ project: 'yaaabk' });
 
     expect(git.calls).toContainEqual({
       op: 'push',
@@ -303,8 +299,6 @@ describe('create', () => {
       'namespace:completed',
       'rbac:started',
       'rbac:completed',
-      'argocd:started',
-      'argocd:completed',
       'persist:started',
       'persist:completed',
     ]);
@@ -312,7 +306,7 @@ describe('create', () => {
 
   it('rolls back created resources when a later step fails', async () => {
     const { module, store, k8s, repositories } = harness({
-      seed: [existingApplication('todo-app', 'yaaabk')],
+      seed: [existingServiceAccount(PROJECT_DEPLOY_SERVICE_ACCOUNT, 'yaaabk-a1b2c3d4')],
     });
 
     const result = await module.create(INPUT);
@@ -321,7 +315,6 @@ describe('create', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('kubernetes');
     expect(store.list()).toHaveLength(0);
-    expect((await k8s.applications.get('yaaabk', 'todo-app')).ok).toBe(true);
     expect((await k8s.namespaces.get('yaaabk-a1b2c3d4')).ok).toBe(false);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
@@ -380,8 +373,7 @@ describe('get', () => {
     const result = await module.get('missing');
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('not-found');
+    if (!result.ok) expect(result.error.kind).toBe('not-found');
   });
 });
 
@@ -415,8 +407,7 @@ describe('update', () => {
     const result = await module.update(created.value.id, { description: '   ' });
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('invalid-input');
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
   });
 
   it('reports not-found for an unknown id', async () => {
@@ -425,14 +416,13 @@ describe('update', () => {
     const result = await module.update('missing', { description: 'Updated' });
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('not-found');
+    if (!result.ok) expect(result.error.kind).toBe('not-found');
   });
 });
 
 describe('export', () => {
-  it('transfers the repository and repoints the ArgoCD Application', async () => {
-    const { module, store, k8s, repositories, clock } = harness();
+  it('transfers the repository and updates its URL without touching ArgoCD', async () => {
+    const { module, store, repositories, clock } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
     clock.now = new Date('2026-02-01T00:00:00.000Z');
@@ -458,15 +448,6 @@ describe('export', () => {
       fullName: 'acme/todo-app',
       newOwner: 'dev',
       repoName: 'todo',
-    });
-
-    const storedApplication = await k8s.objectApi.read({
-      apiVersion: 'argoproj.io/v1alpha1',
-      kind: 'Application',
-      metadata: { name: 'todo-app', namespace: 'yaaabk' },
-    });
-    expect(storedApplication.spec).toMatchObject({
-      source: { repoURL: 'https://github.com/dev/todo' },
     });
   });
 
@@ -494,8 +475,7 @@ describe('export', () => {
     const result = await module.export('missing', { owner: 'dev' });
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('not-found');
+    if (!result.ok) expect(result.error.kind).toBe('not-found');
   });
 
   it('rejects an invalid owner without touching the repository', async () => {
@@ -506,14 +486,13 @@ describe('export', () => {
     const result = await module.export(created.value.id, { owner: 'Dev_O!' });
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('invalid-input');
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
     expect(repositories.calls).toHaveLength(1); // only the original create
   });
 });
 
 describe('remove', () => {
-  it('tears down the repository, ArgoCD Application, and Namespace, then forgets the project', async () => {
+  it('tears down the repository and Namespace, then forgets the project', async () => {
     const { module, store, k8s, repositories } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
@@ -522,16 +501,14 @@ describe('remove', () => {
 
     expect(result.ok).toBe(true);
     expect(store.get(created.value.id)).toBeUndefined();
-    expect((await k8s.applications.get('yaaabk', created.value.argoAppName)).ok).toBe(false);
     expect((await k8s.namespaces.get(created.value.namespace)).ok).toBe(false);
     expect(repositories.calls).toContainEqual({ op: 'delete', fullName: 'acme/todo-app' });
   });
 
   it('tolerates resources that are already gone', async () => {
-    const { module, k8s } = harness();
+    const { module } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
-    await k8s.applications.delete('yaaabk', created.value.argoAppName);
 
     const result = await module.remove(created.value.id);
 
@@ -544,7 +521,6 @@ describe('remove', () => {
     const result = await module.remove('missing');
 
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.kind).toBe('not-found');
+    if (!result.ok) expect(result.error.kind).toBe('not-found');
   });
 });

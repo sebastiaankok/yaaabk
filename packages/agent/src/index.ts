@@ -13,7 +13,9 @@ export async function main(env: Record<string, string | undefined> = process.env
   const config = loadAgentConfig(env);
   const outcome = await runAgent(config, createDependencies(config));
   if (outcome.ok) {
-    if (config.kind === 'review') {
+    if (config.kind === 'deploy') {
+      console.log(`deploy finished commit ${outcome.commitSha}`);
+    } else if (config.kind === 'review') {
       console.log(`review finished pull request #${config.pullNumber}: ${outcome.prUrl}`);
     } else {
       console.log(`agent finished issue #${config.issueNumber}: ${outcome.prUrl}`);
@@ -21,9 +23,11 @@ export async function main(env: Record<string, string | undefined> = process.env
     return 0;
   }
   const target =
-    config.kind === 'review'
-      ? `pull request #${config.pullNumber}`
-      : `issue #${config.issueNumber}`;
+    config.kind === 'deploy'
+      ? `deploy of ${config.commitSha}`
+      : config.kind === 'review'
+        ? `pull request #${config.pullNumber}`
+        : `issue #${config.issueNumber}`;
   console.error(`agent failed ${target}: ${outcome.reason}`);
   console.error(outcome.output);
   return 1;

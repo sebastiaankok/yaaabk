@@ -92,6 +92,28 @@ describe('createReporter', () => {
     expect(body).toMatchObject({ token: 'run-token', costCents: 25 });
   });
 
+  it('includes commitSha in the report body when the deploy run reports the deployed SHA', async () => {
+    const { calls, fetch } = stubFetch(() => new Response('{}', { status: 200 }));
+    const reporter = createReporter(
+      {
+        ...CONFIG,
+        apiUrl: 'https://api.test',
+        runId: 'run-1',
+        runToken: 'run-token',
+      },
+      { fetch },
+    );
+
+    await reporter.report({
+      prUrl: null,
+      logs: 'deployed',
+      commitSha: 'sha-abc123',
+    });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ token: 'run-token', commitSha: 'sha-abc123' });
+  });
+
   it('omits costCents from the report body when spend is unmeasured', async () => {
     const { calls, fetch } = stubFetch(() => new Response('{}', { status: 200 }));
     const reporter = createReporter(

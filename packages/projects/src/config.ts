@@ -1,18 +1,5 @@
 import type { PolicyRule } from '@yaaabk/k8s';
 
-/**
- * Namespace every Project's ArgoCD Application is created in.
- *
- * The same namespace the backend and ArgoCD Applications live in, so ArgoCD has
- * to watch exactly one namespace for Applications and the backend needs exactly
- * one RoleBinding for them. Agent Jobs run in each Project's own
- * `yaaabk-<id>` namespace.
- */
-export const ARGOCD_APPLICATION_NAMESPACE = 'yaaabk';
-
-/** Shared AppProject every Project Application defers to, managed via GitOps. */
-export const ARGOCD_APP_PROJECT_NAME = 'yaaabk';
-
 /** ServiceAccount the Project's agent Jobs run as. */
 export const PROJECT_AGENT_SERVICE_ACCOUNT = 'yaaabk-agent';
 
@@ -101,27 +88,11 @@ export const PROJECT_PSA_LABELS: Record<string, string> = {
   'pod-security.kubernetes.io/warn': 'restricted',
 };
 
-/** Path within a Project repository ArgoCD syncs from. */
-export const ARGO_SOURCE_PATH = 'deploy';
+/** Path within a Project repository the deploy Job applies from. */
+export const DEPLOY_SOURCE_PATH = 'deploy';
 
-/** ArgoCD destination server; the in-cluster API server. */
-export const ARGO_DESTINATION_SERVER = 'https://kubernetes.default.svc';
-
-/** Branch the scaffold pushes to and ArgoCD tracks. */
+/** Branch the scaffold pushes to and the deploy Job deploys from. */
 export const DEFAULT_BRANCH = 'main';
-
-/**
- * Namespaced resource kinds a Project's ArgoCD Application may manage: exactly
- * what the Svelte+Bun template deploys. Enforced by the per-Project AppProject,
- * so an Application in a Project namespace cannot create other kinds.
- */
-export const ARGO_NAMESPACE_RESOURCES = [
-  { group: 'apps', kind: 'Deployment' },
-  { group: '', kind: 'Service' },
-  { group: 'networking.k8s.io', kind: 'Ingress' },
-  { group: '', kind: 'ConfigMap' },
-  { group: '', kind: 'Secret' },
-];
 
 // Longest Project description, a field constraint shared with the frontend.
 export { MAX_DESCRIPTION_LENGTH } from '@yaaabk/shared';

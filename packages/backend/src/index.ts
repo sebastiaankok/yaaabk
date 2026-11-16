@@ -343,6 +343,9 @@ const AGENT_TOKEN_PERMISSIONS: Record<AgentTokenScope, InstallationTokenPermissi
     contents: 'read',
     pull_requests: 'write',
   },
+  deploy: {
+    contents: 'read',
+  },
 };
 
 /** The GitHub token an agent Job clones and pushes with, scoped to its kind. */

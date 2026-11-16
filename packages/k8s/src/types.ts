@@ -89,58 +89,12 @@ export interface PvcInfo extends ResourceMeta {
   storage: string;
 }
 
-export interface ApplicationInfo extends ResourceMeta {
-  syncStatus: string;
-  healthStatus: string;
-}
-
-/** A destination an ArgoCD AppProject may deploy to. */
-export interface AppProjectDestination {
-  /** API server URL; omitted means the local cluster. */
-  server?: string;
-  /** Namespace the Application may sync into, e.g. `yaaabk-a1b2c3d4`. */
-  namespace: string;
-}
-
-/** A resource kind an ArgoCD AppProject may manage, e.g. `apps/Deployment`. */
-export interface GroupKind {
-  group: string;
-  kind: string;
-}
-
-/**
- * Specification for an ArgoCD `AppProject` custom resource.
- *
- * `AppProject`s are cluster-scoped: the name carries the identity, there is no
- * namespace. A project's AppProject is what pins its Applications to one repo,
- * one cluster and one namespace.
- */
-export interface AppProjectSpec {
-  /** Repository URLs Applications in this project may sync from. */
-  sourceRepos: string[];
-  /** Cluster/namespace pairs Applications in this project may deploy to. */
-  destinations: AppProjectDestination[];
-  /** Namespaced resource kinds Applications in this project may manage. */
-  namespaceResources: GroupKind[];
-  syncPolicy?: {
-    automated?: {
-      prune?: boolean;
-      selfHeal?: boolean;
-    };
-  };
-  labels?: Record<string, string>;
-}
-
-export interface AppProjectInfo extends ResourceMeta {
-  sourceRepos: string[];
-  destinations: AppProjectDestination[];
-  namespaceResources: GroupKind[];
-}
-
 /** A named volume a Job mounts into its container. */
 export interface JobVolume {
   name: string;
-  persistentVolumeClaim: { claimName: string };
+  persistentVolumeClaim?: { claimName: string };
+  /** Ephemeral working volume whose lifetime is the Pod's. */
+  emptyDir?: Record<string, never>;
 }
 
 /** A mount of a {@link JobVolume} at a path inside the container. */
@@ -179,27 +133,6 @@ export interface PvcSpec {
   /** Defaults to `['ReadWriteOnce']`. */
   accessModes?: string[];
   storageClassName?: string;
-  labels?: Record<string, string>;
-}
-
-/** Specification for an ArgoCD `Application` custom resource. */
-export interface ApplicationSpec {
-  project?: string;
-  source: {
-    repoURL: string;
-    path: string;
-    targetRevision?: string;
-  };
-  destination: {
-    server?: string;
-    namespace: string;
-  };
-  syncPolicy?: {
-    automated?: {
-      prune?: boolean;
-      selfHeal?: boolean;
-    };
-  };
   labels?: Record<string, string>;
 }
 
@@ -267,32 +200,5 @@ export interface K8sClient {
     create(namespace: string, name: string, spec: PvcSpec): Promise<K8sResult<PvcInfo>>;
     get(namespace: string, name: string): Promise<K8sResult<PvcInfo>>;
     delete(namespace: string, name: string): Promise<K8sResult<void>>;
-  };
-  applications: {
-    create(
-      namespace: string,
-      name: string,
-      spec: ApplicationSpec,
-    ): Promise<K8sResult<ApplicationInfo>>;
-    get(namespace: string, name: string): Promise<K8sResult<ApplicationInfo>>;
-    /**
-     * Rewrites the Application's spec in place. Used to repoint a Project's
-     * Application at a new repository; deleting and recreating instead would
-     * cascade-delete the resources the Application manages.
-     */
-    update(
-      namespace: string,
-      name: string,
-      spec: ApplicationSpec,
-    ): Promise<K8sResult<ApplicationInfo>>;
-    delete(namespace: string, name: string): Promise<K8sResult<void>>;
-  };
-  /** ArgoCD `AppProject` custom resources; cluster-scoped, so name-only. */
-  argoProjects: {
-    create(name: string, spec: AppProjectSpec): Promise<K8sResult<AppProjectInfo>>;
-    get(name: string): Promise<K8sResult<AppProjectInfo>>;
-    /** Rewrites the AppProject's spec in place, e.g. after a repo transfer. */
-    update(name: string, spec: AppProjectSpec): Promise<K8sResult<AppProjectInfo>>;
-    delete(name: string): Promise<K8sResult<void>>;
   };
 }

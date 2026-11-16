@@ -56,6 +56,8 @@ export interface CiPollSummary {
   reviewSpawned: number;
   /** Fix attempts spawned on a failing pull request. */
   fixSpawned: number;
+  /** Deploy runs spawned after merging a passing pull request. */
+  deploySpawned: number;
   /** Issues escalated to a human after exhausting their attempts. */
   needsHuman: number;
 }

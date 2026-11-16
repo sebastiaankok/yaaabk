@@ -57,6 +57,4 @@ export const KINDS = {
   roleBinding: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding' },
   job: { apiVersion: 'batch/v1', kind: 'Job' },
   pvc: { apiVersion: 'v1', kind: 'PersistentVolumeClaim' },
-  application: { apiVersion: 'argoproj.io/v1alpha1', kind: 'Application' },
-  argoProject: { apiVersion: 'argoproj.io/v1alpha1', kind: 'AppProject' },
 } as const;
