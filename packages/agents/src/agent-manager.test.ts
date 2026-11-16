@@ -236,6 +236,22 @@ describe('spawn', () => {
     expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
   });
 
+  it("passes a fix attempt's reviewer feedback to the Job", async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id, {
+      branch: 'agent/issue-42',
+      reviewFeedback: 'Please rename the helper.',
+    });
+
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'REVIEW_FEEDBACK',
+      value: 'Please rename the helper.',
+    });
+  });
+
   it('refuses an Issue that has not been synced to GitHub', async () => {
     const { manager, issues } = await harness();
     const created = await issues.create({ projectId: 'project-1', title: 'Add login' });

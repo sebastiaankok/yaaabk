@@ -10,6 +10,7 @@ import {
   MIN_POLL_INTERVAL_MS,
   isValidInterval,
 } from './config';
+import { decideAction, type ReviewVerdict } from './decide-action';
 import { consoleLogger, toCiError, type CiTrackerLogger } from './errors';
 import type {
   CiPollSummary,
@@ -55,11 +56,14 @@ const DEFAULT_TIMERS: CiTimers = {
  * Builds the CI Tracker.
  *
  * Each pass walks every Project, lists the pull requests labelled `automerge`,
- * and reacts to the check state of each head commit exactly once: a passing pull
- * request is merged and its Issue closed; a failing one spawns a fix attempt on
- * the same branch until the Issue's attempt budget is spent, after which it is
- * labelled `needs-human`. The head commit is remembered, so a still-failing pull
- * request is not fixed twice.
+ * and reacts to the check state and review verdict of each head commit. Green
+ * checks with no review spawn a review Agent; green checks with an approval
+ * merge the pull request and close its Issue. A request-changes verdict spawns a
+ * fix attempt carrying the reviewer's summary until the rejection threshold or
+ * the Issue's attempt budget is spent, after which it is labelled `needs-human`.
+ * Failing checks spawn a fix attempt under the same budget. The head commit is
+ * remembered, so a still-failing pull request is not fixed twice, and a review
+ * verdict is keyed to the commit it was made against.
  */
 export function createCiTracker(options: CiTrackerOptions): CiTracker {
   const { projects, issues, agents, pulls, githubIssues } = options;
@@ -130,28 +134,66 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
     return true;
   }
 
-  /** Spawns a fix attempt, or escalates once the Issue's budget is spent. */
-  async function fixOrEscalate(
+  /** Spawns a fix attempt on the pull request branch, carrying reviewer feedback. */
+  async function spawnFix(
     project: Project,
     issue: Issue,
     headRef: string,
-  ): Promise<WatchAction | null> {
-    if (issue.attemptCount >= issue.maxAttempts) {
-      await issues.update(project.id, issue.id, { label: 'needs-human' });
-      logger.info('ci escalated to human', { projectId: project.id, issueId: issue.id });
-      return 'needs-human';
-    }
-    const spawned = await agents.spawn(project.id, issue.id, { branch: headRef });
+    reviewFeedback: string | null,
+  ): Promise<boolean> {
+    const spawned = await agents.spawn(project.id, issue.id, {
+      branch: headRef,
+      ...(reviewFeedback === null || reviewFeedback.trim() === '' ? {} : { reviewFeedback }),
+    });
     if (!spawned.ok) {
       logger.error('ci spawn fix failed', {
         projectId: project.id,
         issueId: issue.id,
         kind: spawned.error.kind,
       });
-      return null;
+      return false;
     }
     logger.info('ci spawned fix', { projectId: project.id, issueId: issue.id, branch: headRef });
-    return 'fix-spawned';
+    return true;
+  }
+
+  /** Escalates an Issue to a human. */
+  async function escalate(project: Project, issue: Issue): Promise<void> {
+    await issues.update(project.id, issue.id, { label: 'needs-human' });
+    logger.info('ci escalated to human', { projectId: project.id, issueId: issue.id });
+  }
+
+  /**
+   * The latest review, but only when it was made against `headSha`.
+   *
+   * Returns `ok: false` when the reviews could not be read, so the caller can
+   * leave the watch untouched and retry on the next pass.
+   */
+  async function latestReviewForHead(
+    project: Project,
+    pullNumber: number,
+    headSha: string,
+  ): Promise<
+    { ok: false } | { ok: true; review: { event: ReviewVerdict; body: string; id: number } | null }
+  > {
+    const listed = await pulls.listReviews(project.repoFullName, pullNumber);
+    if (!listed.ok) {
+      logger.error('ci list-reviews failed', {
+        projectId: project.id,
+        pull: pullNumber,
+        kind: listed.error.kind,
+      });
+      return { ok: false };
+    }
+    const latest = listed.value[listed.value.length - 1];
+    if (latest === undefined || latest.commitId !== headSha) return { ok: true, review: null };
+    const event: ReviewVerdict =
+      latest.event === 'approve'
+        ? 'approve'
+        : latest.event === 'request-changes'
+          ? 'request-changes'
+          : 'none';
+    return { ok: true, review: { event, body: latest.body, id: latest.id } };
   }
 
   async function poll(): Promise<CiTrackerResult<CiPollSummary>> {
@@ -161,6 +203,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
         pulls: 0,
         pending: 0,
         merged: 0,
+        reviewSpawned: 0,
         fixSpawned: 0,
         needsHuman: 0,
       };
@@ -211,31 +254,95 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
             issueId: issue.id,
             state: checked.value.state,
             action,
+            rejections: previous?.rejections ?? 0,
+            lastReviewId: previous?.lastReviewId ?? null,
             lastCheckedAt: nowIso(),
           };
-          watches.set(key, watch);
 
           if (checked.value.state === 'pending') {
+            watches.set(key, watch);
             summary.pending += 1;
             continue;
           }
-          if (action !== null) continue;
-          if (pull.draft) continue;
+          if (pull.draft) {
+            watches.set(key, watch);
+            continue;
+          }
 
+          // Only green checks are judged by a review; a verdict is valid only
+          // for the head commit it was made against.
+          let verdict: ReviewVerdict = 'none';
+          let reviewBody: string | null = null;
           if (checked.value.state === 'success') {
-            if (await mergeAndClose(project, issue, pull.number)) {
-              watches.set(key, { ...watch, action: 'merged' });
-              summary.merged += 1;
+            const latest = await latestReviewForHead(project, pull.number, pull.headSha);
+            if (!latest.ok) continue;
+            if (latest.review !== null) {
+              verdict = latest.review.event;
+              reviewBody = latest.review.body;
+              if (latest.review.id !== watch.lastReviewId) {
+                if (latest.review.event === 'request-changes') watch.rejections += 1;
+                watch.lastReviewId = latest.review.id;
+              }
             }
-          } else {
-            const action = await fixOrEscalate(project, issue, pull.headRef);
-            if (action === 'fix-spawned') {
-              watches.set(key, { ...watch, action });
-              summary.fixSpawned += 1;
-            } else if (action === 'needs-human') {
-              watches.set(key, { ...watch, action });
+          }
+          watches.set(key, watch);
+
+          const decision = decideAction(
+            checked.value.state,
+            verdict,
+            watch.rejections,
+            issue.attemptCount,
+            issue.maxAttempts,
+          );
+          if (action === 'merged' || action === 'needs-human') continue;
+
+          switch (decision) {
+            case 'wait':
+              break;
+            case 'spawn-review':
+              if (action === 'review-spawned') break;
+              {
+                const spawned = await agents.spawn(project.id, issue.id, {
+                  kind: 'review',
+                  pullNumber: pull.number,
+                  branch: pull.headRef,
+                });
+                if (!spawned.ok) {
+                  logger.error('ci spawn review failed', {
+                    projectId: project.id,
+                    issueId: issue.id,
+                    pull: pull.number,
+                    kind: spawned.error.kind,
+                  });
+                  break;
+                }
+                watches.set(key, { ...watch, action: 'review-spawned' });
+                summary.reviewSpawned += 1;
+                logger.info('ci spawned review', {
+                  projectId: project.id,
+                  issueId: issue.id,
+                  pull: pull.number,
+                });
+              }
+              break;
+            case 'merge':
+              if (await mergeAndClose(project, issue, pull.number)) {
+                watches.set(key, { ...watch, action: 'merged' });
+                summary.merged += 1;
+              }
+              break;
+            case 'fix':
+              if (action === 'fix-spawned') break;
+              if (await spawnFix(project, issue, pull.headRef, reviewBody)) {
+                watches.set(key, { ...watch, action: 'fix-spawned' });
+                summary.fixSpawned += 1;
+              }
+              break;
+            case 'escalate':
+              await escalate(project, issue);
+              watches.set(key, { ...watch, action: 'needs-human' });
               summary.needsHuman += 1;
-            }
+              break;
           }
         }
       }

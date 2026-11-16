@@ -36,6 +36,7 @@ interface AgentRunRow {
   pvc_name: string | null;
   openrouter_secret_name: string | null;
   branch: string | null;
+  review_feedback: string | null;
   status: string;
   pr_url: string | null;
   logs: string | null;
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   pvc_name       TEXT,
   openrouter_secret_name TEXT,
   branch         TEXT,
+  review_feedback TEXT,
   status         TEXT NOT NULL,
   pr_url         TEXT,
   logs           TEXT,
@@ -85,6 +87,7 @@ function toRun(row: AgentRunRow): StoredAgentRun {
     pvcName: row.pvc_name,
     openrouterSecretName: row.openrouter_secret_name,
     branch: row.branch,
+    reviewFeedback: row.review_feedback,
     status: isAgentRunStatus(row.status) ? row.status : 'queued',
     prUrl: row.pr_url,
     logs: row.logs,
@@ -124,6 +127,7 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
   ensureColumn(database, 'agent_runs', 'branch', 'TEXT');
   ensureColumn(database, 'agent_runs', 'kind', "TEXT NOT NULL DEFAULT 'implement-issue'");
   ensureColumn(database, 'agent_runs', 'pull_number', 'INTEGER');
+  ensureColumn(database, 'agent_runs', 'review_feedback', 'TEXT');
 
   function requireRow(runId: string): AgentRunRow {
     const row = database.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId) as
@@ -140,9 +144,9 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
         .prepare(
           `INSERT INTO agent_runs
              (id, project_id, issue_id, kind, attempt_number, pull_number, job_name, pvc_name,
-              openrouter_secret_name, branch, status, pr_url, logs, cost_cents, token_hash,
-              created_at, started_at, finished_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              openrouter_secret_name, branch, review_feedback, status, pr_url, logs, cost_cents,
+              token_hash, created_at, started_at, finished_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.id,
@@ -155,6 +159,7 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.pvcName,
           run.openrouterSecretName,
           run.branch,
+          run.reviewFeedback,
           run.status,
           run.prUrl,
           run.logs,
@@ -208,7 +213,8 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           `UPDATE agent_runs SET
              project_id = ?, issue_id = ?, kind = ?, attempt_number = ?, pull_number = ?,
              job_name = ?, pvc_name = ?,
-             openrouter_secret_name = ?, branch = ?, status = ?, pr_url = ?, logs = ?,
+             openrouter_secret_name = ?, branch = ?, review_feedback = ?, status = ?, pr_url = ?,
+             logs = ?,
              cost_cents = ?, token_hash = ?, started_at = ?, finished_at = ?
            WHERE id = ?`,
         )
@@ -222,6 +228,7 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.pvcName,
           run.openrouterSecretName,
           run.branch,
+          run.reviewFeedback,
           run.status,
           run.prUrl,
           run.logs,

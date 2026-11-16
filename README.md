@@ -321,14 +321,27 @@ out to `git`, OpenCode and the GitHub API.
 The `@yaaabk/ci-tracker` package closes the agent loop. A background polling loop
 (`createCiTracker`, started by the backend on boot) walks every Project, lists
 the pull requests labelled `automerge`, and reads the combined check state of
-each head commit through the `GitHubPulls` port:
+each head commit plus the latest review through the `GitHubPulls` port:
 
-- **passing** — the pull request is merged and its Issue is closed locally and on
-  GitHub.
+- **green, no review** — a review Agent is spawned to judge the pull request.
+- **green, approved** — the pull request is merged and its Issue is closed
+  locally and on GitHub.
+- **changes requested** — a fix attempt is spawned on the same branch carrying
+  the reviewer's summary as a distinct prompt section, until the rejection count
+  reaches two or the Issue's attempt budget is spent; then the Issue is labelled
+  `needs-human`.
 - **failing** — a fix attempt is spawned on the same branch, up to the Issue's
   attempt budget; once the budget is spent the Issue is labelled `needs-human`
   and no further attempts are made.
 - **pending** — nothing yet; the tracker waits for CI to finish.
+
+The loop policy is extracted into the pure `decideAction` function, so the merge
+gate is table-tested across check states, review verdicts, rejection counts and
+attempt budgets without a cluster or GitHub. A review verdict is keyed to the
+head commit it was made against, so a new push invalidates it and re-triggers a
+review while the rejection counter persists. Only Agent-opened pull requests
+(those with a linked Issue) are gated; human pull requests merge through
+GitHub's normal flow.
 
 A still-failing head commit is remembered, so a fix is spawned exactly once per
 commit. The pull request is mapped back to its Issue by its head branch

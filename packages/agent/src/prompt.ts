@@ -9,6 +9,7 @@ import type { AgentIssue } from './ports';
  * image ships, which the prompt points OpenCode at.
  */
 export function buildImplementPrompt(issue: AgentIssue, config: AgentConfig): string {
+  const feedback = config.reviewFeedback?.trim();
   return [
     `Implement GitHub issue #${issue.number}: ${issue.title}`,
     '',
@@ -19,6 +20,9 @@ export function buildImplementPrompt(issue: AgentIssue, config: AgentConfig): st
     '',
     `Repository: ${config.repoUrl}`,
     '',
+    ...(feedback === undefined || feedback === ''
+      ? []
+      : ['A previous attempt was rejected. Reviewer feedback:', feedback, '']),
     'Issue body:',
     issue.body.trim() === '' ? '(no description)' : issue.body,
   ].join('\n');

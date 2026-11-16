@@ -68,6 +68,11 @@ export interface AgentRun {
   attemptNumber: number;
   /** The pull request a review run judges, once dispatched. */
   pullNumber: number | null;
+  /**
+   * The reviewer's summary a fix attempt must address, when it was spawned in
+   * response to a request-changes review. `null` for a fresh implement attempt.
+   */
+  reviewFeedback: string | null;
   /** The Kubernetes Job name, once the attempt has been dispatched. */
   jobName: string | null;
   /** The PersistentVolumeClaim holding the attempt's working tree, once dispatched. */
@@ -126,6 +131,11 @@ export interface SpawnOptions {
    * fresh from the default branch.
    */
   branch?: string;
+  /**
+   * Reviewer summary a fix attempt must address. Rendered as a distinct prompt
+   * section by the agent Job; the Issue body is left untouched.
+   */
+  reviewFeedback?: string;
 }
 
 /**
