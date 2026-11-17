@@ -52,6 +52,19 @@ function send(ws: WSContext, message: TerminalServerMessage): void {
   if (ws.readyState === 1) ws.send(JSON.stringify(message));
 }
 
+/**
+ * Whether two events belong to the same browser socket.
+ *
+ * Hono's Bun adapter constructs a fresh `WSContext` wrapper for every event, so
+ * the wrappers are never identical even for one connection. Compare the raw
+ * socket instead, falling back to identity for adapters that do not expose it.
+ */
+function sameBrowser(stored: WSContext | null, incoming: WSContext): boolean {
+  if (stored === null) return false;
+  if (stored === incoming) return true;
+  return stored.raw !== undefined && stored.raw === incoming.raw;
+}
+
 function parseBrowserMessage(raw: unknown): BrowserTerminalMessage | null {
   if (typeof raw !== 'string') return null;
   try {
@@ -322,7 +335,7 @@ export function grillRoutes(
       },
       onMessage(event, ws) {
         const entry = terminals.get(sessionId);
-        if (entry === undefined || entry.browser !== ws) return;
+        if (entry === undefined || !sameBrowser(entry.browser, ws)) return;
         const message = parseBrowserMessage(event.data);
         if (message === null) return;
         void sessions.touch(sessionId);
@@ -334,7 +347,7 @@ export function grillRoutes(
         // refresh reconnects to the same session. Finish, Cancel or a runtime
         // failure closes it.
         const entry = terminals.get(sessionId);
-        if (entry?.browser === ws) entry.browser = null;
+        if (entry !== undefined && sameBrowser(entry.browser, ws)) entry.browser = null;
       },
     });
   });

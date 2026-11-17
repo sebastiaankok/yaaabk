@@ -721,4 +721,46 @@ describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
     expect(bridge.closed).toBe(true);
     expect(second.closed).toEqual({ code: 1000, reason: 'session ended' });
   });
+
+  it('forwards input when the adapter wraps each event in a new WSContext', async () => {
+    const bridge = fakeTerminalBridge();
+    let events: WSEvents | undefined;
+    const upgrade = ((_c: Parameters<UpgradeWebSocket>[0], nextEvents: WSEvents) => {
+      events = nextEvents;
+      return new Response(null);
+    }) as unknown as UpgradeWebSocket;
+    const context = createTestContext(undefined, undefined, {
+      upgradeWebSocket: upgrade,
+      grillRoutesOptions: { terminalBridgeFactory: bridge.factory },
+    });
+    const session = await signIn(context);
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await request(context, session, `/api/projects/${projectId}/grill/${started.id}/terminal`);
+
+    // Hono's Bun adapter hands every callback a fresh wrapper around the same
+    // raw socket; identity comparison would silently drop all browser input.
+    const browser = fakeWebSocket();
+    const raw = {};
+    const opened = { ...browser.ws, raw } as unknown as WSContext;
+    const messaged = { ...browser.ws, raw } as unknown as WSContext;
+    expect(opened).not.toBe(messaged);
+
+    events!.onOpen!(new Event('open'), opened);
+    events!.onMessage!(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'input', data: 'y' }),
+      }),
+      messaged,
+    );
+    events!.onMessage!(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'resize', columns: 120, rows: 40 }),
+      }),
+      messaged,
+    );
+
+    expect(bridge.input).toEqual(['y']);
+    expect(bridge.resize).toEqual([{ columns: 120, rows: 40 }]);
+  });
 });
