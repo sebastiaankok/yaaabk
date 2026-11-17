@@ -11,6 +11,7 @@ Targets the `k3s-home` cluster (kubeconfig `~/.kube/configs/k3s.yaml`, context
 
    ```sh
    docker buildx build --platform linux/amd64 \
+     --target runtime \
      -f packages/backend/Dockerfile \
      -t ghcr.io/sebastiaankok/yaaabk-backend:0.1.0 --push .
    docker buildx build --platform linux/amd64 \
@@ -20,6 +21,9 @@ Targets the `k3s-home` cluster (kubeconfig `~/.kube/configs/k3s.yaml`, context
      -f packages/agent/Dockerfile \
      -t ghcr.io/sebastiaankok/yaaabk-agent:0.1.0 --push .
    ```
+
+   Deployments use the backend's `runtime` stage; the `dev` stage (with ttyd
+   and OpenCode) exists only for `docker compose`.
 
    The frontend's `PUBLIC_API_BASE_URL` is read from the server process env at
    startup (SvelteKit resolves `$app/env/public` at runtime; the deploy value

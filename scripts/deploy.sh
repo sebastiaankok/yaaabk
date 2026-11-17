@@ -45,20 +45,29 @@ done
 build_and_push() {
   local name="$1"
   local dockerfile="$2"
+  local target="${3:-}"
   if [ "$SKIP_BUILD" = "1" ]; then
     echo "▶ skipping build of $name:$TAG"
     return
   fi
-  echo "▶ building $name:$TAG ($PLATFORM)"
+  local target_args=()
+  if [ -n "$target" ]; then
+    target_args=(--target "$target")
+  fi
+  echo "▶ building $name:$TAG ($PLATFORM${target:+ from $target})"
   docker buildx build \
     --platform "$PLATFORM" \
     --pull \
     -f "$dockerfile" \
+    ${target_args[@]+"${target_args[@]}"} \
     -t "$REGISTRY/yaaabk-$name:$TAG" \
     --push .
 }
 
-build_and_push backend packages/backend/Dockerfile
+# Production runs grill sessions as Kubernetes Pods, so the backend image is the
+# `runtime` stage: no ttyd or OpenCode download. The dev stage is only for
+# docker compose.
+build_and_push backend packages/backend/Dockerfile runtime
 build_and_push frontend packages/frontend/Dockerfile
 build_and_push agent packages/agent/Dockerfile
 
