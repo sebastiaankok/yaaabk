@@ -48,6 +48,10 @@ export function buildGrillSessionPrompt(input: GrillSessionPromptInput): string 
   if (input.repoFullName !== undefined && input.repoFullName !== null) {
     lines.push(`Repository: ${input.repoFullName}`);
   }
+  lines.push(
+    '',
+    'You are running inside a Pod in the Project Namespace with the cloned repository in your workspace. When a question can be answered by reading the code or by inspecting the running workloads, inspect it instead of asking the Developer. Use read-only `kubectl` for pods, logs, deployments, services, configmaps, events and HTTPRoutes. You cannot read Secrets and you must not change the cluster.',
+  );
   lines.push('', "The Developer's idea:", '"""', input.idea.trim(), '"""');
   if (
     input.activePlan !== undefined &&

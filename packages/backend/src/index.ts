@@ -24,6 +24,7 @@ import {
 import {
   createGrillMeModule,
   createGrillSessionsModule,
+  createKubernetesSessionRuntime,
   createLocalSessionRuntime,
   DEFAULT_GRILL_MODEL,
 } from '@yaaabk/grill-me';
@@ -64,6 +65,7 @@ import {
   type ResolvedGitHubToken,
 } from './github-token';
 import { createOpenRouterSessionKeys } from './session-keys';
+import { resolveSessionRuntimeMode } from './session-runtime';
 
 /** Resolves the HS256 secret, generating an ephemeral one for local dev. */
 function resolveAuthSecret(): string {
@@ -402,24 +404,44 @@ const defaultModel = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL;
 const costControlConfig = loadCostControlConfig(process.env);
 
 /**
- * Interactive sessions run as local ttyd + `opencode mini` child processes in
- * this slice. The Kubernetes adapter arrives with its own slice and only has to
- * satisfy the same SessionRuntime port.
+ * Interactive sessions run as hardened Pods in the Project Namespace when
+ * deployed, and as local ttyd + `opencode mini` child processes when
+ * developing. Both adapters satisfy the same SessionRuntime port.
  */
-const sessionRuntime = createLocalSessionRuntime({
-  ...(process.env['YAAABK_TTYD_BIN'] === undefined
-    ? {}
-    : { ttydCommand: process.env['YAAABK_TTYD_BIN'] }),
-  ...(process.env['YAAABK_OPENCODE_BIN'] === undefined
-    ? {}
-    : { opencodeCommand: process.env['YAAABK_OPENCODE_BIN'] }),
-  ...(process.env['YAAABK_SESSION_CWD'] === undefined
-    ? {}
-    : { cwd: process.env['YAAABK_SESSION_CWD'] }),
-  logger: {
-    info: (message, fields) => console.info(message, fields ?? ''),
-  },
-});
+const sessionRuntimeMode = resolveSessionRuntimeMode(process.env);
+const sessionImage = process.env['YAAABK_SESSION_IMAGE'] ?? process.env['YAAABK_AGENT_IMAGE'];
+if (sessionRuntimeMode === 'kubernetes' && (sessionImage === undefined || sessionImage === '')) {
+  throw new Error(
+    'YAAABK_SESSION_IMAGE (or YAAABK_AGENT_IMAGE) must name the shared OpenCode runtime image',
+  );
+}
+const sessionRuntime =
+  sessionRuntimeMode === 'kubernetes'
+    ? createKubernetesSessionRuntime({
+        k8s,
+        image: sessionImage!,
+        backendNamespace: process.env['YAAABK_NAMESPACE'] ?? 'yaaabk',
+        ...(process.env['YAAABK_KUBERNETES_API_CIDR'] === undefined
+          ? {}
+          : { kubernetesApiCidr: process.env['YAAABK_KUBERNETES_API_CIDR'] }),
+        logger: {
+          info: (message, fields) => console.info(message, fields ?? ''),
+        },
+      })
+    : createLocalSessionRuntime({
+        ...(process.env['YAAABK_TTYD_BIN'] === undefined
+          ? {}
+          : { ttydCommand: process.env['YAAABK_TTYD_BIN'] }),
+        ...(process.env['YAAABK_OPENCODE_BIN'] === undefined
+          ? {}
+          : { opencodeCommand: process.env['YAAABK_OPENCODE_BIN'] }),
+        ...(process.env['YAAABK_SESSION_CWD'] === undefined
+          ? {}
+          : { cwd: process.env['YAAABK_SESSION_CWD'] }),
+        logger: {
+          info: (message, fields) => console.info(message, fields ?? ''),
+        },
+      });
 const sessionKeys = createOpenRouterSessionKeys({
   credentials: () => settings.credentials(),
   ...(process.env['OPENROUTER_MANAGEMENT_KEY'] === undefined
@@ -432,12 +454,26 @@ const sessionKeys = createOpenRouterSessionKeys({
   },
 });
 
+/**
+ * The short-lived, contents:read token a session's clone init container uses.
+ * A Kubernetes session cannot start without one: an empty workspace would make
+ * the grilling generic rather than grounded in the Project's code.
+ */
+const resolveGithubTokenForSessions = async (): Promise<string> => {
+  const resolved = await resolveGithubToken(settings, { permissions: { contents: 'read' } });
+  if (!resolved.ok) throw new Error(resolved.message);
+  return resolved.token;
+};
+
 const grillSessions = createGrillSessionsModule({
   runtime: sessionRuntime,
   plans,
   issues,
   keys: sessionKeys,
   defaultModel,
+  ...(sessionRuntimeMode === 'kubernetes'
+    ? { cloneToken: async () => resolveGithubTokenForSessions() }
+    : {}),
   ...(process.env['YAAABK_SESSION_API_URL'] === undefined
     ? {}
     : { apiUrl: process.env['YAAABK_SESSION_API_URL'] }),

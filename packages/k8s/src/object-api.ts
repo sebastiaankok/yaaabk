@@ -57,4 +57,6 @@ export const KINDS = {
   roleBinding: { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'RoleBinding' },
   job: { apiVersion: 'batch/v1', kind: 'Job' },
   pvc: { apiVersion: 'v1', kind: 'PersistentVolumeClaim' },
+  pod: { apiVersion: 'v1', kind: 'Pod' },
+  networkPolicy: { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy' },
 } as const;

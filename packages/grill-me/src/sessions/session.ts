@@ -79,6 +79,8 @@ export interface StartGrillSessionInput {
   /** The Project's active Plan, when it has one, used as session context. */
   activePlan?: string | null;
   repoFullName?: string | null;
+  /** The Project's Kubernetes Namespace, for the Kubernetes runtime adapter. */
+  namespace?: string | null;
 }
 
 export type GrillSessionErrorKind =
@@ -152,6 +154,12 @@ export interface GrillSessionsModuleOptions {
   apiUrl?: string;
   /** Mints the per-session report token. Defaults to 32 random bytes. */
   tokens?: () => string;
+  /**
+   * Mints the short-lived, contents:read GitHub token a session clones its
+   * repository with. Omitted in local development, where the checkout already
+   * exists.
+   */
+  cloneToken?: (input: { projectId: string; repoFullName: string }) => Promise<string | undefined>;
   clock?: () => Date;
   ids?: () => string;
   logger?: {
@@ -230,6 +238,7 @@ export function createGrillSessionsModule(
   const apiUrl =
     options.apiUrl ??
     process.env['YAAABK_SESSION_API_URL'] ??
+    process.env['YAAABK_API_URL'] ??
     `http://127.0.0.1:${process.env['PORT'] ?? '3000'}`;
   const sessions = new Map<string, SessionRecord>();
 
@@ -398,10 +407,46 @@ export function createGrillSessionsModule(
         repoFullName: input.repoFullName ?? null,
       });
 
+      let gitToken: string | undefined;
+      if (
+        options.cloneToken !== undefined &&
+        input.repoFullName !== undefined &&
+        input.repoFullName !== null
+      ) {
+        try {
+          gitToken = await options.cloneToken({
+            projectId: input.projectId,
+            repoFullName: input.repoFullName,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error('grill session clone token mint failed', {
+            sessionId,
+            projectId: input.projectId,
+            message,
+          });
+          if (openRouterKeyHash !== null && options.keys !== undefined) {
+            try {
+              await options.keys.revoke(openRouterKeyHash);
+            } catch {
+              // Best effort: the start is already failing.
+            }
+          }
+          return fail('start', 'start-failed', `Could not create the repository token: ${message}`);
+        }
+      }
+
       const started = await options.runtime.start({
         sessionId,
         projectId: input.projectId,
         projectName: input.projectName,
+        ...(input.namespace === undefined || input.namespace === null
+          ? {}
+          : { namespace: input.namespace }),
+        ...(input.repoFullName === undefined || input.repoFullName === null
+          ? {}
+          : { repoFullName: input.repoFullName }),
+        ...(gitToken === undefined ? {} : { gitToken }),
         idea: input.idea,
         skillLevel: input.skillLevel,
         prompt,

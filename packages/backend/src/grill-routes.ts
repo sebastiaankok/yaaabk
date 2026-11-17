@@ -185,6 +185,7 @@ export function grillRoutes(
       lastModel: project.lastModel,
       activePlan: active.value?.contentMarkdown ?? null,
       repoFullName: project.repoFullName,
+      namespace: project.namespace,
     });
     if (!result.ok) return fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
 

@@ -36,6 +36,15 @@ export interface SessionRuntimeSpec {
   sessionId: string;
   projectId: string;
   projectName: string;
+  /** The Project's Kubernetes Namespace. Required by the Kubernetes adapter. */
+  namespace?: string;
+  /** The Project's repository, `owner/name`. Required to clone in Kubernetes. */
+  repoFullName?: string;
+  /**
+   * Short-lived, read-only token the runtime clones the repository with. The
+   * Kubernetes adapter mounts it only into the clone init container.
+   */
+  gitToken?: string;
   idea: string;
   skillLevel: SkillLevel;
   /** The opening prompt, already built by the orchestrator. */

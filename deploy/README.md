@@ -73,13 +73,25 @@ kubectl --context k3s-home auth can-i --list \
 ## Notes
 
 - The backend talks to the cluster in-cluster as ServiceAccount
-  `yaaabk-backend` with three narrow cluster-scoped ClusterRoles of its own:
+  `yaaabk-backend` with four narrow cluster-scoped ClusterRoles of its own:
   - `yaaabk-backend-namespaces` (`create`, `get`, `delete` on Namespaces)
   - `yaaabk-backend-rbac` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on ServiceAccounts and RoleBindings in Project Namespaces, plus `bind` on
     only the `yaaabk-project-agent` and `yaaabk-project-deploy` ClusterRoles)
   - `yaaabk-backend-agent` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on Secrets, PVCs, and Jobs across Project Namespaces).
+  - `yaaabk-backend-sessions` (`create`, `get`, `list`, `watch`, `delete` on
+    Pods and NetworkPolicies across Project Namespaces). Session Secrets reuse
+    the `yaaabk-backend-agent` grant.
+- Grill-Me Sessions run as one Pod per session in the Project's Namespace under
+  its `yaaabk-agent` ServiceAccount, with Pod Security `restricted` and explicit
+  CPU and memory limits. An init container clones the Project repository with a
+  short-lived `contents:read` GitHub token; that Secret is never mounted into
+  the main container, which runs ttyd and `opencode mini` in `/workspace/repo`.
+  A per-session NetworkPolicy admits the backend pod only and permits egress to
+  the backend, the Kubernetes API (`YAAABK_KUBERNETES_API_CIDR`), HTTPS for
+  GitHub/OpenRouter, and DNS. `YAAABK_SESSION_RUNTIME=kubernetes` selects the
+  adapter; `YAAABK_SESSION_IMAGE` must name the shared agent image.
 - Per-Project permissions live in the fixed `yaaabk-project-agent` and
   `yaaabk-project-deploy` ClusterRoles. Project creation only creates the
   ServiceAccounts and a RoleBinding to each, so the backend never needs to hold

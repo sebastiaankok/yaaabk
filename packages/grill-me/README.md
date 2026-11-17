@@ -6,9 +6,9 @@ The Grill-Me Module: YAAABK's OpenCode bridge, in two generations.
 browser-facing lifecycle of a real terminal session: one live session per
 Project, start/get/cancel, activity tracking and the `SessionRuntime` port. The
 local adapter runs ttyd in front of `opencode mini` as child processes; the
-Kubernetes adapter will satisfy the same contract. `createTerminalBridge`
-translates the browser's JSON protocol to ttyd's `tty` frames, and
-`sessionRuntimeContract` is the shared suite every adapter runs.
+Kubernetes adapter runs one hardened Pod per session in the Project Namespace.
+`createTerminalBridge` translates the browser's JSON protocol to ttyd's `tty`
+frames, and `sessionRuntimeContract` is the shared suite every adapter runs.
 
 The opening prompt tells the agent to load the `grill-me` skill before anything
 else. That skill runs the interview, and three bundled skills carry the session
@@ -94,6 +94,35 @@ finished session returns the same Plan and Issues. Cancel discards the drafts.
 `createLocalSessionRuntime()` waits for ttyd readiness before resolving a start
 and reports the failing process's stderr on start failure. Host development uses
 `ttyd` and `opencode` from `PATH`; the agent image pins both.
+
+### Kubernetes sessions
+
+```ts
+import { createKubernetesSessionRuntime } from '@yaaabk/grill-me';
+
+const sessions = createGrillSessionsModule({
+  runtime: createKubernetesSessionRuntime({ k8s, image: agentImage }),
+  cloneToken: async ({ repoFullName }) => mintContentsReadToken(repoFullName),
+  defaultModel: 'openrouter/anthropic/claude-sonnet-4.5',
+});
+```
+
+Each start creates a NetworkPolicy, a short-lived clone-token Secret, a
+per-session credential Secret and one Pod in the Project Namespace. The Pod runs
+under the Project's `yaaabk-agent` ServiceAccount with Pod Security
+`restricted`; its init container clones the repository with a `contents:read`
+token and rewrites the remote to a credential-free URL, and the token Secret is
+never mounted into the main container. The main container runs ttyd and
+`opencode mini` in `/workspace/repo` with the opening prompt, selected model and
+replay enabled. The adapter waits for the Pod to become Ready and for ttyd to
+accept connections, mapping a container waiting reason (for example
+`ErrImagePull`) to the start error. Stop deletes the Pod, NetworkPolicy and both
+Secrets.
+
+The NetworkPolicy admits ingress only from the backend Pod and permits egress
+only to the backend, the Kubernetes API CIDR, HTTPS (GitHub and OpenRouter) and
+DNS. The session's ServiceAccount grants read-only workload inspection plus
+`pods/exec`, and never Secret reads.
 
 ## Usage (legacy)
 

@@ -53,6 +53,21 @@ spec:
               value: http://yaaabk-backend.yaaabk.svc.cluster.local:3000
             - name: YAAABK_AGENT_IMAGE
               value: ghcr.io/sebastiaankok/yaaabk-agent:0.1.0
+            # Grill-Me Sessions run as per-session Pods in the Project Namespace,
+            # using the same pinned OpenCode runtime as Agent Jobs. The backend
+            # proxy reaches them through the cluster network; the reporting MCP
+            # server posts drafts back over the internal Service.
+            - name: YAAABK_SESSION_RUNTIME
+              value: kubernetes
+            - name: YAAABK_SESSION_IMAGE
+              value: ghcr.io/sebastiaankok/yaaabk-agent:0.1.0
+            - name: YAAABK_SESSION_API_URL
+              value: http://yaaabk-backend.yaaabk.svc.cluster.local:3000
+            - name: YAAABK_NAMESPACE
+              value: yaaabk
+            # k3s exposes its API on the `kubernetes` Service ClusterIP.
+            - name: YAAABK_KUBERNETES_API_CIDR
+              value: 10.43.0.1/32
             # The scaffold template bundled into the image (see backend
             # Dockerfile). Must name the template directory itself, not the
             # directory holding it: the scaffolder copies this directory's

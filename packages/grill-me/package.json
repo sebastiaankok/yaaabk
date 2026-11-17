@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@yaaabk/issues": "workspace:*",
+    "@yaaabk/k8s": "workspace:*",
     "@yaaabk/plans": "workspace:*",
     "@yaaabk/shared": "workspace:*"
   },

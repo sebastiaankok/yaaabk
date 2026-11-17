@@ -136,6 +136,85 @@ export interface PvcSpec {
   labels?: Record<string, string>;
 }
 
+/** One container in a Pod, shared by the main and init containers. */
+export interface PodContainerSpec {
+  name: string;
+  image: string;
+  command?: string[];
+  args?: string[];
+  /** Working directory inside the container. */
+  workingDir?: string;
+  env?: Record<string, string>;
+  /** Secrets whose keys are exposed as environment variables. */
+  envFrom?: Array<{ secretRef: { name: string } }>;
+  volumeMounts?: JobVolumeMount[];
+  resources?: {
+    requests?: Record<string, string>;
+    limits?: Record<string, string>;
+  };
+  securityContext?: Record<string, unknown>;
+}
+
+/** Specification for a session Pod. */
+export interface PodSpec {
+  containers: PodContainerSpec[];
+  initContainers?: PodContainerSpec[];
+  serviceAccountName?: string;
+  restartPolicy?: 'Always' | 'OnFailure' | 'Never';
+  volumes?: JobVolume[];
+  labels?: Record<string, string>;
+  /** Pod-level security context, e.g. `runAsNonRoot` and seccomp. */
+  securityContext?: Record<string, unknown>;
+}
+
+/** Coarse Pod lifecycle state, collapsed from Kubernetes' phase. */
+export type PodPhase = 'pending' | 'running' | 'succeeded' | 'failed' | 'unknown';
+
+export interface PodInfo extends ResourceMeta {
+  phase: PodPhase;
+  /** The Pod IP the backend proxy connects to, when assigned. */
+  podIP: string | null;
+  ready: boolean;
+  /**
+   * The first container waiting reason, e.g. `ErrImagePull: manifest unknown`.
+   * Names the real cause when a session Pod cannot start.
+   */
+  waitingReason: string | null;
+}
+
+/** A single peer a NetworkPolicy allows traffic from or to. */
+export interface NetworkPolicyPeer {
+  namespaceSelector?: { matchLabels?: Record<string, string> };
+  podSelector?: { matchLabels?: Record<string, string> };
+  ipBlock?: { cidr: string; except?: string[] };
+}
+
+/** A port a NetworkPolicy allows. */
+export interface NetworkPolicyPort {
+  protocol?: 'TCP' | 'UDP' | 'SCTP';
+  port: number | string;
+  endPort?: number;
+}
+
+export interface NetworkPolicyRule {
+  from?: NetworkPolicyPeer[];
+  to?: NetworkPolicyPeer[];
+  ports?: NetworkPolicyPort[];
+}
+
+export interface NetworkPolicySpec {
+  podSelector: { matchLabels?: Record<string, string> };
+  policyTypes?: Array<'Ingress' | 'Egress'>;
+  ingress?: NetworkPolicyRule[];
+  egress?: NetworkPolicyRule[];
+  /** Labels on the NetworkPolicy itself, for reconciliation listing. */
+  labels?: Record<string, string>;
+}
+
+export interface NetworkPolicyInfo extends ResourceMeta {
+  policyTypes: string[];
+}
+
 /**
  * The K8s Client Module's public contract.
  *
@@ -199,6 +278,25 @@ export interface K8sClient {
   pvcs: {
     create(namespace: string, name: string, spec: PvcSpec): Promise<K8sResult<PvcInfo>>;
     get(namespace: string, name: string): Promise<K8sResult<PvcInfo>>;
+    delete(namespace: string, name: string): Promise<K8sResult<void>>;
+  };
+  pods: {
+    create(namespace: string, name: string, spec: PodSpec): Promise<K8sResult<PodInfo>>;
+    get(namespace: string, name: string): Promise<K8sResult<PodInfo>>;
+    list(namespace: string, labels?: Record<string, string>): Promise<K8sResult<PodInfo[]>>;
+    delete(namespace: string, name: string): Promise<K8sResult<void>>;
+  };
+  networkPolicies: {
+    create(
+      namespace: string,
+      name: string,
+      spec: NetworkPolicySpec,
+    ): Promise<K8sResult<NetworkPolicyInfo>>;
+    get(namespace: string, name: string): Promise<K8sResult<NetworkPolicyInfo>>;
+    list(
+      namespace: string,
+      labels?: Record<string, string>,
+    ): Promise<K8sResult<NetworkPolicyInfo[]>>;
     delete(namespace: string, name: string): Promise<K8sResult<void>>;
   };
 }

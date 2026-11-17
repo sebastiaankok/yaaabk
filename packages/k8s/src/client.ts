@@ -9,6 +9,12 @@ import type {
   K8sClient,
   K8sResult,
   NamespaceInfo,
+  NetworkPolicyInfo,
+  NetworkPolicySpec,
+  PodContainerSpec,
+  PodInfo,
+  PodPhase,
+  PodSpec,
   PolicyRule,
   PvcInfo,
   RoleBindingInfo,
@@ -155,6 +161,124 @@ function toPvcInfo(object: K8sObject): PvcInfo {
     labels: labelsOf(object.metadata),
     phase: stringField(object, ['status', 'phase']) ?? 'Pending',
     storage: stringField(object, ['spec', 'resources', 'requests', 'storage']) ?? '',
+  };
+}
+
+const POD_PHASES: ReadonlySet<string> = new Set(['pending', 'running', 'succeeded', 'failed']);
+
+function toPodPhase(object: K8sObject): PodPhase {
+  const phase = stringField(object, ['status', 'phase'])?.toLowerCase() ?? '';
+  return POD_PHASES.has(phase) ? (phase as PodPhase) : 'unknown';
+}
+
+/** Reads the first container waiting reason, which names a real start failure. */
+function podWaitingReason(object: K8sObject): string | null {
+  const status = object.status as
+    | {
+        initContainerStatuses?: Array<{
+          state?: { waiting?: { reason?: string; message?: string } };
+        }>;
+        containerStatuses?: Array<{
+          state?: { waiting?: { reason?: string; message?: string } };
+        }>;
+      }
+    | undefined;
+  const statuses = [...(status?.initContainerStatuses ?? []), ...(status?.containerStatuses ?? [])];
+  for (const container of statuses) {
+    const waiting = container.state?.waiting;
+    if (waiting === undefined) continue;
+    const reason = waiting.reason?.trim() ?? '';
+    const message = waiting.message?.trim() ?? '';
+    if (reason !== '' && message !== '') return `${reason}: ${message}`;
+    if (reason !== '') return reason;
+    if (message !== '') return message;
+  }
+  return null;
+}
+
+function podReady(object: K8sObject): boolean {
+  const conditions = (
+    object.status as { conditions?: Array<{ type?: string; status?: string }> } | undefined
+  )?.conditions;
+  return (
+    Array.isArray(conditions) &&
+    conditions.some((condition) => condition.type === 'Ready' && condition.status === 'True')
+  );
+}
+
+function toPodInfo(object: K8sObject): PodInfo {
+  return {
+    name: object.metadata.name,
+    namespace: object.metadata.namespace,
+    labels: labelsOf(object.metadata),
+    phase: toPodPhase(object),
+    podIP: stringField(object, ['status', 'podIP']) ?? null,
+    ready: podReady(object),
+    waitingReason: podWaitingReason(object),
+  };
+}
+
+function toNetworkPolicyInfo(object: K8sObject): NetworkPolicyInfo {
+  const policyTypes = (object.spec as { policyTypes?: unknown } | undefined)?.policyTypes;
+  return {
+    name: object.metadata.name,
+    namespace: object.metadata.namespace,
+    labels: labelsOf(object.metadata),
+    policyTypes: Array.isArray(policyTypes)
+      ? policyTypes.filter((item): item is string => typeof item === 'string')
+      : [],
+  };
+}
+
+function containerManifest(container: PodContainerSpec): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    name: container.name,
+    image: container.image,
+  };
+  if (container.command !== undefined) manifest.command = container.command;
+  if (container.args !== undefined) manifest.args = container.args;
+  if (container.workingDir !== undefined) manifest.workingDir = container.workingDir;
+  if (container.env !== undefined) {
+    manifest.env = Object.entries(container.env).map(([name, value]) => ({ name, value }));
+  }
+  if (container.envFrom !== undefined) manifest.envFrom = container.envFrom;
+  if (container.volumeMounts !== undefined) manifest.volumeMounts = container.volumeMounts;
+  if (container.resources !== undefined) manifest.resources = container.resources;
+  if (container.securityContext !== undefined) manifest.securityContext = container.securityContext;
+  return manifest;
+}
+
+/** Builds the Pod manifest for one session runtime. */
+function podManifest(namespace: string, name: string, spec: PodSpec): K8sObject {
+  const podSpec: Record<string, unknown> = {
+    restartPolicy: spec.restartPolicy ?? 'Never',
+    containers: spec.containers.map(containerManifest),
+  };
+  if (spec.initContainers !== undefined) {
+    podSpec.initContainers = spec.initContainers.map(containerManifest);
+  }
+  if (spec.serviceAccountName !== undefined) podSpec.serviceAccountName = spec.serviceAccountName;
+  if (spec.volumes !== undefined) podSpec.volumes = spec.volumes;
+  if (spec.securityContext !== undefined) podSpec.securityContext = spec.securityContext;
+
+  return {
+    ...KINDS.pod,
+    metadata: { name, namespace, labels: spec.labels ?? {} },
+    spec: podSpec,
+  };
+}
+
+/** Builds a NetworkPolicy manifest from the adapter's narrow spec. */
+function networkPolicyManifest(
+  namespace: string,
+  name: string,
+  spec: NetworkPolicySpec,
+): K8sObject {
+  const { labels, ...policySpec } = spec;
+  return {
+    ...KINDS.networkPolicy,
+    metadata: { name, namespace, labels: labels ?? {} },
+    spec: policySpec,
   };
 }
 
@@ -548,6 +672,102 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
             return undefined;
           }
           await objectApi().delete({ ...KINDS.pvc, metadata: { name, namespace } });
+          return undefined;
+        }),
+    },
+    pods: {
+      create: (namespace, name, spec) =>
+        guard('pods.create', { namespace, name, labels: spec.labels ?? {} }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              namespace,
+              labels: spec.labels ?? {},
+              phase: 'pending',
+              podIP: null,
+              ready: false,
+              waitingReason: null,
+            } satisfies PodInfo;
+          }
+          return toPodInfo(await objectApi().create(podManifest(namespace, name, spec)));
+        }),
+      get: (namespace, name) =>
+        guard('pods.get', { namespace, name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              namespace,
+              labels: {},
+              phase: 'pending',
+              podIP: null,
+              ready: false,
+              waitingReason: null,
+            } satisfies PodInfo;
+          }
+          return toPodInfo(await objectApi().read({ ...KINDS.pod, metadata: { name, namespace } }));
+        }),
+      list: (namespace, labels) =>
+        guard('pods.list', { namespace, labels }, async () => {
+          if (dryRun) {
+            return [] satisfies PodInfo[];
+          }
+          const objects = await objectApi().list(KINDS.pod.apiVersion, KINDS.pod.kind, {
+            namespace,
+            labels,
+          });
+          return objects.map(toPodInfo);
+        }),
+      delete: (namespace, name) =>
+        guard('pods.delete', { namespace, name }, async () => {
+          if (dryRun) {
+            return undefined;
+          }
+          await objectApi().delete({ ...KINDS.pod, metadata: { name, namespace } });
+          return undefined;
+        }),
+    },
+    networkPolicies: {
+      create: (namespace, name, spec) =>
+        guard('networkPolicies.create', { namespace, name }, async () => {
+          if (dryRun) {
+            return {
+              name,
+              namespace,
+              labels: {},
+              policyTypes: spec.policyTypes ?? [],
+            } satisfies NetworkPolicyInfo;
+          }
+          return toNetworkPolicyInfo(
+            await objectApi().create(networkPolicyManifest(namespace, name, spec)),
+          );
+        }),
+      get: (namespace, name) =>
+        guard('networkPolicies.get', { namespace, name }, async () => {
+          if (dryRun) {
+            return { name, namespace, labels: {}, policyTypes: [] } satisfies NetworkPolicyInfo;
+          }
+          return toNetworkPolicyInfo(
+            await objectApi().read({ ...KINDS.networkPolicy, metadata: { name, namespace } }),
+          );
+        }),
+      list: (namespace, labels) =>
+        guard('networkPolicies.list', { namespace, labels }, async () => {
+          if (dryRun) {
+            return [] satisfies NetworkPolicyInfo[];
+          }
+          const objects = await objectApi().list(
+            KINDS.networkPolicy.apiVersion,
+            KINDS.networkPolicy.kind,
+            { namespace, labels },
+          );
+          return objects.map(toNetworkPolicyInfo);
+        }),
+      delete: (namespace, name) =>
+        guard('networkPolicies.delete', { namespace, name }, async () => {
+          if (dryRun) {
+            return undefined;
+          }
+          await objectApi().delete({ ...KINDS.networkPolicy, metadata: { name, namespace } });
           return undefined;
         }),
     },
