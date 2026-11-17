@@ -5,8 +5,12 @@
 # runtime stage targets the cluster's amd64 (see frontend Dockerfile).
 FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build
 WORKDIR /app
+# Install from manifests first so source edits do not invalidate the dependency
+# layer. The cache mount keeps Bun's package cache across builds; a cold install
+# dominates image build time.
+COPY --parents package.json bun.lock packages/*/package.json ./
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 COPY . .
-RUN bun install --frozen-lockfile
 RUN bun run --filter '@yaaabk/agent' build
 RUN bun run --filter '@yaaabk/grill-mcp' build
 
@@ -20,6 +24,9 @@ COPY --from=build /app/packages/agent/runtime-versions.env /tmp/runtime-versions
 # requests, and debug the Project's running workloads via the mounted
 # `yaaabk-agent` ServiceAccount token. ttyd owns the PTY for grill sessions.
 # OpenCode ships a musl build that runs on this Alpine image.
+# The pinned OpenCode binary is a Bun standalone executable. Running it under
+# QEMU during an emulated amd64 build can segfault, so the build does not
+# execute it; the container runs it natively on the target host.
 RUN . /tmp/runtime-versions.env && \
     apk add --no-cache git github-cli ca-certificates && \
     case "${TARGETARCH}" in \
@@ -35,8 +42,7 @@ RUN . /tmp/runtime-versions.env && \
     wget -qO /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OPENCODE_ARCH}-musl.tar.gz" && \
     tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode && \
     chmod +x /usr/local/bin/opencode && \
-    rm -f /tmp/opencode.tar.gz /tmp/runtime-versions.env && \
-    opencode --version
+    rm -f /tmp/opencode.tar.gz /tmp/runtime-versions.env
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/packages/agent/dist ./dist
