@@ -8,6 +8,11 @@ spec:
   replicas: 1
   strategy:
     type: Recreate
+  # With Recreate the old pod must exit before the new one starts, so this caps
+  # how long a stuck shutdown delays a rollout. The backend drains in-flight
+  # requests for YAAABK_SHUTDOWN_DRAIN_MS (5s) and then exits, so 10 is only
+  # reached when the process itself is wedged.
+  terminationGracePeriodSeconds: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: yaaabk-backend
