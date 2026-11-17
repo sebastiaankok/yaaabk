@@ -12,6 +12,7 @@ export * from './sessions/runtime-types';
 export * from './sessions/keys';
 export * from './sessions/runtime-contract';
 export * from './sessions/local-runtime';
+export * from './sessions/kubernetes-runtime';
 export * from './sessions/fake-runtime';
 export * from './sessions/prompt';
 export * from './sessions/session';

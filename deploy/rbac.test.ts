@@ -153,6 +153,18 @@ describe('deploy/rbac.yaml', () => {
     });
     expect(agent!.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
 
+    // Read-only plus exec: no Secrets and no mutation verbs on workloads.
+    const mutationVerbs = ['create', 'update', 'patch', 'delete', 'deletecollection'];
+    expect(agent!.rules.some((r) => r.resources.includes('secrets'))).toBe(false);
+    for (const rule of agent!.rules) {
+      if (rule.resources.includes('pods/exec')) {
+        expect(rule.verbs).toEqual(['create']);
+        continue;
+      }
+      expect(rule.verbs).toEqual(['get', 'list', 'watch']);
+      expect(rule.verbs.some((verb) => mutationVerbs.includes(verb))).toBe(false);
+    }
+
     const deploy = clusterRoles.find((doc) => doc.name === 'yaaabk-project-deploy');
     expect(deploy, 'yaaabk-project-deploy ClusterRole not found').toBeDefined();
     const writeVerbs = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'];
@@ -177,6 +189,31 @@ describe('deploy/rbac.yaml', () => {
       verbs: ['get', 'list'],
     });
     expect(deploy!.rules.some((r) => r.resources.includes('namespaces'))).toBe(false);
+  });
+
+  it('grants the backend only Pod and NetworkPolicy operations for session runtimes', () => {
+    const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
+    const sessionsRole = clusterRoles.find((doc) => doc.name === 'yaaabk-backend-sessions');
+    expect(
+      sessionsRole,
+      'yaaabk-backend-sessions ClusterRole not found in deploy/rbac.yaml',
+    ).toBeDefined();
+
+    const podRule = sessionsRole!.rules.find((rule) => rule.resources.includes('pods'));
+    expect(podRule?.apiGroups).toEqual(['']);
+    expect(podRule?.verbs.sort()).toEqual(['create', 'delete', 'get', 'list', 'watch']);
+
+    const policyRule = sessionsRole!.rules.find((rule) =>
+      rule.resources.includes('networkpolicies'),
+    );
+    expect(policyRule?.apiGroups).toEqual(['networking.k8s.io']);
+    expect(policyRule?.verbs.sort()).toEqual(['create', 'delete', 'get', 'list', 'watch']);
+
+    // Session Secrets are covered by the backend's existing agent role; this
+    // role must not add anything else.
+    const resources = [...new Set(sessionsRole!.rules.flatMap((rule) => rule.resources))].sort();
+    expect(resources).toEqual(['networkpolicies', 'pods']);
+    expect(sessionsRole!.rules.some((rule) => rule.resources.includes('secrets'))).toBe(false);
   });
 
   it('binds the ClusterRole(s) to the yaaabk-backend ServiceAccount', () => {

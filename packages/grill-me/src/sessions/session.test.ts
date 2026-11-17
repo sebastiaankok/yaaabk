@@ -4,7 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { createFakeSessionKeys, createFakeSessionRuntime } from './fake-runtime';
 import { createGrillSessionsModule, type StartGrillSessionInput } from './session';
 
-function setup(options: { defaultModel?: string } = {}) {
+function setup(
+  options: {
+    defaultModel?: string;
+    cloneToken?: (input: {
+      projectId: string;
+      repoFullName: string;
+    }) => Promise<string | undefined>;
+  } = {},
+) {
   const runtime = createFakeSessionRuntime();
   const keys = createFakeSessionKeys();
   const clock = { ms: Date.UTC(2026, 0, 1, 12) };
@@ -23,6 +31,7 @@ function setup(options: { defaultModel?: string } = {}) {
     }),
     defaultModel: options.defaultModel ?? 'openrouter/default-model',
     keys,
+    ...(options.cloneToken === undefined ? {} : { cloneToken: options.cloneToken }),
     clock: () => new Date(clock.ms),
     ids: () => `session-${++sequence}`,
     logger: { info: () => {}, error: () => {} },
@@ -89,6 +98,49 @@ describe('starting a grill session', () => {
     expect(prompt).toContain('A recipe box');
     expect(prompt).toContain('beginner');
     expect(prompt).toContain('# Existing plan');
+  });
+
+  it('hands the runtime the Project namespace, repository and a read-only clone token', async () => {
+    const minted: Array<{ projectId: string; repoFullName: string }> = [];
+    const { runtime, sessions } = setup({
+      cloneToken: async (input) => {
+        minted.push(input);
+        return 'ghs_read_only';
+      },
+    });
+
+    await sessions.start({
+      ...INPUT,
+      namespace: 'yaaabk-a1b2c3d4',
+      repoFullName: 'acme/todo-app',
+    });
+
+    expect(minted).toEqual([{ projectId: 'p1', repoFullName: 'acme/todo-app' }]);
+    expect(runtime.requests[0]).toMatchObject({
+      namespace: 'yaaabk-a1b2c3d4',
+      repoFullName: 'acme/todo-app',
+      gitToken: 'ghs_read_only',
+    });
+  });
+
+  it('fails start with a specific error when the repository token cannot be minted', async () => {
+    const { runtime, sessions } = setup({
+      cloneToken: async () => {
+        throw new Error('GitHub App is not installed');
+      },
+    });
+
+    const started = await sessions.start({
+      ...INPUT,
+      namespace: 'yaaabk-a1b2c3d4',
+      repoFullName: 'acme/todo-app',
+    });
+
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.kind).toBe('start-failed');
+    expect(started.error.message).toContain('GitHub App is not installed');
+    expect(runtime.requests).toHaveLength(0);
   });
 
   it('replaces the previous active session for the same Project', async () => {

@@ -9,5 +9,37 @@
         "codemode": false
       }
     }
+  },
+  "permission": {
+    "read": {
+      "*": "allow",
+      "**/.env": "deny",
+      "**/.env.*": "deny",
+      "**/*.pem": "deny",
+      "**/*.key": "deny"
+    },
+    "edit": {
+      "*": "deny",
+      "**": "allow",
+      "**/.env": "deny",
+      "**/.env.*": "deny"
+    },
+    "bash": {
+      "*": "allow",
+      "git push*": "deny",
+      "git remote set-url*": "deny",
+      "kubectl apply*": "deny",
+      "kubectl create*": "deny",
+      "kubectl delete*": "deny",
+      "kubectl edit*": "deny",
+      "kubectl patch*": "deny",
+      "kubectl replace*": "deny",
+      "kubectl scale*": "deny",
+      "kubectl rollout*": "deny"
+    },
+    "external_directory": "deny",
+    "skill": "allow",
+    "webfetch": "deny",
+    "websearch": "deny"
   }
 }

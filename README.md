@@ -61,6 +61,11 @@ cp .env.example .env
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
 | `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model Grill-Me Sessions and Agent Jobs run when no explicit choice supplies one |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
+| `YAAABK_SESSION_RUNTIME` | auto | `kubernetes` or `local`; auto-detected from `KUBERNETES_SERVICE_HOST`. Deployed instances use Pods in the Project Namespace. |
+| `YAAABK_SESSION_IMAGE` | `YAAABK_AGENT_IMAGE` | Shared OpenCode + ttyd image session Pods run |
+| `YAAABK_SESSION_API_URL` | `YAAABK_API_URL` | Backend base URL a session's reporting MCP server posts to |
+| `YAAABK_NAMESPACE` | `yaaabk` | Namespace the backend runs in; session NetworkPolicies allow it |
+| `YAAABK_KUBERNETES_API_CIDR` | `10.43.0.1/32` | API endpoint a session Pod may reach with `kubectl` |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
 | `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
 | `YAAABK_CI_POLL_MS` | `30000` | How often the CI Tracker watches `automerge` pull requests |
@@ -138,7 +143,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/template` | `packages/template` | Project scaffolder (`scaffold(project)`) with an injectable git backend |
 | `@yaaabk/projects` | `packages/projects` | Project provisioning (`createProjectsModule`) and the `ProjectStore` port |
 | `@yaaabk/plans` | `packages/plans` | Versioned Plans (`createPlansModule`) and the `PlanStore` port |
-| `@yaaabk/grill-me` | `packages/grill-me` | Grill-Me terminal sessions, reporting drafts, Plan/Issue publishing, the `SessionRuntime` port and local adapter, and the terminal protocol |
+| `@yaaabk/grill-me` | `packages/grill-me` | Grill-Me terminal sessions, reporting drafts, Plan/Issue publishing, the `SessionRuntime` port with local and Kubernetes adapters, and the terminal protocol |
 | `@yaaabk/grill-mcp` | `packages/grill-mcp` | The stdio MCP server a Grill-Me Session runs next to OpenCode (`report_prd`, `report_issues`, `session_status`) |
 | `@yaaabk/issues` | `packages/issues` | Issue CRUD, the dependency graph (`buildIssueGraph`) and the `IssueStore` port |
 | `@yaaabk/agents` | `packages/agents` | The Agent Manager: per-Issue K8s Jobs, concurrency limits and retries (`createAgentManager`) |
@@ -228,6 +233,22 @@ bun run --filter '@yaaabk/projects' test:integration
 A Grill-Me Session runs `opencode mini` behind ttyd in a session runtime, and the
 Plan page hosts an xterm.js terminal for it. The agent hands its work back
 through the reporting MCP server the image ships, not through stdout markers:
+
+The runtime port has two adapters. Host development spawns ttyd and OpenCode as
+local child processes. A deployment creates one hardened Pod per session in the
+Project Namespace, running as the Project's `yaaabk-agent` ServiceAccount under
+Pod Security `restricted` with explicit CPU and memory limits. An init container
+clones the Project repository with a short-lived `contents:read` GitHub token,
+then rewrites the remote to a credential-free URL; the token Secret is mounted
+only into that init container. The main container runs ttyd in front of
+`opencode mini` in `/workspace/repo` with the opening prompt, the selected model
+and replay enabled, so a reconnecting browser restores the conversation. The
+terminal is reachable only through the backend proxy, and a NetworkPolicy allows
+ingress from the backend pod alone and egress only to the backend, the Kubernetes
+API, GitHub/OpenRouter over HTTPS and DNS. The agent can inspect the repository
+and the Project's workloads with read-only `kubectl` plus `pods/exec`, but cannot
+read Secrets or mutate workloads, and its OpenCode deny-list blocks `git push`,
+destructive `kubectl` verbs, `.env` reads and writes outside the workspace.
 
 | Route | Purpose |
 | --- | --- |

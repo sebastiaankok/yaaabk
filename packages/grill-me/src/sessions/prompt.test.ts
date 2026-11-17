@@ -47,6 +47,15 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toContain('acme/todo-app');
   });
 
+  it('tells the agent it may inspect the cloned repository and the Project workloads', () => {
+    const prompt = buildGrillSessionPrompt({ ...INPUT, repoFullName: 'acme/todo-app' });
+
+    expect(prompt).toMatch(/repository/i);
+    expect(prompt).toMatch(/kubectl/i);
+    expect(prompt).toMatch(/read-only/i);
+    expect(prompt).toMatch(/instead of asking/i);
+  });
+
   it('leaves the marker protocol to the legacy one-shot path', () => {
     const prompt = buildGrillSessionPrompt(INPUT);
 

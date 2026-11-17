@@ -171,6 +171,8 @@ describe('POST /api/projects/:id/grill', () => {
       idea: 'A todo app',
       skillLevel: 'expert',
       model: 'openrouter/default-model',
+      namespace: expect.stringMatching(/^yaaabk-/),
+      repoFullName: expect.stringContaining('/'),
     });
     expect(runtimeRequest?.prompt).toContain('A todo app');
   });
