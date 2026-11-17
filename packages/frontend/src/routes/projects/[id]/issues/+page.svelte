@@ -558,6 +558,13 @@
                       </a>
                       <!-- eslint-enable svelte/no-navigation-without-resolve -->
                     {/if}
+                    {#if run.logs !== null && run.logs.trim() !== ''}
+                      <details class="w-full">
+                        <summary class="cursor-pointer text-xs text-neutral-500">Logs</summary>
+                        <pre
+                          class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
+                      </details>
+                    {/if}
                   </li>
                 {/each}
               </ul>

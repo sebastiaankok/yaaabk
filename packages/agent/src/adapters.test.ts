@@ -27,13 +27,17 @@ function stubFetch(responder: (url: string, init: RequestInit) => Response | Pro
 
 describe('createOpenCode', () => {
   /** Records the command OpenCode would have been spawned with. */
-  function recordingRunner(result: { exitCode?: number; stdout?: string } = {}) {
+  function recordingRunner(result: { exitCode?: number; stdout?: string; stderr?: string } = {}) {
     const requests: Array<{ directory: string; args: string[] }> = [];
     return {
       requests,
       run: async (request: { directory: string; args: string[] }) => {
         requests.push(request);
-        return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? 'done' };
+        return {
+          exitCode: result.exitCode ?? 0,
+          stdout: result.stdout ?? 'done',
+          ...(result.stderr === undefined ? {} : { stderr: result.stderr }),
+        };
       },
     };
   }
@@ -54,6 +58,25 @@ describe('createOpenCode', () => {
       },
     ]);
     expect(result).toEqual({ exitCode: 0, output: 'done' });
+  });
+
+  it('keeps stderr so a provider error is not an empty run log', async () => {
+    const runner = recordingRunner({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Error: This request requires more credits',
+    });
+
+    const openCode = createOpenCode({ model: 'openrouter/chosen' }, { run: runner.run });
+    const result = await openCode.implement({
+      directory: '/work/repo',
+      prompt: 'Implement issue #42',
+    });
+
+    expect(result).toEqual({
+      exitCode: 1,
+      output: 'Error: This request requires more credits',
+    });
   });
 
   it('runs a review with the same explicit model and automatic approvals', async () => {
