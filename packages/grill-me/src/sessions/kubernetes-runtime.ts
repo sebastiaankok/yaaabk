@@ -256,7 +256,6 @@ function sessionPodSpec(
           '--model',
           spec.model,
           '--replay',
-          '--auto',
           '--standalone',
         ],
         workingDir: SESSION_REPO_PATH,

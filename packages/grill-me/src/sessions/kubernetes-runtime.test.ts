@@ -267,7 +267,6 @@ describe('Kubernetes session Pods', () => {
         '--model',
         'openrouter/test-model',
         '--replay',
-        '--auto',
         '--standalone',
       ]),
     );
