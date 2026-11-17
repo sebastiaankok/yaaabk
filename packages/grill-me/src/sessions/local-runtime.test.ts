@@ -35,7 +35,6 @@ describe('local SessionRuntime contract', () => {
         '--model',
         'openrouter/test-model',
         '--replay',
-        '--auto',
         '--standalone',
       ]),
     );

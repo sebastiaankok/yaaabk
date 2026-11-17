@@ -312,7 +312,6 @@ export function createLocalSessionRuntime(
         '--model',
         spec.model,
         '--replay',
-        '--auto',
         '--standalone',
       ];
 
