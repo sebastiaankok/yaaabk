@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { TerminalBridge, TerminalBridgeOptions, TerminalSize } from '@yaaabk/grill-me';
+import {
+  createTerminalBridge,
+  type TerminalBridge,
+  type TerminalBridgeOptions,
+  type TerminalSize,
+} from '@yaaabk/grill-me';
 import type { UpgradeWebSocket, WSEvents, WSContext } from 'hono/ws';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
@@ -614,6 +619,37 @@ describe('POST /api/projects/:id/grill/:sessionId/finish', () => {
     });
   });
 
+  it('refuses a forced Finish when no PRD was drafted', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+
+    const conflict = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error: 'incomplete',
+      missing: ['prd', 'issues'],
+    });
+
+    const forced = await request(
+      context,
+      session,
+      `/api/projects/${projectId}/grill/${started.id}/finish`,
+      { method: 'POST', body: JSON.stringify({ force: true }) },
+    );
+    expect(forced.status).toBe(409);
+    await expect(forced.json()).resolves.toMatchObject({
+      error: 'incomplete',
+      missing: ['prd'],
+    });
+    expect(context.sessionRuntime.stopped).toHaveLength(0);
+  });
+
   it('discards the drafts when the session is cancelled', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
@@ -720,6 +756,77 @@ describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
     });
     expect(bridge.closed).toBe(true);
     expect(second.closed).toEqual({ code: 1000, reason: 'session ended' });
+  });
+
+  it('reopens the terminal after an upstream drop without restarting the session or losing drafts', async () => {
+    const created: Array<{ options: TerminalBridgeOptions }> = [];
+    const factory = ((options: TerminalBridgeOptions): TerminalBridge => {
+      created.push({ options });
+      return { input: () => {}, resize: () => {}, close: () => {} };
+    }) as typeof createTerminalBridge;
+    let events: WSEvents | undefined;
+    const upgrade = ((_c: Parameters<UpgradeWebSocket>[0], nextEvents: WSEvents) => {
+      events = nextEvents;
+      return new Response(null);
+    }) as unknown as UpgradeWebSocket;
+    const context = createTestContext(undefined, undefined, {
+      upgradeWebSocket: upgrade,
+      grillRoutesOptions: { terminalBridgeFactory: factory },
+    });
+    const session = await signIn(context);
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    const token = context.sessionRuntime.requests.at(-1)?.reportToken ?? '';
+
+    const reported = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ prd: '# Drafted before the drop' }),
+    });
+    expect(reported.status).toBe(200);
+
+    const terminal = `/api/projects/${projectId}/grill/${started.id}/terminal`;
+    expect((await request(context, session, terminal)).status).toBe(200);
+    const first = fakeWebSocket();
+    events!.onOpen!(new Event('open'), first.ws);
+
+    // The backend-to-ttyd bridge drops. ttyd's client goes away, but the
+    // supervised agent (tmux) and the session's drafts must survive.
+    created[0]!.options.onClose?.('terminal closed');
+    expect(first.closed).toBeDefined();
+
+    const afterDrop = await request(context, session, `/api/projects/${projectId}/grill`);
+    await expect(afterDrop.json()).resolves.toMatchObject({
+      id: started.id,
+      status: 'active',
+      draft: { hasPrd: true, issueCount: 0 },
+    });
+    expect(context.sessionRuntime.stopped).toHaveLength(0);
+    expect(context.sessionRuntime.requests).toHaveLength(1);
+
+    events = undefined;
+    expect((await request(context, session, terminal)).status).toBe(200);
+    const second = fakeWebSocket();
+    events!.onOpen!(new Event('open'), second.ws);
+    created[1]!.options.onReady?.();
+
+    expect(created).toHaveLength(2);
+    expect(second.messages).toContainEqual({ type: 'status', status: 'live' });
+    expect(context.sessionRuntime.requests).toHaveLength(1);
+
+    // The agent can still report after the reconnect: it holds the same token
+    // and the session's turn was never lost.
+    const issues = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        issues: [{ title: 'Survive the reconnect', body: 'Keep going.', labels: ['ready'] }],
+      }),
+    });
+    expect(issues.status).toBe(200);
+    await expect(issues.json()).resolves.toMatchObject({
+      draft: { hasPrd: true, issueCount: 1 },
+    });
   });
 
   it('forwards input when the adapter wraps each event in a new WSContext', async () => {

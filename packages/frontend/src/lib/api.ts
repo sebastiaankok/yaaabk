@@ -43,6 +43,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Drafts a Finish conflict names as missing. */
+    readonly missing: string[] = [],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -63,8 +65,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       message?: string;
+      missing?: unknown;
     };
-    throw new ApiError(response.status, body.error ?? 'unknown', body.message ?? 'Request failed');
+    const missing = Array.isArray(body.missing)
+      ? body.missing.filter((item): item is string => typeof item === 'string')
+      : [];
+    throw new ApiError(
+      response.status,
+      body.error ?? 'unknown',
+      body.message ?? 'Request failed',
+      missing,
+    );
   }
 
   return (await response.json()) as T;
@@ -201,8 +212,17 @@ export async function createProjectStream(
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       message?: string;
+      missing?: unknown;
     };
-    throw new ApiError(response.status, body.error ?? 'unknown', body.message ?? 'Request failed');
+    const missing = Array.isArray(body.missing)
+      ? body.missing.filter((item): item is string => typeof item === 'string')
+      : [];
+    throw new ApiError(
+      response.status,
+      body.error ?? 'unknown',
+      body.message ?? 'Request failed',
+      missing,
+    );
   }
   if (!(response.headers.get('content-type') ?? '').includes('text/event-stream')) {
     throw new ApiError(response.status, 'unknown', 'Unexpected response to project creation');

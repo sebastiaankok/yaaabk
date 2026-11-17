@@ -9,6 +9,33 @@ describe('local SessionRuntime contract', () => {
     it(contractCase.name, contractCase.run);
   }
 
+  it('keeps the agent in a persistent tmux session so a terminal disconnect cannot kill it', async () => {
+    const fake = createFakeLocalRuntime();
+    const spec = fake.harness.spec({ sessionId: 'ses_abc' });
+
+    await fake.runtime.start(spec);
+
+    const args = fake.requests[0]?.args ?? [];
+    expect(args.slice(args.indexOf('tmux'), args.indexOf('opencode'))).toEqual([
+      'tmux',
+      'new-session',
+      '-A',
+      '-s',
+      'yaaabk-ses_abc',
+    ]);
+  });
+
+  it('ends the tmux session when the runtime stops', async () => {
+    const fake = createFakeLocalRuntime();
+    const spec = fake.harness.spec({ sessionId: 'ses_abc' });
+    const started = await fake.runtime.start(spec);
+    if (!started.ok) throw new Error('start failed');
+
+    await fake.runtime.stop(started.value);
+
+    expect(fake.killedSupervisorSessions).toEqual(['yaaabk-ses_abc']);
+  });
+
   it('runs opencode mini behind ttyd with the session prompt, model and replay', async () => {
     const fake = createFakeLocalRuntime();
     const spec = fake.harness.spec({

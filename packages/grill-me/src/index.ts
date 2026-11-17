@@ -9,4 +9,5 @@ export * from './sessions/session';
 export * from './sessions/store';
 export * from './sessions/sqlite-store';
 export * from './sessions/protocol';
+export * from './sessions/supervisor';
 export * from './sessions/terminal-bridge';

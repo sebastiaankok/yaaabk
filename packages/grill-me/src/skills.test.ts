@@ -46,6 +46,12 @@ describe('grill-me skill', () => {
     expect(skill.toLowerCase()).toContain('write the prd now');
   });
 
+  it('treats a Developer handing over the remaining decisions as a settled plan', () => {
+    expect(skill).toMatch(/you decide|fill in the (rest|answers)/i);
+    expect(skill).toMatch(/settled/i);
+    expect(skill).toMatch(/hand off|handoff/i);
+  });
+
   it('uses the reporting skills rather than the legacy markers', () => {
     expect(skill).not.toContain('<QUESTION>');
     expect(skill).not.toContain('<PLAN>');

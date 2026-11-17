@@ -56,6 +56,13 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toMatch(/instead of asking/i);
   });
 
+  it('resumes an existing conversation instead of restarting the interview', () => {
+    const prompt = buildGrillSessionPrompt(INPUT);
+
+    expect(prompt).toMatch(/reconnect|replayed|resume/i);
+    expect(prompt).toMatch(/do not restart/i);
+  });
+
   it('never asks for the removed marker protocol', () => {
     const prompt = buildGrillSessionPrompt(INPUT);
 

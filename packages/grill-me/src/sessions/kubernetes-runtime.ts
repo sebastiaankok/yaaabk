@@ -18,6 +18,7 @@ import {
   type SessionRuntimeSpec,
   type SessionTerminalEndpoint,
 } from './runtime-types';
+import { DEFAULT_SUPERVISOR_COMMAND, supervisedCommand } from './supervisor';
 
 /** The Project's agent identity: read-only cluster access plus `pods/exec`. */
 export const SESSION_SERVICE_ACCOUNT = 'yaaabk-agent';
@@ -51,6 +52,11 @@ export interface KubernetesSessionRuntimeOptions {
   ttydCommand?: string;
   /** OpenCode executable inside the image. Defaults to `opencode`. */
   opencodeCommand?: string;
+  /**
+   * Process supervisor that keeps OpenCode alive when ttyd's client
+   * disconnects. Defaults to `tmux`, which the agent image installs.
+   */
+  supervisorCommand?: string;
   /** OpenCode config loaded from the image. Defaults to `/app/opencode-session.json`. */
   opencodeConfig?: string;
   /** How long start waits for the Pod and ttyd. Defaults to 120 seconds. */
@@ -191,7 +197,7 @@ function sessionPodSpec(
   options: Required<Pick<KubernetesSessionRuntimeOptions, 'image' | 'serviceAccountName'>> &
     Pick<
       KubernetesSessionRuntimeOptions,
-      'ttydCommand' | 'opencodeCommand' | 'opencodeConfig' | 'resources'
+      'ttydCommand' | 'opencodeCommand' | 'supervisorCommand' | 'opencodeConfig' | 'resources'
     >,
   credential: { username: string; token: string },
   cloneSecret: string | null,
@@ -244,16 +250,22 @@ function sessionPodSpec(
           '--writable',
           '--credential',
           `${credential.username}:${credential.token}`,
-          options.opencodeCommand ?? 'opencode',
-          'mini',
-          '--session',
-          spec.sessionId,
-          '--prompt',
-          spec.prompt,
-          '--model',
-          spec.model,
-          '--replay',
-          '--standalone',
+          ...supervisedCommand(
+            options.supervisorCommand ?? DEFAULT_SUPERVISOR_COMMAND,
+            spec.sessionId,
+            options.opencodeCommand ?? 'opencode',
+            [
+              'mini',
+              '--session',
+              spec.sessionId,
+              '--prompt',
+              spec.prompt,
+              '--model',
+              spec.model,
+              '--replay',
+              '--standalone',
+            ],
+          ),
         ],
         workingDir: SESSION_REPO_PATH,
         env: {
@@ -354,6 +366,7 @@ export function createKubernetesSessionRuntime(
   const serviceAccountName = options.serviceAccountName ?? SESSION_SERVICE_ACCOUNT;
   const ttydCommand = options.ttydCommand ?? 'ttyd';
   const opencodeCommand = options.opencodeCommand ?? 'opencode';
+  const supervisorCommand = options.supervisorCommand ?? DEFAULT_SUPERVISOR_COMMAND;
   const opencodeConfig =
     options.opencodeConfig ??
     process.env['YAAABK_SESSION_OPENCODE_CONFIG'] ??
@@ -373,6 +386,7 @@ export function createKubernetesSessionRuntime(
     serviceAccountName,
     ttydCommand,
     opencodeCommand,
+    supervisorCommand,
     ...(opencodeConfig === undefined ? {} : { opencodeConfig }),
     ...(options.resources === undefined ? {} : { resources: options.resources }),
   };

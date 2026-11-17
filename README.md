@@ -13,10 +13,11 @@ agents implement them.
 
 - [Bun](https://bun.sh) **1.3+** — the only runtime needed for local development
 - Docker — optional, only for the containerised stack
-- For local Grill-Me sessions: [`ttyd`](https://github.com/tsl0922/ttyd) and
-  [OpenCode](https://opencode.ai) on `PATH`, plus an OpenRouter management key
-  in Settings or `OPENROUTER_MANAGEMENT_KEY`. `docker compose up` provides both
-  binaries in the backend image.
+- For local Grill-Me sessions: [`ttyd`](https://github.com/tsl0922/ttyd),
+  [`tmux`](https://github.com/tmux/tmux) and [OpenCode](https://opencode.ai) on
+  `PATH`, plus an OpenRouter management key in Settings or
+  `OPENROUTER_MANAGEMENT_KEY`. `docker compose up` provides all three binaries in
+  the backend image.
 
 ## Developing locally
 
@@ -242,15 +243,18 @@ Project Namespace, running as the Project's `yaaabk-agent` ServiceAccount under
 Pod Security `restricted` with explicit CPU and memory limits. An init container
 clones the Project repository with a short-lived `contents:read` GitHub token,
 then rewrites the remote to a credential-free URL; the token Secret is mounted
-only into that init container. The main container runs ttyd in front of
-`opencode mini` in `/workspace/repo` with the opening prompt, the selected model
-and replay enabled, so a reconnecting browser restores the conversation. The
-terminal is reachable only through the backend proxy, and a NetworkPolicy allows
-ingress from the backend pod alone and egress only to the backend, the Kubernetes
-API, GitHub/OpenRouter over HTTPS and DNS. The agent can inspect the repository
-and the Project's workloads with read-only `kubectl` plus `pods/exec`, but cannot
-read Secrets or mutate workloads, and its OpenCode deny-list blocks `git push`,
-destructive `kubectl` verbs, `.env` reads and writes outside the workspace.
+only into that init container. The main container runs ttyd in front of a tmux
+session that holds `opencode mini` in `/workspace/repo` with the opening prompt,
+the selected model and replay enabled. ttyd starts one command per client and
+signals it on disconnect; tmux keeps the agent alive, so a dropped terminal
+bridge reconnects to the same conversation instead of restarting the interview.
+The terminal is reachable only through the backend proxy, and a NetworkPolicy
+allows ingress from the backend pod alone and egress only to the backend, the
+Kubernetes API, GitHub/OpenRouter over HTTPS and DNS. The agent can inspect the
+repository and the Project's workloads with read-only `kubectl` plus
+`pods/exec`, but cannot read Secrets or mutate workloads, and its OpenCode
+deny-list blocks `git push`, destructive `kubectl` verbs, `.env` reads and
+writes outside the workspace.
 
 | Route | Purpose |
 | --- | --- |
