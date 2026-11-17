@@ -152,9 +152,17 @@ export interface OpenCodeAdapterOptions {
  * `--model` is explicit because the runtime has no default model, and `--auto`
  * approves routine permission prompts so a Job cannot hang waiting for a human
  * who is not attached to it.
+ *
+ * `--standalone` gives the Job a private server instead of the shared
+ * background service. Without it, the first `run` in a fresh container resolves
+ * the model before that service has synced providers, so any model the bundled
+ * catalog does not know yet — notably new OpenRouter models and `:free`
+ * variants — fails with `Model unavailable`. A private server initialises
+ * providers before resolving the model and also keeps one attempt's credentials
+ * and catalog state out of the next.
  */
 export function openCodeRunArgs(model: string, prompt: string): string[] {
-  return ['run', '--model', model, '--auto', prompt];
+  return ['--standalone', 'run', '--model', model, '--auto', prompt];
 }
 
 /** Runs OpenCode through Bun's shell, returning its exit code and output. */
