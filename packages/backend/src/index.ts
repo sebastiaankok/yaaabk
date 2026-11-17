@@ -605,8 +605,41 @@ if (Number.isFinite(agentPollMs) && agentPollMs > 0) {
  */
 ciTracker.start();
 
-export default {
+/** Kept as a handle so shutdown can stop accepting requests before exiting. */
+const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
   fetch: app.fetch,
   websocket,
-};
+});
+
+/**
+ * Bun leaves SIGTERM at the signal's default action, and the kernel ignores
+ * default-action signals in PID 1, which is what the container runs. Without a
+ * handler Kubernetes waits out terminationGracePeriodSeconds before SIGKILLing
+ * the container. The deployment uses the Recreate strategy (one SQLite writer on
+ * a ReadWriteOnce volume), so that wait sits between scaling the old ReplicaSet
+ * down and the new one up: every rollout costs an extra 30 seconds.
+ *
+ * In-flight requests get a short drain, then whatever is left is abandoned.
+ * Startup reconciliation re-adopts sessions and Agent Jobs, so this process can
+ * exit without flushing anything.
+ */
+const shutdownDrainMs = positiveMs('YAAABK_SHUTDOWN_DRAIN_MS') ?? 5_000;
+let shuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.info(`received ${signal}; draining for up to ${shutdownDrainMs}ms`);
+  const drained = await Promise.race([
+    server.stop().then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), shutdownDrainMs)),
+  ]);
+  // Open terminals and slow proxies hold connections forever; cut them loose.
+  if (!drained) await server.stop(true);
+  process.exit(0);
+}
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => void shutdown(signal));
+}
