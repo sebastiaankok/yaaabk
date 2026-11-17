@@ -90,6 +90,13 @@ export interface AgentManagerOptions {
    * runs push and open pull requests, review runs only clone and post a review.
    */
   githubToken?: string | AgentGithubTokenResolver;
+  /**
+   * Mints the budgeted OpenRouter key a run uses when the caller supplies none.
+   * Retries and CI-tracker fix attempts go through the same resolver, so a run
+   * never starts without a credential. Deploy runs are skipped: they apply
+   * manifests rather than call an LLM.
+   */
+  mintOpenrouterKey?: (issue: Issue, attemptNumber: number) => Promise<AgentOpenrouterKeyResult>;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
@@ -98,6 +105,10 @@ export interface AgentManagerOptions {
   newToken?: () => string;
   logger?: AgentsLogger;
 }
+
+/** A freshly minted OpenRouter key, or why it could not be minted. */
+export type AgentOpenrouterKeyResult =
+  { ok: true; key: string; hash: string } | { ok: false; message: string };
 
 /** SHA-256 hex of a report token, the only form the store keeps. */
 function hashToken(token: string): string {
@@ -488,11 +499,26 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         ? store.listForIssue(projectId, issueId).filter((run) => run.kind === kind).length + 1
         : issue.attemptCount + 1;
 
+    let openrouterApiKey = spawnOptions.openrouterApiKey;
+    let openrouterKeyHash: string | undefined;
+    if (
+      openrouterApiKey === undefined &&
+      kind !== 'deploy' &&
+      options.mintOpenrouterKey !== undefined
+    ) {
+      const minted = await options.mintOpenrouterKey(issue, attemptNumber);
+      if (!minted.ok) {
+        throw agentsError('unknown', minted.message);
+      }
+      openrouterApiKey = minted.key;
+      openrouterKeyHash = minted.hash;
+    }
+
     let secret: string | null = null;
-    if (spawnOptions.openrouterApiKey !== undefined) {
+    if (openrouterApiKey !== undefined) {
       secret = openrouterSecretName(issueId, attemptNumber, kind);
       const secretResult = await k8s.secrets.create(project.namespace, secret, {
-        [OPENROUTER_SECRET_KEY]: spawnOptions.openrouterApiKey,
+        [OPENROUTER_SECRET_KEY]: openrouterApiKey,
       });
       if (!secretResult.ok) {
         throw agentsError('kubernetes', `secrets.create failed: ${secretResult.error.message}`);
@@ -527,7 +553,10 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       await issues.update(projectId, issueId, {
         status: 'in_progress',
         attemptCount: attemptNumber,
+        ...(openrouterKeyHash === undefined ? {} : { openrouterKeyHash }),
       });
+    } else if (openrouterKeyHash !== undefined) {
+      await issues.update(projectId, issueId, { openrouterKeyHash });
     }
 
     return toPublicRun(await dispatchIfCapacity(run));

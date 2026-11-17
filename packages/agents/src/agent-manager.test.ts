@@ -50,6 +50,7 @@ async function harness(
     githubToken?: string | AgentGithubTokenResolver;
     model?: string;
     storageClassName?: string;
+    mintOpenrouterKey?: AgentManagerOptions['mintOpenrouterKey'];
   } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
@@ -94,6 +95,9 @@ async function harness(
     ...(options.storageClassName === undefined
       ? {}
       : { storageClassName: options.storageClassName }),
+    ...(options.mintOpenrouterKey === undefined
+      ? {}
+      : { mintOpenrouterKey: options.mintOpenrouterKey }),
     ...(githubToken === undefined ? {} : { githubToken }),
   };
   const k8s = managerOptions.k8s as MockK8sClient;
@@ -291,6 +295,70 @@ describe('spawn', () => {
     expect(secret.ok && secret.value.keys).toEqual(['OPENROUTER_API_KEY']);
     const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
     expect(container.envFrom).toEqual([{ secretRef: { name: 'agent-openrouter-issue-1-1' } }]);
+  });
+
+  it('mints a budgeted OpenRouter key for each attempt, including retries', async () => {
+    const calls: Array<{ issueId: string; attempt: number; budgetCents: number }> = [];
+    const { manager, issues, k8s } = await harness({
+      mintOpenrouterKey: async (issue, attemptNumber) => {
+        calls.push({ issueId: issue.id, attempt: attemptNumber, budgetCents: issue.budgetCents });
+        return { ok: true, key: `sk-attempt-${attemptNumber}`, hash: `hash-${attemptNumber}` };
+      },
+    });
+    const issue = await readyIssue(issues);
+
+    const spawned = await manager.spawn('project-1', issue.id);
+
+    expect(spawned.ok && spawned.value.openrouterSecretName).toBe('agent-openrouter-issue-1-1');
+    expect(calls).toEqual([{ issueId: issue.id, attempt: 1, budgetCents: issue.budgetCents }]);
+    const firstSecret = await k8s.objectApi.read({
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: 'agent-openrouter-issue-1-1', namespace: NS },
+    });
+    expect(firstSecret.data).toEqual({
+      OPENROUTER_API_KEY: Buffer.from('sk-attempt-1').toString('base64'),
+    });
+    const advanced = await issues.get('project-1', issue.id);
+    expect(advanced.ok && advanced.value.openrouterKeyHash).toBe('hash-1');
+
+    // A failed attempt retries with a fresh key; the retry path must not fall
+    // back to a Job with no credential.
+    await finishJob(k8s, NS, 'agent-issue-1-attempt-1', 'failed');
+    const reconciled = await manager.reconcile();
+
+    expect(reconciled.ok && reconciled.value.dispatched).toBe(1);
+    expect(calls).toEqual([
+      { issueId: issue.id, attempt: 1, budgetCents: issue.budgetCents },
+      { issueId: issue.id, attempt: 2, budgetCents: issue.budgetCents },
+    ]);
+    const retrySecret = await k8s.objectApi.read({
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: 'agent-openrouter-issue-1-2', namespace: NS },
+    });
+    expect(retrySecret.data).toEqual({
+      OPENROUTER_API_KEY: Buffer.from('sk-attempt-2').toString('base64'),
+    });
+  });
+
+  it('does not create a Job when the OpenRouter key cannot be minted', async () => {
+    const { manager, issues, k8s } = await harness({
+      mintOpenrouterKey: async () => ({
+        ok: false,
+        message: 'OpenRouter is not configured: add a management key in Settings.',
+      }),
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('management key');
+    const jobs = await k8s.jobs.list(NS);
+    expect(jobs.ok && jobs.value).toEqual([]);
+    const advanced = await issues.get('project-1', issue.id);
+    expect(advanced.ok && advanced.value.attemptCount).toBe(0);
   });
 
   it('provisions a per-attempt GitHub token Secret in the agent namespace', async () => {

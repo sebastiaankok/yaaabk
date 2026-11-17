@@ -64,7 +64,11 @@ import {
   type GitHubTokenRequest,
   type ResolvedGitHubToken,
 } from './github-token';
-import { createOpenRouterSessionKeys } from './session-keys';
+import {
+  createOpenRouterAgentKeys,
+  createOpenRouterSessionKeys,
+  type SessionKeyIssuerOptions,
+} from './session-keys';
 import { resolveSessionRuntimeMode } from './session-runtime';
 
 /** Resolves the HS256 secret, generating an ephemeral one for local dev. */
@@ -438,7 +442,7 @@ const sessionRuntime =
           info: (message, fields) => console.info(message, fields ?? ''),
         },
       });
-const sessionKeys = createOpenRouterSessionKeys({
+const openrouterKeyOptions: SessionKeyIssuerOptions = {
   credentials: () => settings.credentials(),
   ...(process.env['OPENROUTER_MANAGEMENT_KEY'] === undefined
     ? {}
@@ -448,7 +452,9 @@ const sessionKeys = createOpenRouterSessionKeys({
     info: (message, fields) => console.info(message, fields ?? ''),
     error: (message, fields) => console.error(message, fields ?? ''),
   },
-});
+};
+const sessionKeys = createOpenRouterSessionKeys(openrouterKeyOptions);
+const agentKeys = createOpenRouterAgentKeys(openrouterKeyOptions);
 
 /**
  * The short-lived, contents:read token a session's clone init container uses.
@@ -527,6 +533,12 @@ const agents = createAgentManager({
   k8s,
   githubIssues: resolveGitHubIssues(settings),
   githubToken: resolveGithubTokenForAgents,
+  mintOpenrouterKey: async (issue, attemptNumber) => {
+    const minted = await agentKeys.mint(issue.id, issue.budgetCents, attemptNumber);
+    return minted.ok
+      ? { ok: true, key: minted.value.key, hash: minted.value.hash }
+      : { ok: false, message: minted.message };
+  },
   // Sessions and Agent Jobs share one model configuration.
   model: defaultModel,
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
