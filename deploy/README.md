@@ -117,7 +117,9 @@ kubectl --context k3s-home auth can-i --list \
   the Project's `yaaabk-deploy` ServiceAccount with an ephemeral `emptyDir`
   working volume and a `contents:read` GitHub token Secret. They cannot create
   or delete Namespaces.
-- Agent and deploy Jobs report back to `http://yaaabk-backend.yaaabk.svc.cluster.local:3000`
+- Agent and deploy Jobs, and a session's reporting MCP server, report back to
+  `http://yaaabk-backend.yaaabk.svc.cluster.local` (the Service's port 80; the
+  container's 3000 is not reachable through the ClusterIP)
   (cluster-internal); browsers use `https://yaaabk.otohgunga.nl`.
 - SQLite lives on the `yaaabk-data` PVC (`local-path`, node-local, 1Gi).
   Single backend replica, `Recreate` strategy — a lost node means lost data.

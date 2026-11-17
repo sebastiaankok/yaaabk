@@ -43,6 +43,9 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+      - name: Deploy manifest tests
+        run: bun run test:deploy
+
       - name: Auth SQLite integration tests
         run: bun run --filter '@yaaabk/auth' test:integration
 
