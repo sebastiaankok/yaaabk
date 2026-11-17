@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 
 const PROJECT = {
   id: 'p1',
@@ -174,11 +174,39 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
   });
 }
 
-/** Mocks the backend terminal socket and immediately marks the terminal live. */
-async function mockTerminal(page: Page): Promise<void> {
+interface TerminalMock {
+  /** Input frames the browser sent over the terminal socket. */
+  input: string[];
+  /** How many terminal sockets the page opened. */
+  connections: () => number;
+  /** Pretends the backend closed the session. */
+  close: () => void;
+}
+
+/** Mocks the backend terminal socket, marks the terminal live, and records typed input. */
+async function mockTerminal(page: Page): Promise<TerminalMock> {
+  const input: string[] = [];
+  let connections = 0;
+  let socketRef: WebSocketRoute | null = null;
   await page.routeWebSocket(/\/grill\/s1\/terminal$/, (socket) => {
+    connections += 1;
+    socketRef = socket;
+    socket.onMessage((message) => {
+      if (typeof message !== 'string') return;
+      try {
+        const parsed = JSON.parse(message) as { type?: string; data?: string };
+        if (parsed.type === 'input' && typeof parsed.data === 'string') input.push(parsed.data);
+      } catch {
+        // Ignore non-JSON frames from xterm.
+      }
+    });
     socket.send(JSON.stringify({ type: 'status', status: 'live' }));
   });
+  return {
+    input,
+    connections: () => connections,
+    close: () => socketRef?.send(JSON.stringify({ type: 'status', status: 'closed' })),
+  };
 }
 
 test('shows the project and its active plan', async ({ page }) => {
@@ -261,6 +289,97 @@ test('reconnects to a running session after a refresh', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
   await expect(page.getByText('PRD drafted · 1 issue drafted')).toBeVisible();
   expect(await page.locator('.xterm').count()).toBe(1);
+});
+
+test('expands the live terminal to a fullscreen overlay', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  const terminal = await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Expand terminal' }).click();
+
+  const overlay = page.getByRole('region', { name: 'Fullscreen terminal' });
+  await expect(overlay).toBeVisible();
+  await expect(overlay.getByRole('button', { name: 'Minimize terminal' })).toBeVisible();
+  const statusDot = overlay.getByRole('status', { name: 'Live' });
+  await expect(statusDot).toBeVisible();
+  await expect(statusDot).toHaveClass(/bg-emerald-400/);
+
+  // The same xterm instance stays mounted, so no reconnect or replay happened.
+  expect(await page.locator('.xterm').count()).toBe(1);
+  expect(terminal.connections()).toBe(1);
+  const box = await overlay.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box?.width).toBe(viewport?.width);
+  expect(box?.height).toBe(viewport?.height);
+});
+
+test('collapses the fullscreen terminal back into the page', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  const terminal = await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Expand terminal' }).click();
+  const overlay = page.getByRole('region', { name: 'Fullscreen terminal' });
+  await expect(overlay).toBeVisible();
+
+  await overlay.getByRole('button', { name: 'Minimize terminal' }).click();
+
+  await expect(overlay).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Expand terminal' })).toBeVisible();
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  expect(await page.locator('.xterm').count()).toBe(1);
+  expect(terminal.connections()).toBe(1);
+});
+
+test('focuses the terminal when it expands', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  const { input } = await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Expand terminal' }).click();
+  await expect(page.getByRole('region', { name: 'Fullscreen terminal' })).toBeVisible();
+
+  await page.keyboard.type('answer');
+
+  await expect.poll(() => input.join('')).toBe('answer');
+});
+
+test('leaves fullscreen automatically when the session closes', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  const terminal = await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Expand terminal' }).click();
+  const overlay = page.getByRole('region', { name: 'Fullscreen terminal' });
+  await expect(overlay).toBeVisible();
+
+  terminal.close();
+
+  await expect(overlay).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Expand terminal' })).toBeVisible();
+  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+});
+
+test('a refresh never lands in fullscreen', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Expand terminal' }).click();
+  await expect(page.getByRole('region', { name: 'Fullscreen terminal' })).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByRole('button', { name: 'Expand terminal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Fullscreen terminal' })).toHaveCount(0);
 });
 
 test('finishes a session and shows the published Plan (PRD) and Issues', async ({ page }) => {

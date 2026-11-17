@@ -9,6 +9,35 @@ import type { BrowserTerminalMessage, TerminalServerMessage, TerminalSize } from
 
 export type TerminalConnectionStatus = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
+/** The human label for a connection status, shared by the header pill and overlay. */
+export function terminalStatusLabel(status: TerminalConnectionStatus): string {
+  switch (status) {
+    case 'live':
+      return 'Live';
+    case 'connecting':
+      return 'Connecting…';
+    case 'reconnecting':
+      return 'Reconnecting…';
+    case 'closed':
+      return 'Closed';
+  }
+}
+
+/** The colour tone a status uses wherever the UI signals terminal health. */
+export type TerminalStatusTone = 'emerald' | 'amber' | 'neutral';
+
+export function terminalStatusTone(status: TerminalConnectionStatus): TerminalStatusTone {
+  switch (status) {
+    case 'live':
+      return 'emerald';
+    case 'connecting':
+    case 'reconnecting':
+      return 'amber';
+    case 'closed':
+      return 'neutral';
+  }
+}
+
 /** The slice of a browser WebSocket the client needs. */
 export interface TerminalSocketLike {
   readyState: number;

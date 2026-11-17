@@ -22,7 +22,7 @@
   } from '#lib/api.js';
   import { renderMarkdown } from '#lib/markdown.js';
   import Terminal from '#lib/terminal.svelte';
-  import type { TerminalConnectionStatus } from '#lib/terminal-client.js';
+  import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
 
   const projectId = $derived(page.params.id);
 
@@ -55,15 +55,7 @@
       : `${session.draft.hasPrd ? 'PRD drafted' : 'No PRD yet'} · ${session.draft.issueCount} ${session.draft.issueCount === 1 ? 'issue' : 'issues'} drafted`,
   );
 
-  const statusLabel = $derived(
-    terminalStatus === 'live'
-      ? 'Live'
-      : terminalStatus === 'connecting'
-        ? 'Connecting…'
-        : terminalStatus === 'reconnecting'
-          ? 'Reconnecting…'
-          : 'Closed',
-  );
+  const statusLabel = $derived(terminalStatusLabel(terminalStatus));
 
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
@@ -365,7 +357,7 @@
               {finishConflict}
             </div>
           {/if}
-          <Terminal url={terminalUrl} onStatus={handleTerminalStatus} />
+          <Terminal url={terminalUrl} status={terminalStatus} onStatus={handleTerminalStatus} />
           <div class="flex flex-wrap gap-2">
             {#if confirmingCancel}
               <p class="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

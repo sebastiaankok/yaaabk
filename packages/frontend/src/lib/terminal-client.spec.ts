@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createTerminalClient,
+  terminalStatusLabel,
+  terminalStatusTone,
   type TerminalConnectionStatus,
   type TerminalSink,
   type TerminalSocketLike,
@@ -202,5 +204,21 @@ describe('terminal client', () => {
     expect(sink.handlers.input.size).toBe(0);
     expect(sink.handlers.resize.size).toBe(0);
     expect(statuses.at(-1)).toEqual({ status: 'closed' });
+  });
+});
+
+describe('terminal status presentation', () => {
+  it('labels every connection status for the header pill and overlay', () => {
+    expect(terminalStatusLabel('live')).toBe('Live');
+    expect(terminalStatusLabel('connecting')).toBe('Connecting…');
+    expect(terminalStatusLabel('reconnecting')).toBe('Reconnecting…');
+    expect(terminalStatusLabel('closed')).toBe('Closed');
+  });
+
+  it('maps connection statuses onto the pill colour tones', () => {
+    expect(terminalStatusTone('live')).toBe('emerald');
+    expect(terminalStatusTone('connecting')).toBe('amber');
+    expect(terminalStatusTone('reconnecting')).toBe('amber');
+    expect(terminalStatusTone('closed')).toBe('neutral');
   });
 });
