@@ -94,4 +94,47 @@ describe('createReportClient', () => {
       expect(failure.message).toContain('502');
     }
   });
+
+  it('names the unreachable URL instead of surfacing a bare transport error', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Unable to connect');
+    });
+    const client = createReportClient({
+      apiUrl: 'http://backend.internal:3000',
+      sessionId: 'session-1',
+      token: 'secret-token',
+      fetch: fetchMock,
+    });
+
+    const failure = await client.report({ prd: '# Plan (PRD)' }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ReportClientError);
+    if (failure instanceof ReportClientError) {
+      expect(failure.message).toContain(
+        'http://backend.internal:3000/api/grill-sessions/session-1/report',
+      );
+      expect(failure.message).toContain('Retrying is safe');
+    }
+  });
+
+  it('gives up on a hanging connection after the timeout', async () => {
+    const hanging = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      })) as unknown as typeof fetch;
+    const client = createReportClient({
+      apiUrl: 'http://backend.internal:3000',
+      sessionId: 'session-1',
+      token: 'secret-token',
+      timeoutMs: 10,
+      fetch: hanging,
+    });
+
+    const failure = await client.report({ prd: '# Plan (PRD)' }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ReportClientError);
+    if (failure instanceof ReportClientError) {
+      expect(failure.message).toContain('did not respond within 10 ms');
+    }
+  });
 });

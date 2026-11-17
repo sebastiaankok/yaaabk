@@ -31,6 +31,15 @@ export interface ReportClientOptions {
   apiUrl: string;
   sessionId: string;
   token: string;
+  /**
+   * Give up on one call after this long. Defaults to 10 seconds.
+   *
+   * Without it a call to an address that silently drops packets (a ClusterIP
+   * port its Service does not publish, a downed backend) hangs the tool call
+   * until the transport gives up, which reads to the agent as a frozen
+   * session.
+   */
+  timeoutMs?: number;
   /** Test seam. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
 }
@@ -73,6 +82,19 @@ async function failureOf(response: Response): Promise<ReportClientError> {
   return new ReportClientError(message, response.status);
 }
 
+/** Turns a transport failure into a message that names the URL to check. */
+function unreachable(url: string, timeoutMs: number, error: unknown): ReportClientError {
+  const detail = error instanceof Error ? error.message : String(error);
+  const timedOut = error instanceof Error && error.name === 'TimeoutError';
+  const what = timedOut
+    ? `did not respond within ${timeoutMs} ms`
+    : `could not be reached (${detail})`;
+  return new ReportClientError(
+    `The YAAABK backend at ${url} ${what}. Retrying is safe: a report overwrites the draft.`,
+    0,
+  );
+}
+
 /**
  * Builds the HTTP client behind the reporting tools.
  *
@@ -81,15 +103,23 @@ async function failureOf(response: Response): Promise<ReportClientError> {
  */
 export function createReportClient(options: ReportClientOptions): ReportClient {
   const doFetch = options.fetch ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 10_000;
 
   async function call(suffix: string, init: RequestInit): Promise<SessionStatus> {
-    const response = await doFetch(sessionUrl(options.apiUrl, options.sessionId, suffix), {
-      ...init,
-      headers: {
-        authorization: `Bearer ${options.token}`,
-        'content-type': 'application/json',
-      },
-    });
+    const url = sessionUrl(options.apiUrl, options.sessionId, suffix);
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        ...init,
+        headers: {
+          authorization: `Bearer ${options.token}`,
+          'content-type': 'application/json',
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw unreachable(url, timeoutMs, error);
+    }
     if (!response.ok) throw await failureOf(response);
     return asStatus(await response.json(), response.status);
   }
