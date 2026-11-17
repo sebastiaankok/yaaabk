@@ -62,6 +62,7 @@ cp .env.example .env
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
 | `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model Grill-Me Sessions and Agent Jobs run when no explicit choice supplies one |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
+| `YAAABK_AGENT_STORAGE_CLASS` | _cluster default_ | StorageClass an agent's working PVC requests; required when the cluster has no default StorageClass |
 | `YAAABK_SESSION_RUNTIME` | auto | `kubernetes` or `local`; auto-detected from `KUBERNETES_SERVICE_HOST`. Deployed instances use Pods in the Project Namespace. |
 | `YAAABK_SESSION_IMAGE` | `YAAABK_AGENT_IMAGE` | Shared OpenCode + ttyd image session Pods run |
 | `YAAABK_SESSION_API_URL` | `YAAABK_API_URL` | Backend base URL a session's reporting MCP server posts to |

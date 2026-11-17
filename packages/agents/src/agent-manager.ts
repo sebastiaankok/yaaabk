@@ -10,6 +10,8 @@ import {
   type ProjectStore,
 } from '@yaaabk/projects';
 import {
+  AGENT_CONTAINER_SECURITY_CONTEXT,
+  AGENT_POD_SECURITY_CONTEXT,
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
   DEFAULT_AGENT_MODEL,
@@ -70,6 +72,11 @@ export interface AgentManagerOptions {
   maxCluster?: number;
   /** Storage requested for a working PVC. Defaults to `1Gi`. */
   pvcStorage?: string;
+  /**
+   * StorageClass the working PVC requests. Omit to use the cluster's default
+   * StorageClass; a cluster without one cannot bind the claim.
+   */
+  storageClassName?: string;
   /** Seconds an attempt may run before it is killed. Defaults to 30 minutes. */
   activeDeadlineSeconds?: number;
   /** Base URL the Job reports back to, exposed to it as `YAAABK_API_URL`. */
@@ -282,7 +289,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       }
 
       if (pvc !== null) {
-        const pvcResult = await k8s.pvcs.create(namespace, pvc, { storage: pvcStorage, labels });
+        const pvcResult = await k8s.pvcs.create(namespace, pvc, {
+          storage: pvcStorage,
+          labels,
+          ...(options.storageClassName === undefined
+            ? {}
+            : { storageClassName: options.storageClassName }),
+        });
         if (!pvcResult.ok) {
           throw agentsError('kubernetes', `pvcs.create failed: ${pvcResult.error.message}`);
         }
@@ -362,6 +375,8 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           requests: { cpu: '500m', memory: '512Mi' },
           limits: { cpu: '1', memory: '1Gi' },
         },
+        podSecurityContext: AGENT_POD_SECURITY_CONTEXT,
+        containerSecurityContext: AGENT_CONTAINER_SECURITY_CONTEXT,
       });
       if (!jobResult.ok) {
         throw agentsError('kubernetes', `jobs.create failed: ${jobResult.error.message}`);

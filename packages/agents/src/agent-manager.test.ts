@@ -49,6 +49,7 @@ async function harness(
     projects?: Project[];
     githubToken?: string | AgentGithubTokenResolver;
     model?: string;
+    storageClassName?: string;
   } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
@@ -90,6 +91,9 @@ async function harness(
     ...(options.maxPerProject === undefined ? {} : { maxPerProject: options.maxPerProject }),
     ...(options.maxCluster === undefined ? {} : { maxCluster: options.maxCluster }),
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.storageClassName === undefined
+      ? {}
+      : { storageClassName: options.storageClassName }),
     ...(githubToken === undefined ? {} : { githubToken }),
   };
   const k8s = managerOptions.k8s as MockK8sClient;
@@ -126,6 +130,7 @@ interface JobContainer {
   env?: Array<{ name: string; value: string }>;
   envFrom?: Array<{ secretRef: { name: string } }>;
   volumeMounts?: Array<{ name: string; mountPath: string }>;
+  securityContext?: Record<string, unknown>;
 }
 
 async function readJobContainer(k8s: MockK8sClient, namespace: string, name: string) {
@@ -139,6 +144,7 @@ async function readJobContainer(k8s: MockK8sClient, namespace: string, name: str
     template: {
       spec: {
         serviceAccountName: string;
+        securityContext?: Record<string, unknown>;
         containers: JobContainer[];
         volumes: Array<{ name: string; persistentVolumeClaim: { claimName: string } }>;
       };
@@ -203,12 +209,39 @@ describe('spawn', () => {
       { name: 'work', persistentVolumeClaim: { claimName: 'agent-work-issue-1-1' } },
     ]);
     expect(spec.activeDeadlineSeconds).toBe(DEFAULT_ACTIVE_DEADLINE_SECONDS);
+    // Project namespaces enforce Pod Security `restricted`, so a Job that omits
+    // these fields never gets a Pod.
+    expect(spec.template.spec.securityContext).toEqual({
+      runAsNonRoot: true,
+      runAsUser: 1000,
+      runAsGroup: 1000,
+      fsGroup: 1000,
+      seccompProfile: { type: 'RuntimeDefault' },
+    });
+    expect(container.securityContext).toEqual({
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    });
 
     const pvc = await k8s.pvcs.get(NS, 'agent-work-issue-1-1');
     expect(pvc.ok).toBe(true);
     // Nothing is provisioned in the shared `yaaabk` namespace.
     const sharedPvc = await k8s.pvcs.get('yaaabk', 'agent-work-issue-1-1');
     expect(sharedPvc.ok).toBe(false);
+  });
+
+  it('requests the configured StorageClass for the working PVC', async () => {
+    const { manager, issues, k8s } = await harness({ storageClassName: 'local-path' });
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id);
+
+    const pvc = await k8s.objectApi.read({
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      metadata: { name: 'agent-work-issue-1-1', namespace: NS },
+    });
+    expect((pvc.spec as Record<string, unknown>).storageClassName).toBe('local-path');
   });
 
   it('gives implement and review Jobs the configured OpenCode model', async () => {

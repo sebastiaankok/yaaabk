@@ -22,6 +22,26 @@ export const DEFAULT_AGENT_IMAGE = 'yaaabk/agent:0.1.0';
 /** Default seconds an attempt may run before Kubernetes kills its pod. */
 export const DEFAULT_ACTIVE_DEADLINE_SECONDS = 30 * 60;
 
+/**
+ * Pod-level security context every Agent Job runs with. Project Namespaces
+ * enforce Pod Security `restricted`, and the agent image runs as the non-root
+ * `bun` user (uid 1000), so these match a Session Pod rather than widening the
+ * namespace policy.
+ */
+export const AGENT_POD_SECURITY_CONTEXT: Record<string, unknown> = {
+  runAsNonRoot: true,
+  runAsUser: 1000,
+  runAsGroup: 1000,
+  fsGroup: 1000,
+  seccompProfile: { type: 'RuntimeDefault' },
+};
+
+/** Container-level security context every Agent Job runs with. */
+export const AGENT_CONTAINER_SECURITY_CONTEXT: Record<string, unknown> = {
+  allowPrivilegeEscalation: false,
+  capabilities: { drop: ['ALL'] },
+};
+
 /** Path the attempt's working PVC is mounted at inside the container. */
 export const WORKSPACE_MOUNT_PATH = '/work';
 

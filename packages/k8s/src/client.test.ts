@@ -438,6 +438,38 @@ describe('jobs', () => {
     });
   });
 
+  it('renders the pod and container security contexts a restricted namespace requires', async () => {
+    const objectApi = createInMemoryObjectApi();
+    const client = createK8sClient({ objectApi, logger: silentLogger });
+
+    await client.jobs.create('project-a', 'agent-secure', {
+      image: 'yaaabk/agent:1.0.0',
+      podSecurityContext: {
+        runAsNonRoot: true,
+        runAsUser: 1000,
+        seccompProfile: { type: 'RuntimeDefault' },
+      },
+      containerSecurityContext: {
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+      },
+    });
+
+    const stored = await objectApi.read(jobRef('agent-secure'));
+    const spec = stored.spec as {
+      template: { spec: { securityContext: unknown; containers: Array<Record<string, unknown>> } };
+    };
+    expect(spec.template.spec.securityContext).toEqual({
+      runAsNonRoot: true,
+      runAsUser: 1000,
+      seccompProfile: { type: 'RuntimeDefault' },
+    });
+    expect(spec.template.spec.containers[0]?.securityContext).toEqual({
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ['ALL'] },
+    });
+  });
+
   it('mounts a workspace and sources credentials from Secrets without reading them', async () => {
     const objectApi = createInMemoryObjectApi();
     const client = createK8sClient({ objectApi, logger: silentLogger });

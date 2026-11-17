@@ -532,6 +532,10 @@ const agents = createAgentManager({
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }
     : {}),
+  ...(process.env.YAAABK_AGENT_STORAGE_CLASS !== undefined &&
+  process.env.YAAABK_AGENT_STORAGE_CLASS.trim() !== ''
+    ? { storageClassName: process.env.YAAABK_AGENT_STORAGE_CLASS.trim() }
+    : {}),
   ...(process.env.YAAABK_API_URL !== undefined ? { apiUrl: process.env.YAAABK_API_URL } : {}),
 });
 
