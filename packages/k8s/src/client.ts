@@ -303,6 +303,9 @@ function jobManifest(namespace: string, name: string, spec: JobSpec): K8sObject 
   if (spec.resources !== undefined) {
     container.resources = spec.resources;
   }
+  if (spec.containerSecurityContext !== undefined) {
+    container.securityContext = spec.containerSecurityContext;
+  }
 
   const podSpec: Record<string, unknown> = {
     restartPolicy: spec.restartPolicy ?? 'Never',
@@ -313,6 +316,9 @@ function jobManifest(namespace: string, name: string, spec: JobSpec): K8sObject 
   }
   if (spec.volumes !== undefined) {
     podSpec.volumes = spec.volumes;
+  }
+  if (spec.podSecurityContext !== undefined) {
+    podSpec.securityContext = spec.podSecurityContext;
   }
 
   const jobSpec: Record<string, unknown> = {

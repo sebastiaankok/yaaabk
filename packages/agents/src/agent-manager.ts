@@ -10,6 +10,8 @@ import {
   type ProjectStore,
 } from '@yaaabk/projects';
 import {
+  AGENT_CONTAINER_SECURITY_CONTEXT,
+  AGENT_POD_SECURITY_CONTEXT,
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
   DEFAULT_AGENT_MODEL,
@@ -70,6 +72,11 @@ export interface AgentManagerOptions {
   maxCluster?: number;
   /** Storage requested for a working PVC. Defaults to `1Gi`. */
   pvcStorage?: string;
+  /**
+   * StorageClass the working PVC requests. Omit to use the cluster's default
+   * StorageClass; a cluster without one cannot bind the claim.
+   */
+  storageClassName?: string;
   /** Seconds an attempt may run before it is killed. Defaults to 30 minutes. */
   activeDeadlineSeconds?: number;
   /** Base URL the Job reports back to, exposed to it as `YAAABK_API_URL`. */
@@ -83,6 +90,13 @@ export interface AgentManagerOptions {
    * runs push and open pull requests, review runs only clone and post a review.
    */
   githubToken?: string | AgentGithubTokenResolver;
+  /**
+   * Mints the budgeted OpenRouter key a run uses when the caller supplies none.
+   * Retries and CI-tracker fix attempts go through the same resolver, so a run
+   * never starts without a credential. Deploy runs are skipped: they apply
+   * manifests rather than call an LLM.
+   */
+  mintOpenrouterKey?: (issue: Issue, attemptNumber: number) => Promise<AgentOpenrouterKeyResult>;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
@@ -91,6 +105,10 @@ export interface AgentManagerOptions {
   newToken?: () => string;
   logger?: AgentsLogger;
 }
+
+/** A freshly minted OpenRouter key, or why it could not be minted. */
+export type AgentOpenrouterKeyResult =
+  { ok: true; key: string; hash: string } | { ok: false; message: string };
 
 /** SHA-256 hex of a report token, the only form the store keeps. */
 function hashToken(token: string): string {
@@ -282,7 +300,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       }
 
       if (pvc !== null) {
-        const pvcResult = await k8s.pvcs.create(namespace, pvc, { storage: pvcStorage, labels });
+        const pvcResult = await k8s.pvcs.create(namespace, pvc, {
+          storage: pvcStorage,
+          labels,
+          ...(options.storageClassName === undefined
+            ? {}
+            : { storageClassName: options.storageClassName }),
+        });
         if (!pvcResult.ok) {
           throw agentsError('kubernetes', `pvcs.create failed: ${pvcResult.error.message}`);
         }
@@ -362,6 +386,8 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           requests: { cpu: '500m', memory: '512Mi' },
           limits: { cpu: '1', memory: '1Gi' },
         },
+        podSecurityContext: AGENT_POD_SECURITY_CONTEXT,
+        containerSecurityContext: AGENT_CONTAINER_SECURITY_CONTEXT,
       });
       if (!jobResult.ok) {
         throw agentsError('kubernetes', `jobs.create failed: ${jobResult.error.message}`);
@@ -473,11 +499,26 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         ? store.listForIssue(projectId, issueId).filter((run) => run.kind === kind).length + 1
         : issue.attemptCount + 1;
 
+    let openrouterApiKey = spawnOptions.openrouterApiKey;
+    let openrouterKeyHash: string | undefined;
+    if (
+      openrouterApiKey === undefined &&
+      kind !== 'deploy' &&
+      options.mintOpenrouterKey !== undefined
+    ) {
+      const minted = await options.mintOpenrouterKey(issue, attemptNumber);
+      if (!minted.ok) {
+        throw agentsError('unknown', minted.message);
+      }
+      openrouterApiKey = minted.key;
+      openrouterKeyHash = minted.hash;
+    }
+
     let secret: string | null = null;
-    if (spawnOptions.openrouterApiKey !== undefined) {
+    if (openrouterApiKey !== undefined) {
       secret = openrouterSecretName(issueId, attemptNumber, kind);
       const secretResult = await k8s.secrets.create(project.namespace, secret, {
-        [OPENROUTER_SECRET_KEY]: spawnOptions.openrouterApiKey,
+        [OPENROUTER_SECRET_KEY]: openrouterApiKey,
       });
       if (!secretResult.ok) {
         throw agentsError('kubernetes', `secrets.create failed: ${secretResult.error.message}`);
@@ -512,7 +553,10 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       await issues.update(projectId, issueId, {
         status: 'in_progress',
         attemptCount: attemptNumber,
+        ...(openrouterKeyHash === undefined ? {} : { openrouterKeyHash }),
       });
+    } else if (openrouterKeyHash !== undefined) {
+      await issues.update(projectId, issueId, { openrouterKeyHash });
     }
 
     return toPublicRun(await dispatchIfCapacity(run));

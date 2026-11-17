@@ -126,6 +126,10 @@ export interface JobSpec {
     requests?: Record<string, string>;
     limits?: Record<string, string>;
   };
+  /** Pod-level security context, e.g. `runAsNonRoot` and seccomp. */
+  podSecurityContext?: Record<string, unknown>;
+  /** Container-level security context, e.g. capabilities and privilege escalation. */
+  containerSecurityContext?: Record<string, unknown>;
 }
 
 export interface PvcSpec {

@@ -128,6 +128,8 @@ export interface OpenCodeRunRequest {
 export interface OpenCodeRunResult {
   exitCode: number;
   stdout: string;
+  /** Diagnostics and provider errors, which OpenCode writes to stderr. */
+  stderr?: string;
 }
 
 /**
@@ -158,7 +160,11 @@ export function openCodeRunArgs(model: string, prompt: string): string[] {
 /** Runs OpenCode through Bun's shell, returning its exit code and output. */
 const runWithBun: OpenCodeRunner = async ({ directory, args }) => {
   const result = await Bun.$`opencode ${args}`.cwd(directory).nothrow().quiet();
-  return { exitCode: result.exitCode, stdout: result.stdout.toString() };
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
 };
 
 /** Reads and validates the verdict the review skill writes to the workspace. */
@@ -205,7 +211,10 @@ export function createOpenCode(
   /** Runs OpenCode with `prompt` and returns its exit code and output. */
   async function invoke(directory: string, prompt: string) {
     const result = await run({ directory, args: openCodeRunArgs(requireModel(), prompt) });
-    return { exitCode: result.exitCode, output: result.stdout };
+    // Provider failures arrive on stderr; dropping it leaves an empty run log
+    // with no clue why the attempt failed.
+    const output = [result.stdout, result.stderr ?? ''].filter((part) => part.trim() !== '');
+    return { exitCode: result.exitCode, output: output.join('\n') };
   }
 
   return {

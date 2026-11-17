@@ -90,7 +90,7 @@ async function mockBoard(page: Page): Promise<Mocks> {
         status: 'success',
         prUrl: 'https://github.com/acme/todo-app/pull/1',
         costCents: 10,
-        logs: null,
+        logs: 'Agent finished: opened PR #1',
         startedAt: '2026-01-01T00:00:00.000Z',
         finishedAt: '2026-01-01T00:05:00.000Z',
       },
@@ -192,6 +192,8 @@ test('opens a card to show its body and agent run history', async ({ page }) => 
     'href',
     'https://github.com/acme/todo-app/pull/1',
   );
+  await panel.getByText('Logs').click();
+  await expect(panel.getByText('Agent finished: opened PR #1')).toBeVisible();
 });
 
 test('re-runs an agent for the open issue', async ({ page }) => {

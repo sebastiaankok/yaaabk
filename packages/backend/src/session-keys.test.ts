@@ -1,6 +1,6 @@
 import { createFakeOpenRouterApi, type FakeOpenRouterApi } from '@yaaabk/cost-control';
 import { describe, expect, it, vi } from 'vitest';
-import { createOpenRouterSessionKeys } from './session-keys';
+import { createOpenRouterAgentKeys, createOpenRouterSessionKeys } from './session-keys';
 
 const NOW = new Date('2026-01-01T12:00:00.000Z');
 
@@ -111,6 +111,46 @@ describe('session OpenRouter keys', () => {
 
     await keys.revoke('hash-1');
 
+    expect(api.calls).toEqual([]);
+  });
+});
+
+describe('agent OpenRouter keys', () => {
+  it("caps the key at the Issue's budget and names the attempt", async () => {
+    const api = createFakeOpenRouterApi();
+    const keys = createOpenRouterAgentKeys({
+      credentials: async () => ({ openrouterManagementKey: 'sk-or-management' }),
+      budgetCents: 50,
+      ttlMs: 4 * 60 * 60 * 1000,
+      api: () => api,
+      now: () => NOW,
+      logger: { info: () => {}, error: () => {} },
+    });
+
+    const result = await keys.mint('issue-1', 200, 2);
+
+    expect(result.ok).toBe(true);
+    expect(api.lastCreate).toEqual({
+      name: 'yaaabk-agent-issue-1-attempt-2',
+      limitUsd: 2,
+      limitReset: null,
+      expiresAt: new Date(NOW.getTime() + 4 * 60 * 60 * 1000).toISOString(),
+    });
+  });
+
+  it('reports a missing management credential instead of calling OpenRouter', async () => {
+    const api = createFakeOpenRouterApi();
+    const keys = createOpenRouterAgentKeys({
+      credentials: async () => ({}),
+      budgetCents: 50,
+      api: () => api,
+      logger: { info: () => {}, error: () => {} },
+    });
+
+    const result = await keys.mint('issue-1', 50, 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('management key');
     expect(api.calls).toEqual([]);
   });
 });
