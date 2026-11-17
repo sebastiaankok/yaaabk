@@ -338,6 +338,49 @@ describe('GET /api/projects/:id/grill', () => {
     expect(res.status).toBe(404);
   });
 
+  it('returns a cancelled session with the reason it ended', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+    await request(context, session, `/api/projects/${projectId}/grill/${started.id}/cancel`, {
+      method: 'POST',
+    });
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill/${started.id}`);
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      id: started.id,
+      status: 'cancelled',
+      endReason: 'cancelled',
+    });
+  });
+
+  it('returns a timed-out session after the idle sweep', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const started = await startSession(context, session, projectId);
+
+    context.clock.ms += 30 * 60_000;
+    await context.grillSessions.sweep();
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill/${started.id}`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      id: string;
+      status: string;
+      endReason: string;
+      error: string;
+    };
+    expect(body).toMatchObject({
+      id: started.id,
+      status: 'failed',
+      endReason: 'timeout',
+    });
+    expect(body.error).toContain('30 minutes without terminal activity');
+  });
+
   it('returns 404 for a session that belongs to another project', async () => {
     const { context, session } = await signedIn();
     const first = await createProject(context, 'todo-app');

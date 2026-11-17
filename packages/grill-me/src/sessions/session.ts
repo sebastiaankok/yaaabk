@@ -14,12 +14,19 @@ import {
   type SessionRuntimeRef,
   type SessionTerminalEndpoint,
 } from './runtime-types';
+import { createInMemoryGrillSessionStore, type GrillSessionStore } from './store';
 
 /** Where a Grill-Me Session is in its lifecycle. */
 export type GrillSessionStatus = 'starting' | 'active' | 'finished' | 'cancelled' | 'failed';
 
 /** Why a session stopped running. */
 export type GrillSessionEndReason = 'finished' | 'cancelled' | 'replaced' | 'failed' | 'timeout';
+
+/** A session that has gone this long without terminal traffic is reaped. */
+export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60_000;
+
+/** A session is stopped this long after it started, active or not. */
+export const DEFAULT_SESSION_MAX_MS = 4 * 60 * 60_000;
 
 /** What the agent has reported so far, but not yet published. */
 export interface GrillSessionDraftSummary {
@@ -40,7 +47,7 @@ export interface GrillSessionView {
   lastActivityAt: string;
   endedAt: string | null;
   endReason: GrillSessionEndReason | null;
-  /** A human-readable failure reason when the session failed. */
+  /** A human-readable failure or timeout reason when the session failed. */
   error: string | null;
   /** Path the browser opens as a WebSocket for the terminal. */
   terminalPath: string;
@@ -65,6 +72,21 @@ export interface GrillSessionFinish {
 
 /** A missing draft that blocks Finish, unless it is forced. */
 export type GrillSessionMissingDraft = 'prd' | 'issues';
+
+/** The sessions a sweep ended. */
+export interface GrillSessionSweep {
+  ended: string[];
+}
+
+/** What a restart reconciliation did to the sessions and their runtimes. */
+export interface GrillSessionReconciliation {
+  /** Live sessions whose runtime was found and kept. */
+  adopted: string[];
+  /** Sessions marked failed because their runtime was gone or broken. */
+  failed: string[];
+  /** Runtimes stopped because no live session owned them. */
+  stopped: string[];
+}
 
 /** Everything start needs from the Project and Plan modules. */
 export interface StartGrillSessionInput {
@@ -136,6 +158,14 @@ export interface GrillSessionsModule {
   touch(sessionId: string): Promise<GrillSessionResult<void>>;
   /** The ttyd endpoint the backend terminal proxy should connect to. */
   terminal(sessionId: string): Promise<GrillSessionResult<SessionTerminalEndpoint>>;
+  /** Ends sessions that exceeded the idle timeout or the hard cap. */
+  sweep(): Promise<GrillSessionResult<GrillSessionSweep>>;
+  /**
+   * Reconciles persisted sessions with the runtimes that exist now. Called once
+   * on backend start: live runtimes are re-adopted, missing ones fail the
+   * session, and runtimes no live session owns are stopped.
+   */
+  reconcile(): Promise<GrillSessionResult<GrillSessionReconciliation>>;
 }
 
 export interface GrillSessionsModuleOptions {
@@ -143,8 +173,14 @@ export interface GrillSessionsModuleOptions {
   /** Where a finished session publishes its Plan and Issues. */
   plans: PlansModule;
   issues: IssuesModule;
+  /** Session persistence. Defaults to an in-memory store. */
+  store?: GrillSessionStore;
   /** Model used when no per-session choice or Project model is supplied. */
   defaultModel?: string;
+  /** How long a session may be idle before it is reaped. Defaults to 30 minutes. */
+  idleTimeoutMs?: number;
+  /** How long a session may live from start. Defaults to four hours. */
+  maxSessionMs?: number;
   /**
    * Mints the budget-limited OpenRouter key each session runs with. When
    * omitted, sessions start without a key (local development and unit tests).
@@ -168,7 +204,8 @@ export interface GrillSessionsModuleOptions {
   };
 }
 
-interface SessionRecord {
+/** The persisted shape of a session. */
+export interface GrillSessionRecord {
   id: string;
   projectId: string;
   projectName: string;
@@ -181,8 +218,8 @@ interface SessionRecord {
   endReason: GrillSessionEndReason | null;
   error: string | null;
   runtime: SessionRuntimeRef | null;
-  /** SHA-256 of the report token; the plaintext only goes to the runtime. */
-  reportTokenHash: string;
+  /** SHA-256 of the report token; cleared when the session ends. */
+  reportTokenHash: string | null;
   /** OpenRouter key hash for revocation; the plaintext only goes to the runtime. */
   openRouterKeyHash: string | null;
   draft: { prd: string | null; issues: GeneratedIssueReport[] | null };
@@ -190,8 +227,6 @@ interface SessionRecord {
   publishedPlan: Plan | null;
   /** The Issues published with that Plan. */
   publishedIssues: Issue[];
-  /** A Finish that is in flight, so a double click publishes once. */
-  finishInFlight: Promise<GrillSessionResult<GrillSessionFinish>> | null;
 }
 
 /** Hashes a report token for storage and comparison. */
@@ -223,10 +258,19 @@ function invalidReason(input: StartGrillSessionInput): string | undefined {
   return undefined;
 }
 
+function minutesOf(ms: number): number {
+  return Math.max(1, Math.round(ms / 60_000));
+}
+
+function hoursOf(ms: number): number {
+  return Math.max(1, Math.round(ms / 3_600_000));
+}
+
 /**
- * Owns the browser-facing Lifecycle of Grill-Me Sessions: one per Project,
- * start/get/cancel, activity tracking and the runtime reference. It never
- * exposes runtime credentials to callers.
+ * Owns the browser-facing lifecycle of Grill-Me Sessions: one per Project,
+ * start/get/finish/cancel, activity tracking, idle and hard-cap reaping,
+ * restart reconciliation and the runtime reference. It never exposes runtime
+ * credentials to callers.
  */
 export function createGrillSessionsModule(
   options: GrillSessionsModuleOptions,
@@ -235,25 +279,30 @@ export function createGrillSessionsModule(
   const newId = options.ids ?? randomUUID;
   const logger = options.logger ?? { info: () => {}, error: () => {} };
   const tokens = options.tokens ?? (() => randomBytes(32).toString('hex'));
+  const store = options.store ?? createInMemoryGrillSessionStore();
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
+  const maxSessionMs = options.maxSessionMs ?? DEFAULT_SESSION_MAX_MS;
   const apiUrl =
     options.apiUrl ??
     process.env['YAAABK_SESSION_API_URL'] ??
     process.env['YAAABK_API_URL'] ??
     `http://127.0.0.1:${process.env['PORT'] ?? '3000'}`;
-  const sessions = new Map<string, SessionRecord>();
 
-  function isLive(session: SessionRecord): boolean {
+  /** A Finish that is in flight, so a double click publishes once. */
+  const finishInFlight = new Map<string, Promise<GrillSessionResult<GrillSessionFinish>>>();
+
+  function isLive(session: GrillSessionRecord): boolean {
     return session.status === 'starting' || session.status === 'active';
   }
 
-  function activeFor(projectId: string): SessionRecord | undefined {
-    for (const session of sessions.values()) {
+  function activeFor(projectId: string): GrillSessionRecord | undefined {
+    for (const session of store.list()) {
       if (session.projectId === projectId && isLive(session)) return session;
     }
     return undefined;
   }
 
-  function view(session: SessionRecord): GrillSessionView {
+  function view(session: GrillSessionRecord): GrillSessionView {
     return {
       id: session.id,
       projectId: session.projectId,
@@ -290,43 +339,53 @@ export function createGrillSessionsModule(
     operation: string,
     sessionId: string,
     token: string,
-  ): SessionRecord | GrillSessionResult<never> {
-    const session = sessions.get(sessionId);
+  ): GrillSessionRecord | GrillSessionResult<never> {
+    const session = store.get(sessionId);
     if (session === undefined) {
       return fail(operation, 'not-found', `No grill session "${sessionId}"`);
     }
     if (!isLive(session)) {
       return fail(operation, 'unauthorized', `Grill session "${sessionId}" has ended`);
     }
-    if (!tokenMatches(session.reportTokenHash, token)) {
+    if (session.reportTokenHash === null || !tokenMatches(session.reportTokenHash, token)) {
       return fail(operation, 'unauthorized', 'The session token is not valid');
     }
     return session;
   }
 
-  function discardDrafts(session: SessionRecord): void {
+  function discardDrafts(session: GrillSessionRecord): void {
     session.draft = { prd: null, issues: null };
   }
 
-  function find(projectId: string, sessionId: string): SessionRecord | undefined {
-    const session = sessions.get(sessionId);
+  function find(projectId: string, sessionId: string): GrillSessionRecord | undefined {
+    const session = store.get(sessionId);
     return session !== undefined && session.projectId === projectId ? session : undefined;
   }
 
   async function stop(
-    session: SessionRecord,
+    session: GrillSessionRecord,
     reason: GrillSessionEndReason,
+    error?: string,
   ): Promise<GrillSessionError | undefined> {
     if (!isLive(session)) return undefined;
     const runtime = session.runtime;
     session.status =
-      reason === 'failed' ? 'failed' : reason === 'finished' ? 'finished' : 'cancelled';
+      reason === 'finished'
+        ? 'finished'
+        : reason === 'cancelled' || reason === 'replaced'
+          ? 'cancelled'
+          : 'failed';
     session.endReason = reason;
     session.endedAt = clock().toISOString();
+    session.error = reason === 'finished' ? null : (error ?? null);
+    // Ending the session revokes its report token: the stored hash is the only
+    // thing that could authenticate a late report.
+    session.reportTokenHash = null;
     if (reason !== 'finished') discardDrafts(session);
 
     const stopFailure = runtime === null ? undefined : await options.runtime.stop(runtime);
     await revokeKey(session);
+    store.save(session);
 
     if (stopFailure !== undefined && !stopFailure.ok) {
       logger.error('grill session runtime stop failed', {
@@ -343,7 +402,7 @@ export function createGrillSessionsModule(
   }
 
   /** Revokes the session's OpenRouter key; a failure is logged, not fatal. */
-  async function revokeKey(session: SessionRecord): Promise<void> {
+  async function revokeKey(session: GrillSessionRecord): Promise<void> {
     const hash = session.openRouterKeyHash;
     session.openRouterKeyHash = null;
     if (hash === null || options.keys === undefined) return;
@@ -355,6 +414,19 @@ export function createGrillSessionsModule(
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /** The reason a live session should be reaped now, if any. */
+  function expiryReason(session: GrillSessionRecord, now: Date): string | undefined {
+    const startedAt = Date.parse(session.startedAt);
+    if (Number.isFinite(startedAt) && now.getTime() - startedAt >= maxSessionMs) {
+      return `Session reached its ${hoursOf(maxSessionMs)}-hour limit`;
+    }
+    const lastActivityAt = Date.parse(session.lastActivityAt);
+    if (Number.isFinite(lastActivityAt) && now.getTime() - lastActivityAt >= idleTimeoutMs) {
+      return `Session ended after ${minutesOf(idleTimeoutMs)} minutes without terminal activity`;
+    }
+    return undefined;
   }
 
   return {
@@ -436,6 +508,29 @@ export function createGrillSessionsModule(
         }
       }
 
+      const session: GrillSessionRecord = {
+        id: sessionId,
+        projectId: input.projectId,
+        projectName: input.projectName,
+        // Persisted before the runtime exists, so a backend that dies mid-start
+        // can still fail the session and reap any Pod the start created.
+        status: 'starting',
+        skillLevel: input.skillLevel,
+        model,
+        startedAt,
+        lastActivityAt: startedAt,
+        endedAt: null,
+        endReason: null,
+        error: null,
+        runtime: null,
+        reportTokenHash: hashToken(reportToken),
+        openRouterKeyHash,
+        draft: { prd: null, issues: null },
+        publishedPlan: null,
+        publishedIssues: [],
+      };
+      store.save(session);
+
       const started = await options.runtime.start({
         sessionId,
         projectId: input.projectId,
@@ -456,16 +551,7 @@ export function createGrillSessionsModule(
         apiUrl,
       });
       if (!started.ok) {
-        if (openRouterKeyHash !== null && options.keys !== undefined) {
-          try {
-            await options.keys.revoke(openRouterKeyHash);
-          } catch (error) {
-            logger.error('grill session key revoke failed', {
-              sessionId,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
+        await stop(session, 'failed', started.error.message);
         logger.error('grill session start failed', {
           projectId: input.projectId,
           kind: started.error.kind,
@@ -477,27 +563,9 @@ export function createGrillSessionsModule(
         );
       }
 
-      const session: SessionRecord = {
-        id: sessionId,
-        projectId: input.projectId,
-        projectName: input.projectName,
-        status: 'active',
-        skillLevel: input.skillLevel,
-        model,
-        startedAt,
-        lastActivityAt: startedAt,
-        endedAt: null,
-        endReason: null,
-        error: null,
-        runtime: started.value,
-        reportTokenHash: hashToken(reportToken),
-        openRouterKeyHash,
-        draft: { prd: null, issues: null },
-        publishedPlan: null,
-        publishedIssues: [],
-        finishInFlight: null,
-      };
-      sessions.set(sessionId, session);
+      session.status = 'active';
+      session.runtime = started.value;
+      store.save(session);
       logger.info('grill session started', { sessionId, projectId: input.projectId, model });
       return { ok: true, value: view(session) };
     },
@@ -551,6 +619,7 @@ export function createGrillSessionsModule(
       if (prd !== undefined) session.draft.prd = prd;
       if (issues !== undefined) session.draft.issues = issues;
       session.lastActivityAt = clock().toISOString();
+      store.save(session);
       return { ok: true, value: view(session) };
     },
 
@@ -603,7 +672,8 @@ export function createGrillSessionsModule(
 
       // A double click must not create two Plan versions. Concurrent Finish
       // calls share the first publication.
-      if (session.finishInFlight !== null) return session.finishInFlight;
+      const inFlight = finishInFlight.get(sessionId);
+      if (inFlight !== undefined) return inFlight;
       const publishing = (async (): Promise<GrillSessionResult<GrillSessionFinish>> => {
         let plan = session.publishedPlan;
         if (plan === null) {
@@ -624,6 +694,7 @@ export function createGrillSessionsModule(
           // Remember the Plan immediately so a retry after a failed issue publish
           // reuses it instead of creating a second version.
           session.publishedPlan = plan;
+          store.save(session);
         }
 
         let publishedIssues = session.publishedIssues;
@@ -642,6 +713,7 @@ export function createGrillSessionsModule(
           }
           publishedIssues = replaced.value;
           session.publishedIssues = publishedIssues;
+          store.save(session);
         }
 
         const stopped = await stop(session, 'finished');
@@ -651,15 +723,17 @@ export function createGrillSessionsModule(
             kind: stopped.kind,
           });
         }
+        // stop() keeps the published Plan; the drafts are no longer needed.
         discardDrafts(session);
+        store.save(session);
         logger.info('grill session finished', { sessionId, planId: plan.id });
         return { ok: true, value: { session: view(session), plan, issues: publishedIssues } };
       })();
-      session.finishInFlight = publishing;
+      finishInFlight.set(sessionId, publishing);
       try {
         return await publishing;
       } finally {
-        session.finishInFlight = null;
+        finishInFlight.delete(sessionId);
       }
     },
 
@@ -681,16 +755,19 @@ export function createGrillSessionsModule(
     },
 
     async touch(sessionId) {
-      const session = sessions.get(sessionId);
+      const session = store.get(sessionId);
       if (session === undefined) {
         return fail('touch', 'not-found', `No grill session "${sessionId}"`);
       }
-      if (isLive(session)) session.lastActivityAt = clock().toISOString();
+      if (isLive(session)) {
+        session.lastActivityAt = clock().toISOString();
+        store.save(session);
+      }
       return { ok: true, value: undefined };
     },
 
     async terminal(sessionId) {
-      const session = sessions.get(sessionId);
+      const session = store.get(sessionId);
       if (session === undefined || session.runtime === null) {
         return fail('terminal', 'not-found', `No running terminal for session "${sessionId}"`);
       }
@@ -698,6 +775,120 @@ export function createGrillSessionsModule(
         return fail('terminal', 'not-found', `Grill session "${sessionId}" has ended`);
       }
       return { ok: true, value: session.runtime.terminal };
+    },
+
+    async sweep() {
+      const now = clock();
+      const ended: string[] = [];
+      for (const session of store.list()) {
+        if (!isLive(session)) continue;
+        const reason = expiryReason(session, now);
+        if (reason === undefined) continue;
+        const failure = await stop(session, 'timeout', reason);
+        if (failure !== undefined) {
+          logger.error('grill session timeout stop failed', {
+            sessionId: session.id,
+            message: failure.message,
+          });
+        }
+        ended.push(session.id);
+      }
+      return { ok: true, value: { ended } };
+    },
+
+    async reconcile() {
+      const adopted: string[] = [];
+      const failed: string[] = [];
+      const stopped: string[] = [];
+
+      const listed = await options.runtime.list();
+      if (!listed.ok) {
+        logger.error('grill session runtime list failed', {
+          kind: listed.error.kind,
+          message: listed.error.message,
+        });
+      }
+      const refs = listed.ok ? listed.value : [];
+
+      for (const session of store.list()) {
+        if (!isLive(session)) {
+          // A crash can leave credentials behind; end-state reaping revokes them.
+          let changed = false;
+          if (session.openRouterKeyHash !== null) {
+            await revokeKey(session);
+            changed = true;
+          }
+          if (session.reportTokenHash !== null) {
+            session.reportTokenHash = null;
+            changed = true;
+          }
+          if (changed) store.save(session);
+          continue;
+        }
+
+        if (session.runtime === null) {
+          await stop(session, 'failed', 'The session runtime was never created');
+          failed.push(session.id);
+          continue;
+        }
+
+        const inspected = await options.runtime.inspect(session.runtime);
+        if (!inspected.ok) {
+          await stop(
+            session,
+            'failed',
+            `The session runtime is missing: ${inspected.error.message}`,
+          );
+          failed.push(session.id);
+          continue;
+        }
+
+        const inspection = inspected.value;
+        if (inspection.state === 'failed') {
+          await stop(session, 'failed', inspection.reason ?? 'The session runtime failed');
+          failed.push(session.id);
+          continue;
+        }
+        if (inspection.state === 'stopped') {
+          await stop(session, 'failed', 'The session runtime stopped before the session ended');
+          failed.push(session.id);
+          continue;
+        }
+
+        // Re-adopt: a live runtime keeps its session, drafts and terminal.
+        if (inspection.terminal !== undefined) session.runtime.terminal = inspection.terminal;
+        session.status = 'active';
+        store.save(session);
+        adopted.push(session.id);
+      }
+
+      const liveIds = new Set(
+        store
+          .list()
+          .filter(isLive)
+          .map((session) => session.id),
+      );
+      const finished = new Set<string>();
+      for (const ref of refs) {
+        if (liveIds.has(ref.sessionId) || finished.has(ref.sessionId)) continue;
+        const result = await options.runtime.stop(ref);
+        finished.add(ref.sessionId);
+        if (result.ok) {
+          stopped.push(ref.sessionId);
+        } else {
+          logger.error('grill session orphan runtime stop failed', {
+            sessionId: ref.sessionId,
+            kind: result.error.kind,
+          });
+        }
+      }
+
+      logger.info('grill session reconciliation complete', {
+        adopted: adopted.length,
+        failed: failed.length,
+        stopped: stopped.length,
+      });
+      return { ok: true, value: { adopted, failed, stopped } };
     },
   };
 }

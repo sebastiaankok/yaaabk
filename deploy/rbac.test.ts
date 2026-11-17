@@ -73,7 +73,7 @@ describe('deploy/rbac.yaml', () => {
     expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
   });
 
-  it('grants the backend a narrow ClusterRole for Namespace lifecycle (create/get/delete)', () => {
+  it('grants the backend a narrow ClusterRole for Namespace lifecycle (create/get/list/delete)', () => {
     const clusterRoles = documents().filter((doc) => doc.kind === 'ClusterRole');
     const nsRole = clusterRoles.find((doc) =>
       doc.rules.some((r) => r.resources.includes('namespaces')),
@@ -83,8 +83,10 @@ describe('deploy/rbac.yaml', () => {
     const nsRule = nsRole!.rules.find((r) => r.resources.includes('namespaces'));
     expect(nsRule?.apiGroups).toEqual(['']);
     expect(nsRule?.verbs).toEqual(expect.arrayContaining(['create', 'get', 'delete']));
-    // Narrow scope: no write verbs beyond create/get/delete on namespaces.
-    expect(nsRule?.verbs.sort()).toEqual(['create', 'delete', 'get']);
+    // Narrow scope: no write verbs beyond create/get/delete/list on namespaces.
+    // `list` is read-only and lets session reconciliation find leftover Pods in
+    // Project Namespaces after a restart.
+    expect(nsRule?.verbs.sort()).toEqual(['create', 'delete', 'get', 'list']);
   });
 
   it('lets the backend bind only the fixed per-Project ClusterRoles', () => {

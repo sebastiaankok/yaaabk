@@ -26,6 +26,7 @@ import {
   createGrillSessionsModule,
   createKubernetesSessionRuntime,
   createLocalSessionRuntime,
+  createSqliteGrillSessionStore,
   DEFAULT_GRILL_MODEL,
 } from '@yaaabk/grill-me';
 import {
@@ -465,23 +466,48 @@ const resolveGithubTokenForSessions = async (): Promise<string> => {
   return resolved.token;
 };
 
+/** Reads an optional positive millisecond setting, ignoring an invalid value. */
+function positiveMs(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+const sessionIdleTimeoutMs = positiveMs('YAAABK_SESSION_IDLE_TIMEOUT_MS');
+const sessionMaxMs = positiveMs('YAAABK_SESSION_MAX_MS');
+
 const grillSessions = createGrillSessionsModule({
   runtime: sessionRuntime,
   plans,
   issues,
   keys: sessionKeys,
   defaultModel,
+  store: createSqliteGrillSessionStore(database),
   ...(sessionRuntimeMode === 'kubernetes'
     ? { cloneToken: async () => resolveGithubTokenForSessions() }
     : {}),
   ...(process.env['YAAABK_SESSION_API_URL'] === undefined
     ? {}
     : { apiUrl: process.env['YAAABK_SESSION_API_URL'] }),
+  ...(sessionIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: sessionIdleTimeoutMs }),
+  ...(sessionMaxMs === undefined ? {} : { maxSessionMs: sessionMaxMs }),
   logger: {
     info: (message, fields) => console.info(message, fields ?? ''),
     error: (message, fields) => console.error(message, fields ?? ''),
   },
 });
+
+/**
+ * Re-adopts the sessions a previous backend process left running, fails the
+ * ones whose runtime is gone, and removes leftover Pods, keys and report
+ * tokens. It runs before the server accepts traffic so no request sees a
+ * half-reconciled session.
+ */
+const reconciled = await grillSessions.reconcile();
+if (!reconciled.ok) {
+  console.error('grill session reconciliation failed', reconciled.error);
+}
 
 /**
  * The Cost Control Module, built from the Settings credential store with the
@@ -546,6 +572,20 @@ const app = createApp({
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
 });
+
+/**
+ * Reaps sessions that have been idle for 30 minutes or alive for four hours.
+ * The interval is configurable so tests and constrained deployments can slow
+ * it down; a value of 0 disables the sweep.
+ */
+const sessionSweepMs = Number(process.env['YAAABK_SESSION_SWEEP_MS'] ?? 60_000);
+if (Number.isFinite(sessionSweepMs) && sessionSweepMs > 0) {
+  setInterval(() => {
+    void grillSessions.sweep().then((result) => {
+      if (!result.ok) console.error('grill session sweep failed', result.error);
+    });
+  }, sessionSweepMs);
+}
 
 /**
  * Drives the Agent Manager: dispatches queued attempts, records finished Jobs

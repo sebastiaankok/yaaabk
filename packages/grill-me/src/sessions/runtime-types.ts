@@ -28,6 +28,11 @@ export interface SessionRuntimeRef {
   provider: string;
   /** Adapter-specific handle: a PID or a Pod name. */
   handle: string;
+  /**
+   * The Kubernetes Namespace the runtime lives in. Persisted with the ref so a
+   * restarted backend can inspect and stop a runtime it no longer remembers.
+   */
+  namespace?: string;
   terminal: SessionTerminalEndpoint;
 }
 

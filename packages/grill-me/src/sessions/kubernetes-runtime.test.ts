@@ -20,7 +20,16 @@ function createReadyK8s(): {
   objectApi: ReturnType<typeof createMockK8sClient>['objectApi'];
   failNextStart(reason: string): void;
 } {
-  const mock = createMockK8sClient();
+  const mock = createMockK8sClient({
+    // Reconciliation finds session Pods through the labelled Project Namespace.
+    seed: [
+      {
+        apiVersion: 'v1',
+        kind: 'Namespace',
+        metadata: { name: NAMESPACE, labels: { 'yaaabk.io/project-name': 'todo-app' } },
+      },
+    ],
+  });
   let nextFailure: string | undefined;
   let failingName: string | undefined;
   let reason = '';
@@ -114,6 +123,20 @@ function createHarness(overrides: Partial<KubernetesSessionRuntimeOptions> = {})
     runtime,
     ready,
     spec,
+    /** A fresh adapter over the same cluster, as after a backend restart. */
+    restart(): ReturnType<typeof createKubernetesSessionRuntime> {
+      return createKubernetesSessionRuntime({
+        k8s: ready.k8s,
+        image: 'ghcr.io/yaaabk/agent:test',
+        probe: async () => true,
+        sleep: async () => {},
+        readinessTimeoutMs: 100,
+        readinessPollMs: 1,
+        now: () => new Date('2026-01-01T00:00:00.000Z'),
+        credential: () => ({ username: 'yaaabk', token: 'terminal-token' }),
+        ...overrides,
+      });
+    },
     async pod(name = 'grill-session-next'): Promise<K8sObject> {
       return ready.objectApi.read({
         apiVersion: 'v1',
@@ -334,5 +357,78 @@ describe('Kubernetes session Pods', () => {
         );
       expect(present, `${kind} ${name}`).toBe(false);
     }
+  });
+});
+
+describe('Kubernetes session runtime across a backend restart', () => {
+  it('rediscovers session Pods it did not start and can inspect them', async () => {
+    const harness = createHarness();
+    const started = await harness.runtime.start(harness.spec());
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    // A new adapter process has no in-memory records.
+    const restarted = harness.restart();
+    const listed = await restarted.list();
+    expect(listed.ok && listed.value.map((ref) => ref.sessionId)).toEqual(['session-next']);
+
+    const inspected = await restarted.inspect(started.value);
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) return;
+    expect(inspected.value.state).toBe('ready');
+    expect(inspected.value.ready).toBe(true);
+    // The Pod IP is rediscovered; the persisted ttyd credential is preserved.
+    expect(inspected.value.terminal).toEqual({
+      url: 'ws://10.42.0.9:7681/ws',
+      credential: { username: 'yaaabk', token: 'terminal-token' },
+    });
+  });
+
+  it('stops a rediscovered Pod and its resources', async () => {
+    const harness = createHarness();
+    const started = await harness.runtime.start(harness.spec());
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    const restarted = harness.restart();
+    const listed = await restarted.list();
+    const ref = listed.ok ? listed.value[0] : undefined;
+    expect(ref).toBeDefined();
+    if (ref === undefined) return;
+
+    const stopped = await restarted.stop(ref);
+
+    expect(stopped.ok).toBe(true);
+    const present = await harness.ready.objectApi
+      .read({
+        apiVersion: 'v1',
+        kind: 'Pod',
+        metadata: { name: 'grill-session-next', namespace: NAMESPACE },
+      })
+      .then(
+        () => true,
+        () => false,
+      );
+    expect(present).toBe(false);
+  });
+
+  it('reports a session whose Pod is gone as failed with the Pod reason', async () => {
+    const harness = createHarness();
+    const started = await harness.runtime.start(harness.spec());
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await harness.ready.objectApi.delete({
+      apiVersion: 'v1',
+      kind: 'Pod',
+      metadata: { name: 'grill-session-next', namespace: NAMESPACE },
+    });
+
+    const inspected = await harness.restart().inspect(started.value);
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) return;
+    expect(inspected.value.state).toBe('failed');
+    expect(inspected.value.reason).toContain('Pod "grill-session-next"');
   });
 });
