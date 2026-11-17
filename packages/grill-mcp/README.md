@@ -33,7 +33,9 @@ The runtime injects three variables; nothing is read from disk:
 Every call sends `Authorization: Bearer <token>`. The backend resolves the
 session from the token, so the agent never holds the Developer's cookie. A
 missing variable exits non-zero; nothing is written to stdout except protocol
-messages.
+messages. Each call gives up after 10 seconds and reports the URL it could not
+reach, so a backend that is down or behind the wrong port fails the tool call
+instead of hanging it.
 
 ## Image wiring
 
