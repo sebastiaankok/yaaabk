@@ -3,7 +3,15 @@
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import type { Project } from '@yaaabk/projects';
-  import { ApiError, deleteProject, exportProject, getProject } from '#lib/api.js';
+  import {
+    ApiError,
+    deleteProject,
+    exportProject,
+    getProject,
+    listModels,
+    updateProject,
+    type ModelCatalogueView,
+  } from '#lib/api.js';
   import { hasErrors, validateExportTarget, type ExportTargetErrors } from '#lib/export-project.js';
 
   const projectId = $derived(page.params.id);
@@ -12,6 +20,18 @@
   let error = $state<string | null>(null);
   let confirming = $state(false);
   let busy = $state(false);
+
+  let catalogue = $state<ModelCatalogueView | null>(null);
+  let catalogueError = $state<string | null>(null);
+  let agentModel = $state('');
+  let modelSaving = $state(false);
+  let modelStatus = $state<string | null>(null);
+  let modelError = $state<string | null>(null);
+
+  /** The model issues use when they have no override of their own. */
+  const effectiveAgentModel = $derived(
+    project?.agentModel ?? catalogue?.defaultModel ?? 'the environment default',
+  );
 
   let exportOwner = $state('');
   let exportRepoName = $state('');
@@ -23,15 +43,23 @@
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
   }
 
-  // Load the Project whenever the route id changes.
+  // Load the Project whenever the route id changes, plus the catalogue the
+  // agent-model selector offers.
   $effect(() => {
     const id = projectId;
     if (id === undefined) return;
     let cancelled = false;
     error = null;
-    getProject(id)
-      .then((next) => {
-        if (!cancelled) project = next;
+    Promise.all([getProject(id), listModels().catch(() => null)])
+      .then(([next, models]) => {
+        if (cancelled) return;
+        project = next;
+        agentModel = next.agentModel ?? '';
+        catalogue = models;
+        catalogueError =
+          models === null
+            ? 'Could not load the model catalogue. You can still clear the choice.'
+            : null;
       })
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -40,6 +68,27 @@
       cancelled = true;
     };
   });
+
+  /** Saves the project-wide model for issue agents; an empty choice clears it. */
+  async function saveAgentModel(): Promise<void> {
+    if (projectId === undefined || project === null || modelSaving) return;
+    modelSaving = true;
+    modelStatus = null;
+    modelError = null;
+    try {
+      const updated = await updateProject(projectId, {
+        agentModel: agentModel.trim() === '' ? null : agentModel.trim(),
+      });
+      project = updated;
+      agentModel = updated.agentModel ?? '';
+      modelStatus = 'Saved';
+    } catch (cause) {
+      agentModel = project.agentModel ?? '';
+      modelError = describe(cause);
+    } finally {
+      modelSaving = false;
+    }
+  }
 
   async function transferProject(): Promise<void> {
     if (projectId === undefined || exporting) return;
@@ -146,6 +195,43 @@
           </dd>
         </div>
       </dl>
+    </section>
+
+    <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="agent-model-heading">
+      <h2 id="agent-model-heading" class="mb-1 text-sm font-semibold">Issue agent model</h2>
+      <p class="mb-3 text-sm text-neutral-600">
+        Issues use their own model first, then this default, then the environment default.
+      </p>
+      <label class="flex flex-col gap-1 text-xs text-neutral-500" for="agent-model">
+        Default agent model
+        <input
+          id="agent-model"
+          list="agent-model-options"
+          bind:value={agentModel}
+          onchange={() => void saveAgentModel()}
+          placeholder={catalogue?.defaultModel ?? 'Environment default'}
+          class="w-full max-w-md rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+        />
+      </label>
+      <datalist id="agent-model-options">
+        {#each catalogue?.models ?? [] as option (option.id)}
+          <option value={option.id}>{option.name}</option>
+        {/each}
+      </datalist>
+      <p class="mt-2 text-xs text-neutral-500">
+        Used by issues without an override: <code>{effectiveAgentModel}</code>
+      </p>
+      {#if modelSaving}
+        <p class="mt-1 text-xs text-neutral-500" role="status">Saving…</p>
+      {:else if modelStatus !== null}
+        <p class="mt-1 text-xs text-emerald-700" role="status">{modelStatus}</p>
+      {/if}
+      {#if modelError !== null}
+        <p class="mt-1 text-xs text-red-700" role="alert">{modelError}</p>
+      {/if}
+      {#if catalogueError !== null}
+        <p class="mt-1 text-xs text-amber-700">{catalogueError}</p>
+      {/if}
     </section>
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="actions-heading">

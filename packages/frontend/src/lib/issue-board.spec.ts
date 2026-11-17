@@ -24,6 +24,7 @@ function issue(overrides: Partial<Issue> & { title: string }): Issue {
     maxAttempts: 3,
     budgetCents: 50,
     openrouterKeyHash: null,
+    agentModel: null,
     closedAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

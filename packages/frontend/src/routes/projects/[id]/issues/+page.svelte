@@ -11,9 +11,11 @@
     getIssueGraph,
     getProject,
     listIssues,
+    listModels,
     listProjectRuns,
     spawnAgent,
     updateIssue,
+    type ModelCatalogueView,
   } from '#lib/api.js';
   import { renderMarkdown } from '#lib/markdown.js';
   import {
@@ -50,6 +52,13 @@
   let draftTitle = $state('');
   let draftBody = $state('');
   let confirmingDelete = $state(false);
+
+  let catalogue = $state<ModelCatalogueView | null>(null);
+  let catalogueError = $state<string | null>(null);
+  let modelChoice = $state('');
+  let modelSaving = $state(false);
+  let modelStatus = $state<string | null>(null);
+  let modelError = $state<string | null>(null);
 
   /** The board container, used to position the dependency arrows. */
   let boardEl = $state<HTMLElement | null>(null);
@@ -95,6 +104,11 @@
   /** The issue whose detail panel is open, taken from the unfiltered list. */
   const selected = $derived(issues.find((candidate) => candidate.id === selectedId) ?? null);
 
+  /** The model an issue with no override of its own runs on. */
+  const effectiveDefault = $derived(
+    project?.agentModel ?? catalogue?.defaultModel ?? 'the environment default',
+  );
+
   /** The runs for the open issue, oldest attempt first. */
   const selectedRuns = $derived(
     runs
@@ -127,6 +141,31 @@
     selectedId = issueId;
     editing = false;
     confirmingDelete = false;
+    modelChoice = issues.find((candidate) => candidate.id === issueId)?.agentModel ?? '';
+    modelStatus = null;
+    modelError = null;
+  }
+
+  /** Saves the issue-level model override; the empty option inherits. */
+  async function saveModel(): Promise<void> {
+    if (projectId === undefined || selected === null || modelSaving) return;
+    const previous = selected.agentModel;
+    modelSaving = true;
+    modelStatus = null;
+    modelError = null;
+    try {
+      const updated = await updateIssue(projectId, selected.id, {
+        agentModel: modelChoice.trim() === '' ? null : modelChoice.trim(),
+      });
+      issues = issues.map((issue) => (issue.id === updated.id ? updated : issue));
+      modelChoice = updated.agentModel ?? '';
+      modelStatus = 'Saved';
+    } catch (cause) {
+      modelChoice = previous ?? '';
+      modelError = describe(cause);
+    } finally {
+      modelSaving = false;
+    }
   }
 
   function startEdit(issue: Issue): void {
@@ -256,6 +295,13 @@
       })
       .finally(() => {
         if (!cancelled) loading = false;
+      });
+    listModels()
+      .then((models) => {
+        if (!cancelled) catalogue = models;
+      })
+      .catch(() => {
+        if (!cancelled) catalogueError = 'Could not load the model catalogue.';
       });
     return () => {
       cancelled = true;
@@ -502,6 +548,38 @@
             </div>
           </dl>
 
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
+            <select
+              id="issue-agent-model"
+              bind:value={modelChoice}
+              onchange={() => void saveModel()}
+              class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+            >
+              <option value="">Use project default ({effectiveDefault})</option>
+              {#each catalogue?.models ?? [] as option (option.id)}
+                <option value={option.id}>{option.name}</option>
+              {/each}
+              {#if modelChoice !== '' && !(catalogue?.models ?? []).some((m) => m.id === modelChoice)}
+                <option value={modelChoice}>{modelChoice}</option>
+              {/if}
+            </select>
+            <p class="text-xs text-neutral-500">
+              Runs use {selected.agentModel ?? effectiveDefault}.
+            </p>
+            {#if modelSaving}
+              <p class="text-xs text-neutral-500" role="status">Saving…</p>
+            {:else if modelStatus !== null}
+              <p class="text-xs text-emerald-700" role="status">{modelStatus}</p>
+            {/if}
+            {#if modelError !== null}
+              <p class="text-xs text-red-700" role="alert">{modelError}</p>
+            {/if}
+            {#if catalogueError !== null}
+              <p class="text-xs text-amber-700">{catalogueError}</p>
+            {/if}
+          </div>
+
           {#if editing}
             <div class="flex flex-col gap-2">
               <label class="flex flex-col gap-1 text-xs text-neutral-500">
@@ -546,6 +624,9 @@
                     <span class="text-xs text-neutral-500">
                       {(run.costCents / 100).toFixed(2)}
                     </span>
+                    {#if run.model !== null && run.model !== undefined}
+                      <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
+                    {/if}
                     {#if run.prUrl !== null}
                       <!-- eslint-disable svelte/no-navigation-without-resolve -->
                       <a

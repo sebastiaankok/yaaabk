@@ -15,6 +15,7 @@ import {
   login,
   spawnAgent,
   syncIssues,
+  updateProject,
 } from './api';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -151,6 +152,26 @@ describe('createProject', () => {
           description: 'A todo list',
           skillLevel: 'expert',
         }),
+      }),
+    );
+  });
+});
+
+describe('updateProject', () => {
+  it('PATCHes the agent model and returns the updated project', async () => {
+    const updated = { id: 'p1', agentModel: 'openrouter/chosen' };
+    const fetchMock = vi.fn(async () => jsonResponse(updated));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(updateProject('p1', { agentModel: 'openrouter/chosen' })).resolves.toEqual(
+      updated,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1$/),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ agentModel: 'openrouter/chosen' }),
       }),
     );
   });
