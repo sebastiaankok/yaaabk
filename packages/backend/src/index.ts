@@ -623,6 +623,11 @@ const server = Bun.serve({
  * In-flight requests get a short drain, then whatever is left is abandoned.
  * Startup reconciliation re-adopts sessions and Agent Jobs, so this process can
  * exit without flushing anything.
+ *
+ * The drain waits for `pendingRequests`, not for `server.stop()` to resolve:
+ * that promise only settles once every connection is gone, and idle keep-alives
+ * (the kubelet's probes, a browser tab) are only closed by the peer, so awaiting
+ * it burns the whole grace period on every stop.
  */
 const shutdownDrainMs = positiveMs('YAAABK_SHUTDOWN_DRAIN_MS') ?? 5_000;
 let shuttingDown = false;
@@ -630,13 +635,21 @@ let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.info(`received ${signal}; draining for up to ${shutdownDrainMs}ms`);
-  const drained = await Promise.race([
-    server.stop().then(() => true),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), shutdownDrainMs)),
-  ]);
-  // Open terminals and slow proxies hold connections forever; cut them loose.
-  if (!drained) await server.stop(true);
+  console.info(`received ${signal}; draining ${server.pendingRequests} in-flight request(s)`);
+  // Stop listening so no new request is accepted into the drain.
+  void server.stop();
+  const deadline = performance.now() + shutdownDrainMs;
+  while (server.pendingRequests > 0 && performance.now() < deadline) {
+    await Bun.sleep(25);
+  }
+  if (server.pendingRequests > 0) {
+    console.info(
+      `dropping ${server.pendingRequests} request(s) still running at the drain deadline`,
+    );
+  }
+  // Force-close idle keep-alives and terminals; nothing useful is left to wait
+  // for and `process.exit` would drop the sockets anyway.
+  void server.stop(true);
   process.exit(0);
 }
 
