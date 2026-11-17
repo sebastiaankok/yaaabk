@@ -197,6 +197,10 @@ export interface GrillSessionsModuleOptions {
    */
   cloneToken?: (input: { projectId: string; repoFullName: string }) => Promise<string | undefined>;
   clock?: () => Date;
+  /**
+   * Session id generator. Ids double as OpenCode session ids, so they must
+   * start with `ses`; the default satisfies this.
+   */
   ids?: () => string;
   logger?: {
     info(message: string, fields?: Record<string, unknown>): void;
@@ -276,7 +280,10 @@ export function createGrillSessionsModule(
   options: GrillSessionsModuleOptions,
 ): GrillSessionsModule {
   const clock = options.clock ?? (() => new Date());
-  const newId = options.ids ?? randomUUID;
+  // OpenCode validates the session id it resumes or creates and rejects any id
+  // that does not start with "ses". Session ids are opaque elsewhere, so mint
+  // them in OpenCode's namespace.
+  const newId = options.ids ?? (() => `ses_${randomUUID()}`);
   const logger = options.logger ?? { info: () => {}, error: () => {} };
   const tokens = options.tokens ?? (() => randomBytes(32).toString('hex'));
   const store = options.store ?? createInMemoryGrillSessionStore();
