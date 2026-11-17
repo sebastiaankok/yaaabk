@@ -74,11 +74,18 @@ build_and_push agent packages/agent/Dockerfile
 echo "▶ applying manifests with tag $TAG"
 # Render the kustomization and inject the release tag at apply time, so a
 # rollout never passes through the baseline tag in deploy/*.yaml.
+rendered="$(mktemp)"
+trap 'rm -f "$rendered"' EXIT
 kubectl kustomize deploy \
   | sed -E \
     -e "s#(image: ${REGISTRY}/yaaabk-(backend|frontend|agent)):[A-Za-z0-9._-]+#\1:${TAG}#g" \
     -e "s#(value: ${REGISTRY}/yaaabk-agent):[A-Za-z0-9._-]+#\1:${TAG}#g" \
-  | kubectl --context "$CONTEXT" apply -f -
+  >"$rendered"
+
+# Dry-run first: a rejected manifest halfway through `apply` leaves the cluster
+# on a mix of old and new images (e.g. a field in the wrong nesting level).
+kubectl --context "$CONTEXT" apply --dry-run=server -f "$rendered" >/dev/null
+kubectl --context "$CONTEXT" apply -f "$rendered"
 
 echo "▶ waiting for rollout"
 # The manifests pin namespace yaaabk; don't rely on the kubeconfig context's
