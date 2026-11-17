@@ -35,6 +35,7 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     branch: null,
     reviewFeedback: null,
     status: 'queued',
+    model: null,
     prUrl: null,
     logs: null,
     costCents: 0,
@@ -89,7 +90,7 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       expect(store.get('run-1')).toEqual(deploy);
     });
 
-    it('stores and reads back a fix attempt with its reviewer feedback', () => {
+    it('stores a fix attempt with its reviewer feedback', () => {
       const store = createStore();
       const fix = runRecord({
         branch: 'agent/issue-42',
@@ -99,6 +100,18 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       store.create(fix);
 
       expect(store.get('run-1')).toEqual(fix);
+    });
+
+    it('stores the model resolved for the attempt', () => {
+      const store = createStore();
+      const running = runRecord({
+        status: 'running',
+        model: 'openrouter/anthropic/claude-sonnet-4.5',
+      });
+
+      store.create(running);
+
+      expect(store.get('run-1')?.model).toBe('openrouter/anthropic/claude-sonnet-4.5');
     });
 
     it('lists a project\u2019s runs newest first', () => {

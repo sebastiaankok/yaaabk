@@ -61,9 +61,10 @@ export interface AgentManagerOptions {
   /** Agent container image. Defaults to {@link DEFAULT_AGENT_IMAGE}. */
   image?: string;
   /**
-   * OpenCode model Agent Jobs invoke, in `provider/model` form. Defaults to
-   * {@link DEFAULT_AGENT_MODEL}; the backend passes the same model Grill-Me
-   * Sessions use so both share one configuration.
+   * OpenCode model Agent Jobs invoke when neither the Issue nor the Project
+   * chooses one, in `provider/model` form. Defaults to
+   * {@link DEFAULT_AGENT_MODEL}; the backend passes the same environment
+   * default Grill-Me Sessions fall back to.
    */
   model?: string;
   /** Cap on Agents running for one Project. Defaults to 2. */
@@ -131,6 +132,7 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     openrouterSecretName: run.openrouterSecretName,
     branch: run.branch,
     status: run.status,
+    model: run.model,
     prUrl: run.prUrl,
     logs: run.logs,
     costCents: run.costCents,
@@ -148,7 +150,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   const newId = options.ids ?? randomUUID;
   const newToken = options.newToken ?? (() => randomBytes(32).toString('hex'));
   const image = options.image ?? DEFAULT_AGENT_IMAGE;
-  const model = options.model?.trim() || DEFAULT_AGENT_MODEL;
+  const defaultModel = options.model?.trim() || DEFAULT_AGENT_MODEL;
   const maxPerProject = options.maxPerProject ?? DEFAULT_MAX_CONCURRENT_PER_PROJECT;
   const maxCluster = options.maxCluster ?? DEFAULT_MAX_CONCURRENT_CLUSTER;
   const pvcStorage = options.pvcStorage ?? DEFAULT_PVC_STORAGE;
@@ -286,6 +288,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       // Jobs run in the Project's namespace as `yaaabk-deploy`.
       const isDeploy = run.kind === 'deploy';
       const namespace = project.namespace;
+      // Resolve per-issue, then per-project, then the environment default. A
+      // queued run therefore picks up settings as they are when it dispatches.
+      const runModel = isDeploy ? null : (issue.agentModel ?? project.agentModel ?? defaultModel);
       const labels = runLabels(run);
       const pvc = isDeploy ? null : pvcName(run.issueId, run.attemptNumber, run.kind);
       const job = jobName(run.issueId, run.attemptNumber, run.kind);
@@ -323,7 +328,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         ...(isDeploy
           ? {}
           : {
-              AGENT_MODEL: model,
+              AGENT_MODEL: runModel ?? defaultModel,
               YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
             }),
       };
@@ -398,6 +403,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         jobName: job,
         pvcName: pvc,
         status: 'running',
+        model: runModel,
         startedAt: started,
         tokenHash: hashToken(token),
       };
@@ -539,6 +545,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       openrouterSecretName: secret,
       branch: spawnOptions.branch ?? null,
       status: 'queued',
+      model: null,
       prUrl: null,
       logs: null,
       costCents: 0,

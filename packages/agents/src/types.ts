@@ -91,6 +91,12 @@ export interface AgentRun {
    */
   branch: string | null;
   status: AgentRunStatus;
+  /**
+   * The OpenCode model this attempt invoked, resolved when the Job was created
+   * from the Issue, then Project, then environment default. `null` while the
+   * run is queued and for deploy runs, which never call a model.
+   */
+  model: string | null;
   /** Pull request the attempt opened, once it reported one. */
   prUrl: string | null;
   /** Captured agent output, when available. */

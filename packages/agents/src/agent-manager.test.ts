@@ -23,6 +23,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoFullName: 'acme/todo-app',
     namespace: NS,
     lastModel: null,
+    agentModel: null,
     deployedCommitSha: null,
     lastDeployStatus: null,
     lastDeployAt: null,
@@ -34,6 +35,8 @@ function project(overrides: Partial<Project> = {}): Project {
 
 interface Harness {
   manager: AgentManager;
+  /** The options the manager was built with, for a second manager over one store. */
+  options: AgentManagerOptions;
   issues: IssuesModule;
   k8s: MockK8sClient;
   projects: ProjectStore;
@@ -103,7 +106,7 @@ async function harness(
   const k8s = managerOptions.k8s as MockK8sClient;
   const manager = createAgentManager(managerOptions);
 
-  return { manager, issues, k8s, projects: projectStore, github, scopes };
+  return { manager, options: managerOptions, issues, k8s, projects: projectStore, github, scopes };
 }
 
 /** Creates an Issue and gives it a GitHub number, as an approved sync would. */
@@ -114,6 +117,7 @@ async function readyIssue(
     title?: string;
     githubNumber?: number;
     maxAttempts?: number;
+    agentModel?: string;
   } = {},
 ) {
   const projectId = overrides.projectId ?? 'project-1';
@@ -121,6 +125,7 @@ async function readyIssue(
     projectId,
     title: overrides.title ?? 'Add login',
     ...(overrides.maxAttempts === undefined ? {} : { maxAttempts: overrides.maxAttempts }),
+    ...(overrides.agentModel === undefined ? {} : { agentModel: overrides.agentModel }),
   });
   if (!created.ok) throw new Error(`issue create failed: ${created.error.message}`);
   const synced = await issues.update(projectId, created.value.id, {
@@ -281,6 +286,81 @@ describe('spawn', () => {
     expect(container.env).toContainEqual({
       name: 'AGENT_MODEL',
       value: DEFAULT_AGENT_MODEL,
+    });
+  });
+
+  it('uses the project agent model when the issue has no override', async () => {
+    const { manager, issues, k8s } = await harness({
+      model: 'openrouter/env-model',
+      projects: [project({ agentModel: 'openrouter/project-model' })],
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok && result.value.model).toBe('openrouter/project-model');
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/project-model',
+    });
+  });
+
+  it('lets the issue model override the project and environment defaults', async () => {
+    const { manager, issues, k8s } = await harness({
+      model: 'openrouter/env-model',
+      projects: [project({ agentModel: 'openrouter/project-model' })],
+    });
+    const issue = await readyIssue(issues, { agentModel: 'openrouter/issue-model' });
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok && result.value.model).toBe('openrouter/issue-model');
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/issue-model',
+    });
+  });
+
+  it('uses the environment default when neither the issue nor project choose a model', async () => {
+    const { manager, issues, k8s } = await harness({ model: 'openrouter/env-model' });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok && result.value.model).toBe('openrouter/env-model');
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/env-model',
+    });
+  });
+
+  it('resolves the model when a queued run is dispatched, not when it is scheduled', async () => {
+    const first = await harness({ maxPerProject: 0 });
+    const issue = await readyIssue(first.issues);
+
+    const queued = await first.manager.spawn('project-1', issue.id);
+    expect(queued.ok && queued.value.status).toBe('queued');
+    expect(queued.ok && queued.value.model).toBeNull();
+
+    const current = first.projects.get('project-1')!;
+    first.projects.update({ ...current, agentModel: 'openrouter/updated-model' });
+
+    const manager = createAgentManager({ ...first.options, maxPerProject: 10 });
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value.dispatched).toBe(1);
+    const runs = await manager.projectRuns('project-1');
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      status: 'running',
+      model: 'openrouter/updated-model',
+    });
+    const { container } = await readJobContainer(first.k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({
+      name: 'AGENT_MODEL',
+      value: 'openrouter/updated-model',
     });
   });
 
@@ -678,6 +758,7 @@ describe('deploy runs', () => {
       status: 'running',
       jobName: 'yaaabk-deploy-issue-1-attempt-1',
       pvcName: null,
+      model: null,
     });
     expect(scopes).toEqual(['deploy']);
 
@@ -694,6 +775,7 @@ describe('deploy runs', () => {
     expect(container.env).toContainEqual({ name: 'DEPLOY_NAMESPACE', value: NS });
     expect(container.env).toContainEqual({ name: 'DEPLOY_PATH', value: 'deploy' });
     expect(container.env).toContainEqual({ name: 'DEPLOYMENT_NAME', value: 'todo-app' });
+    expect(container.env).not.toContainEqual(expect.objectContaining({ name: 'AGENT_MODEL' }));
     expect(container.envFrom).toEqual([{ secretRef: { name: 'yaaabk-deploy-github-issue-1-1' } }]);
 
     // Does not consume an implement attempt or reopen the Issue.
