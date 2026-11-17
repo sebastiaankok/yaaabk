@@ -60,7 +60,7 @@ cp .env.example .env
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per Issue and Grill-Me Session |
 | `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
-| `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Model Grill-Me Sessions and Agent Jobs run when no explicit choice supplies one |
+| `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Fallback model when no session choice, Project agent model or Issue override applies |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
 | `YAAABK_AGENT_STORAGE_CLASS` | _cluster default_ | StorageClass an agent's working PVC requests; required when the cluster has no default StorageClass |
 | `YAAABK_SESSION_RUNTIME` | auto | `kubernetes` or `local`; auto-detected from `KUBERNETES_SERVICE_HOST`. Deployed instances use Pods in the Project Namespace. |
@@ -202,7 +202,7 @@ exposes it over HTTP:
 | `POST /api/projects` | Create a Project (`name`, `description`, `skillLevel`) |
 | `GET /api/projects` | List Projects, newest first |
 | `GET /api/projects/:id` | Get a Project |
-| `PATCH /api/projects/:id` | Update its `description` and/or `skillLevel` |
+| `PATCH /api/projects/:id` | Update its `description`, `skillLevel` and/or `agentModel` |
 | `DELETE /api/projects/:id` | Tear down its repository and cluster resources |
 
 Creating a Project runs a fixed sequence, reported to the caller through the
@@ -307,10 +307,10 @@ Plan generates. The backend exposes it over HTTP:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/projects/:id/issues` | Create an Issue (`title`, `body`, `label`, `depends_on`, `budget_cents`) |
+| `POST /api/projects/:id/issues` | Create an Issue (`title`, `body`, `label`, `depends_on`, `budget_cents`, `agent_model`) |
 | `GET /api/projects/:id/issues` | List a Project's Issues, oldest first |
 | `GET /api/projects/:id/issues/:issueId` | Get an Issue |
-| `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status` or `depends_on` |
+| `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status`, `depends_on` or `agent_model` |
 | `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
 | `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
 | `POST /api/projects/:id/issues/approve` | Mark every Issue `ready` |
@@ -385,6 +385,14 @@ key, minted from the management credential in Settings (or
 CI-tracker fix attempts mint one too, so a run never starts without a
 credential. GitHub and OpenRouter credentials reach the Job through `envFrom`
 Secret references in the Project namespace, so YAAABK never reads their values.
+
+Each attempt's model is resolved when its Job is created: the Issue's
+`agentModel`, then the Project's `agentModel`, then `YAAABK_DEFAULT_MODEL`. The
+resolved value is recorded on the run, so retries and reviews use it while a
+queued run picks up the settings current at dispatch. Changing a model does not
+reset the attempt budget or start work. Model writes are validated against the
+same live, tool-capable catalogue the Grill-Me page uses; clearing the setting
+(`null`) restores inheritance.
 
 Concurrency is enforced by reserving an attempt's slot synchronously before the
 first cluster call, so two racing `spawn`s cannot both claim the last slot. The
