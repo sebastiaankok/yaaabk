@@ -412,6 +412,23 @@ test('warns before publishing an incomplete session and forces on request', asyn
   await expect(page.getByText(/Published Plan \(PRD\)/)).toBeVisible();
 });
 
+test('does not offer a forced publish when the PRD is missing', async ({ page }) => {
+  await mockProject(page, {
+    activeSession: SESSION,
+    draft: { hasPrd: false, issueCount: 0 },
+  });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+
+  await expect(page.getByText('Cannot finish: a PRD and an issue list missing')).toBeVisible();
+  await expect(page.getByText(/PRD has not been drafted yet/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publish anyway' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Finish again' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+});
+
 test('shows the reason a session could not start', async ({ page }) => {
   await mockProject(page, { startFailure: 'ttyd: exec format error' });
 

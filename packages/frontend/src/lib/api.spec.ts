@@ -58,6 +58,29 @@ describe('failed requests', () => {
       message: 'Incorrect username or password',
     });
   });
+
+  it('carries the missing drafts a Finish conflict names', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            error: 'incomplete',
+            message: 'Cannot finish: a PRD missing',
+            missing: ['prd'],
+          },
+          409,
+        ),
+      ),
+    );
+
+    await expect(finishGrill('p1', 's1')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 409,
+      code: 'incomplete',
+      missing: ['prd'],
+    });
+  });
 });
 
 describe('request options', () => {

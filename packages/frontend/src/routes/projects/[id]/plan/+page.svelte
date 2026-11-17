@@ -21,6 +21,7 @@
     type ModelCatalogueView,
   } from '#lib/api.js';
   import { renderMarkdown } from '#lib/markdown.js';
+  import { canForceFinish, finishHint } from '#lib/grill-finish.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
 
@@ -34,7 +35,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
-  let finishConflict = $state<string | null>(null);
+  let finishConflict = $state<{ message: string; missing: string[] } | null>(null);
   let confirmingCancel = $state(false);
 
   let idea = $state('');
@@ -167,7 +168,7 @@
       notice = `Published Plan (PRD) v${published.plan.version} and ${published.issues.length} ${published.issues.length === 1 ? 'issue' : 'issues'}.`;
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        finishConflict = cause.message;
+        finishConflict = { message: cause.message, missing: cause.missing };
       } else {
         error = describe(cause);
       }
@@ -354,7 +355,10 @@
           <p class="text-xs text-neutral-500" role="status">{draftLabel}</p>
           {#if finishConflict !== null}
             <div class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
-              {finishConflict}
+              <p>{finishConflict.message}</p>
+              {#if finishHint(finishConflict.missing) !== null}
+                <p class="mt-1 text-xs">{finishHint(finishConflict.missing)}</p>
+              {/if}
             </div>
           {/if}
           <Terminal url={terminalUrl} status={terminalStatus} onStatus={handleTerminalStatus} />
@@ -392,12 +396,22 @@
               {:else}
                 <button
                   type="button"
-                  onclick={() => void finish(true)}
+                  onclick={() => void finish()}
                   disabled={busy}
-                  class="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                  class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 >
-                  Publish anyway
+                  Finish again
                 </button>
+                {#if canForceFinish(finishConflict.missing)}
+                  <button
+                    type="button"
+                    onclick={() => void finish(true)}
+                    disabled={busy}
+                    class="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                  >
+                    Publish anyway
+                  </button>
+                {/if}
               {/if}
               <button
                 type="button"

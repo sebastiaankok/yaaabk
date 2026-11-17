@@ -22,13 +22,14 @@ ARG TARGETARCH
 COPY --from=build /app/packages/agent/runtime-versions.env /tmp/runtime-versions.env
 # git, the GitHub CLI and kubectl are required to clone, commit, open pull
 # requests, and debug the Project's running workloads via the mounted
-# `yaaabk-agent` ServiceAccount token. ttyd owns the PTY for grill sessions.
+# `yaaabk-agent` ServiceAccount token. ttyd owns the PTY for grill sessions;
+# tmux supervises OpenCode so a terminal client disconnect does not kill it.
 # OpenCode ships a musl build that runs on this Alpine image.
 # The pinned OpenCode binary is a Bun standalone executable. Running it under
 # QEMU during an emulated amd64 build can segfault, so the build does not
 # execute it; the container runs it natively on the target host.
 RUN . /tmp/runtime-versions.env && \
-    apk add --no-cache git github-cli ca-certificates && \
+    apk add --no-cache git github-cli ca-certificates tmux && \
     case "${TARGETARCH}" in \
       amd64) KUBECTL_ARCH=amd64; TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
       arm64) KUBECTL_ARCH=arm64; TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \

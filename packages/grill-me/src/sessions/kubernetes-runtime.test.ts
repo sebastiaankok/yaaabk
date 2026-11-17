@@ -235,6 +235,25 @@ describe('Kubernetes session Pods', () => {
     expect(main!.volumeMounts).toContainEqual({ name: 'workspace', mountPath: '/workspace' });
   });
 
+  it('supervises opencode in tmux so a ttyd client disconnect cannot kill the agent', async () => {
+    const harness = createHarness();
+    const spec = harness.spec();
+
+    await harness.runtime.start(spec);
+
+    const pod = (await harness.pod()).spec as {
+      containers: Array<{ command: string[]; args: string[] }>;
+    };
+    const args = pod.containers[0]!.args;
+    expect(args.slice(args.indexOf('tmux'), args.indexOf('opencode'))).toEqual([
+      'tmux',
+      'new-session',
+      '-A',
+      '-s',
+      `yaaabk-${spec.sessionId}`,
+    ]);
+  });
+
   it('runs ttyd and opencode mini with the prompt, model and replay in the cloned repository', async () => {
     const harness = createHarness();
 

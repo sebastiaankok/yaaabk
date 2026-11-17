@@ -27,9 +27,9 @@ USER bun
 CMD ["bun", "dist/index.js"]
 
 # Development stage used by docker compose: the backend runs interactive grill
-# sessions as local ttyd + OpenCode child processes, so both binaries and the
-# image-baked skills are present here. Production uses the Kubernetes session
-# runtime instead and keeps them out of the backend image.
+# sessions as local ttyd + tmux + OpenCode child processes, so all three binaries
+# and the image-baked skills are present here. Production uses the Kubernetes
+# session runtime instead and keeps them out of the backend image.
 FROM runtime AS dev
 ARG TARGETARCH
 # Read the same pinned OpenCode and ttyd versions the agent image uses.
@@ -39,7 +39,7 @@ USER root
 # QEMU during an emulated amd64 build can segfault, so the build does not
 # execute it; the container runs it natively on the target host.
 RUN . /tmp/runtime-versions.env && \
-    apk add --no-cache ca-certificates && \
+    apk add --no-cache ca-certificates tmux && \
     case "${TARGETARCH}" in \
       amd64) TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
       arm64) TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \

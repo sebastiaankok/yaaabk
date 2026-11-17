@@ -93,7 +93,10 @@ kubectl --context k3s-home auth can-i --list \
   its `yaaabk-agent` ServiceAccount, with Pod Security `restricted` and explicit
   CPU and memory limits. An init container clones the Project repository with a
   short-lived `contents:read` GitHub token; that Secret is never mounted into
-  the main container, which runs ttyd and `opencode mini` in `/workspace/repo`.
+  the main container, which runs ttyd in front of a tmux-supervised
+  `opencode mini` in `/workspace/repo`. tmux keeps the agent alive when the
+  backend's terminal client disconnects, so a reconnect resumes the same
+  conversation.
   A per-session NetworkPolicy admits the backend pod only and permits egress to
   the backend, HTTPS for GitHub/OpenRouter and the Kubernetes API (ports 443 and
   6443, because kube-proxy DNATs the API Service to a control-plane node before

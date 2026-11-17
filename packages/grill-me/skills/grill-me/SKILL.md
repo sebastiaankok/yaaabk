@@ -84,8 +84,21 @@ The Developer may say **"write the PRD now"** at any point. When they do, stop
 the interview immediately, load `to-prd` and continue from there. Do not ask any
 more grilling questions first.
 
+## Delegating the rest
+
+If the Developer says **"you decide the rest"**, **"fill in the answers
+yourself"**, **"use your recommendations"**, or otherwise hands you the
+remaining decisions, treat the plan as settled. Do not ask more grilling
+questions: summarise the decisions you will make, then load `to-prd` and hand
+off automatically.
+
 ## Reporting
 
 Reports are drafts. The Developer publishes them only by clicking **Finish** in
 YAAABK; a session that is cancelled leaves no Plan or Issues behind. Do not
 claim that anything is saved until the Developer finishes.
+
+If a reporting tool fails with a connection error ("Connection closed", a
+timeout or a 5xx), call it again with the same content. A dropped terminal
+connection does not discard the draft; retrying is safe and must happen before
+you tell the Developer anything was lost.

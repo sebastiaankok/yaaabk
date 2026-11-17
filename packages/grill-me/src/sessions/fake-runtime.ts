@@ -81,6 +81,8 @@ export interface FakeLocalRuntime {
     env: Record<string, string | undefined>;
   }>;
   readonly processes: FakeProcess[];
+  /** Supervisor sessions ended by `stop`, in order. */
+  readonly killedSupervisorSessions: string[];
   /** Stops every process the fake started. */
   stopAll(): Promise<void>;
 }
@@ -98,6 +100,7 @@ export interface FakeLocalRuntimeOptions {
 export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): FakeLocalRuntime {
   const requests: FakeLocalRuntime['requests'] = [];
   const processes: FakeProcess[] = [];
+  const killedSupervisorSessions: string[] = [];
   let failNext = false;
   let failingStart = false;
   let failureReason = '';
@@ -124,6 +127,9 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
     sleep: async () => {},
     cwd: '/tmp',
     credential: () => ({ username: 'yaaabk', token: 'test-token' }),
+    killSupervisorSession: async (sessionName) => {
+      killedSupervisorSessions.push(sessionName);
+    },
     ...(options.opencodeConfig === undefined ? {} : { opencodeConfig: options.opencodeConfig }),
     logger: { info: () => {} },
   });
@@ -148,6 +154,7 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
     runtime,
     requests,
     processes,
+    killedSupervisorSessions,
     harness: {
       runtime,
       spec,

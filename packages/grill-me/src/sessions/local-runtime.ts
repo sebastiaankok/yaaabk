@@ -9,6 +9,7 @@ import {
   type SessionRuntimeSpec,
   type SessionTerminalEndpoint,
 } from './runtime-types';
+import { DEFAULT_SUPERVISOR_COMMAND, supervisedCommand, supervisorSessionName } from './supervisor';
 
 /** How a local process finished. Mirrors Node's `close` event. */
 export interface LocalProcessExit {
@@ -44,6 +45,16 @@ export interface LocalSessionRuntimeOptions {
   ttydCommand?: string;
   /** OpenCode executable ttyd runs. Defaults to `opencode`. */
   opencodeCommand?: string;
+  /**
+   * Process supervisor that keeps OpenCode alive when ttyd's client
+   * disconnects. Defaults to `tmux`, which the dev image installs.
+   */
+  supervisorCommand?: string;
+  /**
+   * Ends a supervisor session on stop. Defaults to `tmux kill-session`,
+   * ignoring a session that already ended. Tests inject a recorder.
+   */
+  killSupervisorSession?: (sessionName: string) => Promise<void>;
   /** Interface ttyd binds to. Defaults to loopback. */
   host?: string;
   /** Working directory for ttyd. Defaults to the backend's directory. */
@@ -118,7 +129,7 @@ async function probeTtyd(endpoint: SessionTerminalEndpoint): Promise<boolean> {
   }
 }
 
-/** The real spawner: detached process group so ttyd and its OpenCode child die together. */
+/** The real spawner: detached process group so ttyd and its tmux client die together. */
 const realSpawner: LocalProcessSpawner = (command, args, options) => {
   const child = nodeSpawn(command, args, {
     cwd: options.cwd,
@@ -172,6 +183,21 @@ const realSpawner: LocalProcessSpawner = (command, args, options) => {
   };
 };
 
+/** Ends a tmux session without failing when it already exited. */
+function killTmuxSession(supervisorCommand: string, sessionName: string): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const child = nodeSpawn(supervisorCommand, ['kill-session', '-t', sessionName], {
+        stdio: 'ignore',
+      });
+      child.once('error', () => resolve());
+      child.once('close', () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
 function validSpec(spec: SessionRuntimeSpec): string | undefined {
   if (typeof spec.sessionId !== 'string' || spec.sessionId.trim() === '') {
     return 'A session id is required';
@@ -217,6 +243,10 @@ export function createLocalSessionRuntime(
 ): SessionRuntime {
   const ttydCommand = options.ttydCommand ?? 'ttyd';
   const opencodeCommand = options.opencodeCommand ?? 'opencode';
+  const supervisorCommand = options.supervisorCommand ?? DEFAULT_SUPERVISOR_COMMAND;
+  const killSupervisorSession =
+    options.killSupervisorSession ??
+    ((sessionName: string) => killTmuxSession(supervisorCommand, sessionName));
   const host = options.host ?? LOOPBACK;
   const cwd = options.cwd ?? process.cwd();
   const opencodeConfig = options.opencodeConfig ?? process.env['YAAABK_SESSION_OPENCODE_CONFIG'];
@@ -295,15 +325,7 @@ export function createLocalSessionRuntime(
         url: `ws://${host}:${port}/ws`,
         credential: ttydCredential,
       };
-      const args = [
-        '--port',
-        String(port),
-        '--interface',
-        host,
-        '--writable',
-        '--credential',
-        `${ttydCredential.username}:${ttydCredential.token}`,
-        opencodeCommand,
+      const opencodeArgs = [
         'mini',
         '--session',
         spec.sessionId,
@@ -313,6 +335,16 @@ export function createLocalSessionRuntime(
         spec.model,
         '--replay',
         '--standalone',
+      ];
+      const args = [
+        '--port',
+        String(port),
+        '--interface',
+        host,
+        '--writable',
+        '--credential',
+        `${ttydCredential.username}:${ttydCredential.token}`,
+        ...supervisedCommand(supervisorCommand, spec.sessionId, opencodeCommand, opencodeArgs),
       ];
 
       let child: LocalProcess;
@@ -410,6 +442,7 @@ export function createLocalSessionRuntime(
       record.stopping = true;
       record.state = 'stopped';
       await record.process.stop();
+      await killSupervisorSession(supervisorSessionName(ref.sessionId));
       return { ok: true, value: undefined };
     },
 

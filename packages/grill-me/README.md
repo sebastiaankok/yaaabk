@@ -2,11 +2,12 @@
 
 The Grill-Me Module owns the browser-facing lifecycle of a real terminal
 session: one live session per Project, start/get/cancel, activity tracking and
-the `SessionRuntime` port. The local adapter runs ttyd in front of
-`opencode mini` as child processes; the Kubernetes adapter runs one hardened Pod
-per session in the Project Namespace. `createTerminalBridge` translates the
-browser's JSON protocol to ttyd's `tty` frames, and `sessionRuntimeContract` is
-the shared suite every adapter runs.
+the `SessionRuntime` port. The local adapter runs ttyd in front of a tmux-
+supervised `opencode mini`; the Kubernetes adapter runs one hardened Pod per
+session in the Project Namespace. tmux keeps the agent alive when ttyd's client
+disconnects, so a reconnecting terminal attaches to the same conversation.
+`createTerminalBridge` translates the browser's JSON protocol to ttyd's `tty`
+frames, and `sessionRuntimeContract` is the shared suite every adapter runs.
 
 The opening prompt tells the agent to load the `grill-me` skill before anything
 else. That skill runs the interview, and three bundled skills carry the session
@@ -113,7 +114,8 @@ finished session returns the same Plan and Issues. Cancel discards the drafts.
 
 `createLocalSessionRuntime()` waits for ttyd readiness before resolving a start
 and reports the failing process's stderr on start failure. Host development uses
-`ttyd` and `opencode` from `PATH`; the agent image pins both.
+`ttyd`, `tmux` and `opencode` from `PATH`; the agent image pins all three. Stop
+ends the supervised tmux session as well as ttyd.
 
 ### Kubernetes sessions
 
@@ -132,9 +134,11 @@ per-session credential Secret and one Pod in the Project Namespace. The Pod runs
 under the Project's `yaaabk-agent` ServiceAccount with Pod Security
 `restricted`; its init container clones the repository with a `contents:read`
 token and rewrites the remote to a credential-free URL, and the token Secret is
-never mounted into the main container. The main container runs ttyd and
-`opencode mini` in `/workspace/repo` with the opening prompt, selected model and
-replay enabled. The adapter waits for the Pod to become Ready and for ttyd to
+never mounted into the main container. The main container runs ttyd in front of
+a tmux session that holds `opencode mini` in `/workspace/repo` with the opening
+prompt, selected model and replay enabled. ttyd runs one command per client, so
+tmux is what keeps the agent alive across a terminal reconnect. The adapter waits
+for the Pod to become Ready and for ttyd to
 accept connections, mapping a container waiting reason (for example
 `ErrImagePull`) to the start error. Stop deletes the Pod, NetworkPolicy and both
 Secrets.

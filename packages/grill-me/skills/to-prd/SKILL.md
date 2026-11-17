@@ -33,7 +33,10 @@ Before writing the PRD, sketch the technical shape in a few lines:
 
 Show the sketch to the Developer and ask one question: "Do these modules and
 boundaries match how you want this built?" Reflect their corrections. Do not
-write the PRD until the Developer has confirmed the sketch.
+write the PRD until the Developer has confirmed the sketch. If the Developer
+already delegated the remaining decisions ("you decide the rest", "fill in the
+answers yourself", "use your recommendations"), pick the sketch you recommend
+and continue without waiting for another confirmation.
 
 ## 3. Write the PRD from the template
 
@@ -116,6 +119,11 @@ Call the `report_prd` tool from the `yaaabk` MCP server with the PRD markdown:
 If the tool rejects the report, fix exactly what it names and call it again.
 A successful call stores a **draft**. Nothing is published until the Developer
 clicks **Finish** in YAAABK.
+
+If the call fails with a connection error ("Connection closed", a timeout or a
+5xx), the terminal may have reconnected underneath you. Retry the same report
+before concluding that anything was lost; a retry overwrites the draft and is
+safe.
 
 ## 5. Hand off to Issues
 

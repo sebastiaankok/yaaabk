@@ -144,7 +144,9 @@ export function grillRoutes(
         if (browser !== null) send(browser, { type: 'status', status: 'closed', reason });
       },
       onClose(reason) {
-        terminals.delete(sessionId);
+        // Only the bridge that is still the current entry may remove it; a
+        // reconnect may already have installed its replacement.
+        if (terminals.get(sessionId) === entry) terminals.delete(sessionId);
         const browser = entry.browser;
         if (browser !== null) {
           send(browser, { type: 'status', status: 'closed', reason });

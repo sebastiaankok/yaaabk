@@ -95,6 +95,11 @@ entry has exactly these fields:
 If the tool rejects the report, fix exactly what it names and call it again.
 A successful call stores a **draft**.
 
+If the call fails with a connection error ("Connection closed", a timeout or a
+5xx), the terminal may have reconnected underneath you. Retry the same list
+before concluding that anything was lost; a retry replaces the draft and is
+safe.
+
 ## 6. Finish
 
 Tell the Developer the PRD and Issues are ready as drafts. The Project changes
