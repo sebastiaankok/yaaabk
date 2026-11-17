@@ -4,19 +4,6 @@ import { createTestContext, signIn, type TestContext } from './test-support';
 
 const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
 
-/** Awaits pending microtasks (e.g. the grill-me spawn). */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-/** Waits until the in-flight request has spawned its grill-me process. */
-async function waitForSpawn(context: TestContext): Promise<void> {
-  for (let i = 0; i < 100 && context.spawner.processes.length === 0; i += 1) {
-    await tick();
-  }
-  if (context.spawner.processes.length === 0) {
-    throw new Error('The grill-me process was never spawned');
-  }
-}
-
 async function request(
   context: TestContext,
   session: string,
@@ -43,14 +30,6 @@ async function createProject(context: TestContext): Promise<string> {
   const created = await context.projects.create(PROJECT);
   if (!created.ok) throw new Error('create failed');
   return created.value.id;
-}
-
-async function savePlan(context: TestContext, session: string, projectId: string): Promise<void> {
-  const res = await request(context, session, `/api/projects/${projectId}/plans`, {
-    method: 'POST',
-    body: JSON.stringify({ content_markdown: '# Plan', skill_level: 'expert' }),
-  });
-  expect(res.status).toBe(201);
 }
 
 async function createIssue(
@@ -269,96 +248,6 @@ describe('POST /api/projects/:id/issues/approve', () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       issues: [expect.objectContaining({ label: 'ready' })],
-    });
-  });
-});
-
-describe('POST /api/projects/:id/issues/generate', () => {
-  const ISSUES =
-    '<ISSUES>[{"title":"Add auth","body":"","labels":["ready"],"depends_on":[]}]</ISSUES>';
-
-  it('returns 404 when the project has no active plan', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-
-    const res = await request(context, session, `/api/projects/${projectId}/issues/generate`, {
-      method: 'POST',
-    });
-
-    expect(res.status).toBe(404);
-  });
-
-  it('generates issues from the active plan and records them', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    await savePlan(context, session, projectId);
-
-    const pending = request(context, session, `/api/projects/${projectId}/issues/generate`, {
-      method: 'POST',
-    });
-    await waitForSpawn(context);
-    context.spawner.last().emit(ISSUES);
-    const res = await pending;
-
-    expect(res.status).toBe(201);
-    await expect(res.json()).resolves.toMatchObject({
-      issues: [expect.objectContaining({ title: 'Add auth', label: 'ready' })],
-    });
-    await expect(context.issues.list(projectId)).resolves.toMatchObject({
-      ok: true,
-      value: [expect.objectContaining({ title: 'Add auth' })],
-    });
-  });
-
-  it('maps a failed run to 422', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    await savePlan(context, session, projectId);
-
-    const pending = request(context, session, `/api/projects/${projectId}/issues/generate`, {
-      method: 'POST',
-    });
-    await waitForSpawn(context);
-    context.spawner.last().exit(0);
-    const res = await pending;
-
-    expect(res.status).toBe(422);
-    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-issues' });
-  });
-});
-
-describe('POST /api/projects/:id/issues/refine', () => {
-  const REVISED = '<ISSUES>[{"title":"Add OAuth","labels":["ready"],"depends_on":[]}]</ISSUES>';
-
-  it('rejects empty feedback with 400', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-
-    const res = await request(context, session, `/api/projects/${projectId}/issues/refine`, {
-      method: 'POST',
-      body: JSON.stringify({ feedback: '   ' }),
-    });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('replaces the drafts using the feedback', async () => {
-    const { context, session } = await signedIn();
-    const projectId = await createProject(context);
-    await savePlan(context, session, projectId);
-
-    const pending = request(context, session, `/api/projects/${projectId}/issues/refine`, {
-      method: 'POST',
-      body: JSON.stringify({ feedback: 'Split the auth issue' }),
-    });
-    await waitForSpawn(context);
-    expect(context.spawner.requests[0]?.prompt).toContain('Split the auth issue');
-    context.spawner.last().emit(REVISED);
-    const res = await pending;
-
-    expect(res.status).toBe(201);
-    await expect(res.json()).resolves.toMatchObject({
-      issues: [expect.objectContaining({ title: 'Add OAuth' })],
     });
   });
 });

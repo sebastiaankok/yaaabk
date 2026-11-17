@@ -56,7 +56,7 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toMatch(/instead of asking/i);
   });
 
-  it('leaves the marker protocol to the legacy one-shot path', () => {
+  it('never asks for the removed marker protocol', () => {
     const prompt = buildGrillSessionPrompt(INPUT);
 
     for (const marker of ['<QUESTION>', '<PLAN>', '<ISSUES>']) {

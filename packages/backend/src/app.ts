@@ -3,7 +3,7 @@ import type { AuthModule } from '@yaaabk/auth';
 import type { CiTracker } from '@yaaabk/ci-tracker';
 import type { ModelCatalogue } from '@yaaabk/cost-control';
 import type { IssueSyncModule } from '@yaaabk/github';
-import type { GrillMeModule, GrillSessionsModule } from '@yaaabk/grill-me';
+import type { GrillSessionsModule } from '@yaaabk/grill-me';
 import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
@@ -44,8 +44,6 @@ export interface AppOptions {
   issues: IssuesModule;
   /** The Issue sync Module. Tests inject one over a fake GitHub. */
   issueSync: IssueSyncModule;
-  /** The Grill-Me Module. Tests inject one over a fake spawner. */
-  grillMe: GrillMeModule;
   /** Interactive terminal sessions. Tests inject one over a fake runtime. */
   grillSessions: GrillSessionsModule;
   /** Bun's WebSocket upgrader; omitted in unit tests. */
@@ -93,7 +91,7 @@ export function createApp(options: AppOptions): Hono {
   app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects));
   app.route('/', planRoutes(options.projects, options.plans));
-  app.route('/', issueRoutes(options.issues, options.projects, options.plans, options.grillMe));
+  app.route('/', issueRoutes(options.issues, options.projects));
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', statsRoutes(options.issues, options.agents, options.projects));

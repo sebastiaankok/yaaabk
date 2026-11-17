@@ -53,7 +53,6 @@ COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
 COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
 RUN mkdir -p /work && chown bun:bun /work
 ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
-ENV YAAABK_GRILL_SKILL_PATH=/app/skills/grill-me/SKILL.md
 ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 USER bun
 CMD ["bun", "dist/index.js"]

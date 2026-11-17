@@ -8,14 +8,12 @@
   import {
     ApiError,
     approveIssues,
-    generateIssues,
     getActivePlan,
     getIssueGraph,
     getIssueSyncStatus,
     getProject,
     listIssues,
     pushIssues,
-    refineIssues,
     syncIssues,
   } from '#lib/api.js';
   import { groupByWave, reviewItems, type WaveGroup } from '#lib/issue-review.js';
@@ -32,7 +30,6 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state(false);
-  let feedback = $state('');
   let approved = $state(false);
   let syncMessage = $state<string | null>(null);
 
@@ -87,35 +84,6 @@
     };
   });
 
-  async function generate(): Promise<void> {
-    if (projectId === undefined || busy) return;
-    error = null;
-    busy = true;
-    try {
-      await generateIssues(projectId);
-      await refresh(projectId);
-    } catch (cause) {
-      error = describe(cause);
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function refine(): Promise<void> {
-    if (projectId === undefined || busy || feedback.trim() === '') return;
-    error = null;
-    busy = true;
-    try {
-      await refineIssues(projectId, feedback.trim());
-      feedback = '';
-      await refresh(projectId);
-    } catch (cause) {
-      error = describe(cause);
-    } finally {
-      busy = false;
-    }
-  }
-
   async function approve(): Promise<void> {
     if (projectId === undefined || busy) return;
     error = null;
@@ -169,8 +137,9 @@
     <header class="space-y-2">
       <h1 class="text-2xl font-bold tracking-tight">Review issues</h1>
       <p class="text-neutral-600">
-        Review the issues generated for <span class="font-medium">{project.name}</span>, refine them
-        with a prompt, then approve them to make them ready for agents.
+        Review the issues published for <span class="font-medium">{project.name}</span>, then
+        approve them to make them ready for agents. To change a Plan or its Issues, start another
+        Grill-Me session.
       </p>
     </header>
 
@@ -257,24 +226,18 @@
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="issues-heading">
       <div class="mb-3 flex items-center justify-between gap-2">
-        <h2 id="issues-heading" class="text-sm font-semibold">
-          Generated issues ({issues.length})
-        </h2>
-        {#if issues.length === 0 && plan !== null}
-          <button
-            type="button"
-            onclick={() => void generate()}
-            disabled={busy}
-            class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-          >
-            Generate from plan
-          </button>
-        {/if}
+        <h2 id="issues-heading" class="text-sm font-semibold">Issues ({issues.length})</h2>
       </div>
 
       {#if issues.length === 0}
         <p class="text-sm text-neutral-500">
-          No issues yet. Run a Grill-Me session, or generate them from the active plan.
+          No issues yet. Finish a Grill-Me session to publish a Plan (PRD) and its Issues.
+          <a
+            href={resolve('/projects/[id]/plan', { id: project.id })}
+            class="font-medium underline"
+          >
+            Start a new Grill-Me session</a
+          >.
         </p>
       {:else}
         <div class="flex flex-col gap-4">
@@ -314,47 +277,33 @@
       {/if}
     </section>
 
-    {#if plan !== null}
-      <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="refine-heading">
-        <h2 id="refine-heading" class="mb-2 text-sm font-semibold">Refine with prompt</h2>
-        <form
-          class="flex flex-col gap-2"
-          onsubmit={(event) => {
-            event.preventDefault();
-            void refine();
-          }}
-        >
-          <label class="sr-only" for="feedback">Refinement feedback</label>
-          <textarea
-            id="feedback"
-            bind:value={feedback}
-            rows="3"
-            class="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            placeholder="e.g. Split the auth issue into login and signup"></textarea>
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={busy || feedback.trim() === ''}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50"
-            >
-              Refine
-            </button>
-            <button
-              type="button"
-              onclick={() => void approve()}
-              disabled={busy || issues.length === 0}
-              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
-              Approve &amp; Create
-            </button>
-            <a
-              href={resolve('/projects/[id]/plan', { id: project.id })}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-            >
-              Back to grill-me
-            </a>
-          </div>
-        </form>
+    {#if plan !== null && issues.length > 0}
+      <section
+        class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-4"
+        aria-labelledby="approve-heading"
+      >
+        <div>
+          <h2 id="approve-heading" class="text-sm font-semibold">Approve these issues</h2>
+          <p class="text-xs text-neutral-500">
+            Approval labels every Issue ready and pushes the set to GitHub.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onclick={() => void approve()}
+            disabled={busy}
+            class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            Approve &amp; Create
+          </button>
+          <a
+            href={resolve('/projects/[id]/plan', { id: project.id })}
+            class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          >
+            Start a new Grill-Me session
+          </a>
+        </div>
       </section>
     {/if}
   {/if}

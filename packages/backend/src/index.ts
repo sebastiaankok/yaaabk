@@ -22,7 +22,6 @@ import {
   loadCostControlConfig,
 } from '@yaaabk/cost-control';
 import {
-  createGrillMeModule,
   createGrillSessionsModule,
   createKubernetesSessionRuntime,
   createLocalSessionRuntime,
@@ -392,7 +391,6 @@ const issues = createIssuesModule({
       : {}),
 });
 const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(settings) });
-const grillMe = createGrillMeModule();
 
 /** Model used when neither the request nor the Project chooses one. */
 const defaultModel = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL;
@@ -561,7 +559,6 @@ const app = createApp({
   plans,
   issues,
   issueSync,
-  grillMe,
   grillSessions,
   upgradeWebSocket,
   agents,
