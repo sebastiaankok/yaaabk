@@ -81,8 +81,10 @@ kubectl kustomize deploy \
   | kubectl --context "$CONTEXT" apply -f -
 
 echo "▶ waiting for rollout"
-kubectl --context "$CONTEXT" rollout status deployment/yaaabk-backend --timeout=5m
-kubectl --context "$CONTEXT" rollout status deployment/yaaabk-frontend --timeout=5m
+# The manifests pin namespace yaaabk; don't rely on the kubeconfig context's
+# default namespace, which can point at a Project namespace.
+kubectl --context "$CONTEXT" -n yaaabk rollout status deployment/yaaabk-backend --timeout=5m
+kubectl --context "$CONTEXT" -n yaaabk rollout status deployment/yaaabk-frontend --timeout=5m
 
 kubectl --context "$CONTEXT" -n yaaabk get pods
 echo "✓ deployed $TAG"
