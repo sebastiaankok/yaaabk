@@ -108,18 +108,22 @@ describe('terminal client', () => {
 
     expect(first.sent).toEqual([
       '{"type":"input","data":"ls\\r"}',
+      '{"type":"resize","columns":120,"rows":41}',
       '{"type":"resize","columns":120,"rows":40}',
     ]);
   });
 
-  it('sends a size set before the socket opens', () => {
+  it('sends a size set before the socket opens, nudging it so OpenCode replays', () => {
     const { client, sockets } = setup();
     client.resize({ columns: 132, rows: 43 });
     client.connect();
 
     sockets[0]!.open();
 
-    expect(sockets[0]!.sent).toEqual(['{"type":"resize","columns":132,"rows":43}']);
+    expect(sockets[0]!.sent).toEqual([
+      '{"type":"resize","columns":132,"rows":44}',
+      '{"type":"resize","columns":132,"rows":43}',
+    ]);
   });
 
   it('requests a replay-triggering resize on every reconnect', () => {
@@ -133,7 +137,10 @@ describe('terminal client', () => {
     const second = sockets[1]!;
     second.open();
 
-    expect(second.sent).toEqual(['{"type":"resize","columns":100,"rows":30}']);
+    expect(second.sent).toEqual([
+      '{"type":"resize","columns":100,"rows":31}',
+      '{"type":"resize","columns":100,"rows":30}',
+    ]);
   });
 
   it('writes output, title and preference frames into the sink', () => {
