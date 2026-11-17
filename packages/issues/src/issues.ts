@@ -68,6 +68,13 @@ function invalidReason(input: NewIssue): string | undefined {
   if (input.maxAttempts !== undefined && !isValidAttempts(input.maxAttempts)) {
     return 'The attempt cap must be a positive whole number';
   }
+  if (
+    input.agentModel !== undefined &&
+    input.agentModel !== null &&
+    (typeof input.agentModel !== 'string' || input.agentModel.trim() === '')
+  ) {
+    return 'An agent model is required; use null to inherit the project default';
+  }
   return undefined;
 }
 
@@ -101,6 +108,13 @@ function patchReason(patch: IssuePatch): string | undefined {
       patch.attemptCount < 0)
   ) {
     return 'The attempt count must be a non-negative whole number';
+  }
+  if (
+    patch.agentModel !== undefined &&
+    patch.agentModel !== null &&
+    (typeof patch.agentModel !== 'string' || patch.agentModel.trim() === '')
+  ) {
+    return 'An agent model is required; use null to inherit the project default';
   }
   return undefined;
 }
@@ -140,6 +154,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
       maxAttempts: input.maxAttempts ?? defaultMaxAttempts,
       budgetCents: input.budgetCents ?? defaultBudgetCents,
       openrouterKeyHash: null,
+      agentModel: input.agentModel?.trim() ?? null,
       closedAt: null,
       createdAt: now().toISOString(),
     };
@@ -256,6 +271,9 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
           ...(patch.openrouterKeyHash === undefined
             ? {}
             : { openrouterKeyHash: patch.openrouterKeyHash }),
+          ...(patch.agentModel === undefined
+            ? {}
+            : { agentModel: patch.agentModel === null ? null : patch.agentModel.trim() }),
           ...(patch.closedAt === undefined ? {} : { closedAt: patch.closedAt }),
         };
         store.update(next);

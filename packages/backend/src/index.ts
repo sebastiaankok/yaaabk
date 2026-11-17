@@ -539,7 +539,9 @@ const agents = createAgentManager({
       ? { ok: true, key: minted.value.key, hash: minted.value.hash }
       : { ok: false, message: minted.message };
   },
-  // Sessions and Agent Jobs share one model configuration.
+  // Fallback model for both surfaces: Agent Jobs prefer the Issue's model, then
+  // the Project's, before this environment default; Grill-Me Sessions use the
+  // per-session choice with this as their fallback.
   model: defaultModel,
   ...(process.env.YAAABK_AGENT_IMAGE !== undefined
     ? { image: process.env.YAAABK_AGENT_IMAGE }

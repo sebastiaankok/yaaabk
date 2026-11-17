@@ -11,7 +11,7 @@ import type { AgentRun } from '@yaaabk/agents';
 import type { PullSummary, PushSummary, IssueSyncStatus, SyncSummary } from '@yaaabk/github';
 import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
-import type { Project, ProvisioningEvent } from '@yaaabk/projects';
+import type { Project, ProjectPatch, ProvisioningEvent } from '@yaaabk/projects';
 import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
 import type { SkillLevel } from '@yaaabk/shared';
 import type { ProjectStats } from '@yaaabk/stats';
@@ -286,6 +286,14 @@ export async function createProjectStream(
 
 export function deleteProject(id: string): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** Updates the mutable metadata of a Project. */
+export function updateProject(id: string, patch: ProjectPatch): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
 }
 
 /**

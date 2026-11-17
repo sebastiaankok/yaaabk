@@ -227,6 +227,64 @@ describe('PATCH /api/projects/:id', () => {
 
     expect(res.status).toBe(404);
   });
+
+  it('sets the agent model from the live catalogue', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/chosen' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ agentModel: 'openrouter/chosen' });
+  });
+
+  it('clears the agent model with null even when the catalogue is unavailable', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+    await context.projects.update(created.value.id, { agentModel: 'openrouter/chosen' });
+    context.models.fail('OpenRouter is down');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: null }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ agentModel: null });
+  });
+
+  it('rejects a model outside the tool-capable catalogue with 400', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/not-a-model' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-model' });
+  });
+
+  it('returns 502 when the model catalogue cannot be loaded', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+    context.models.fail('OpenRouter is down');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/chosen' }),
+    });
+
+    expect(res.status).toBe(502);
+  });
 });
 
 describe('POST /api/projects/:id/export', () => {

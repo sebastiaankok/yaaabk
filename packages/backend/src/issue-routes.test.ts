@@ -59,6 +59,25 @@ describe('POST /api/projects/:id/issues', () => {
     expect(res.status).toBe(401);
   });
 
+  it('accepts a catalogue agent model, or rejects an unknown one', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const accepted = await request(context, session, `/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Add login', agentModel: 'openrouter/chosen' }),
+    });
+    expect(accepted.status).toBe(201);
+    await expect(accepted.json()).resolves.toMatchObject({ agentModel: 'openrouter/chosen' });
+
+    const rejected = await request(context, session, `/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Add signup', agentModel: 'openrouter/not-a-model' }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({ error: 'invalid-model' });
+  });
+
   it('creates an issue', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
@@ -217,6 +236,55 @@ describe('PATCH /api/projects/:id/issues/:issueId', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it('sets and clears the agent model override', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId);
+
+    const set = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/chosen' }),
+    });
+    expect(set.status).toBe(200);
+    await expect(set.json()).resolves.toMatchObject({ agentModel: 'openrouter/chosen' });
+
+    context.models.fail('OpenRouter is down');
+    const cleared = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: null }),
+    });
+    expect(cleared.status).toBe(200);
+    await expect(cleared.json()).resolves.toMatchObject({ agentModel: null });
+  });
+
+  it('rejects a model outside the tool-capable catalogue with 400', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId);
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/not-a-model' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-model' });
+  });
+
+  it('returns 502 when the model catalogue cannot be loaded', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId);
+    context.models.fail('OpenRouter is down');
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ agentModel: 'openrouter/chosen' }),
+    });
+
+    expect(res.status).toBe(502);
   });
 });
 

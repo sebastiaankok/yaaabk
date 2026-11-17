@@ -54,6 +54,7 @@ describe('create', () => {
       maxAttempts: 3,
       budgetCents: 50,
       openrouterKeyHash: null,
+      agentModel: null,
       closedAt: null,
       createdAt: NOW.toISOString(),
     });
@@ -71,6 +72,7 @@ describe('create', () => {
       dependsOn: ['Schema'],
       budgetCents: 120,
       maxAttempts: 5,
+      agentModel: 'openrouter/openai/gpt-5',
     });
 
     expect(issue).toMatchObject({
@@ -81,6 +83,7 @@ describe('create', () => {
       dependsOn: ['Schema'],
       budgetCents: 120,
       maxAttempts: 5,
+      agentModel: 'openrouter/openai/gpt-5',
     });
   });
 
@@ -101,6 +104,7 @@ describe('create', () => {
     ['a fractional budget', { budgetCents: 12.5 }],
     ['a zero attempt cap', { maxAttempts: 0 }],
     ['non-string dependencies', { dependsOn: [1] }],
+    ['a blank agent model', { agentModel: '   ' }],
   ])('rejects %s', async (_label, overrides) => {
     const { issues } = setup();
 
@@ -208,6 +212,33 @@ describe('update', () => {
 
     expect(result.ok && result.value.attemptCount).toBe(2);
     expect(store.get('project-1', created.id)?.attemptCount).toBe(2);
+  });
+
+  it('sets and clears the agent model override', async () => {
+    const { store, issues } = setup();
+    const created = await create(issues);
+
+    const set = await issues.update('project-1', created.id, {
+      agentModel: '  openrouter/openai/gpt-5  ',
+    });
+
+    expect(set.ok && set.value.agentModel).toBe('openrouter/openai/gpt-5');
+    expect(store.get('project-1', created.id)?.agentModel).toBe('openrouter/openai/gpt-5');
+
+    const cleared = await issues.update('project-1', created.id, { agentModel: null });
+
+    expect(cleared.ok && cleared.value.agentModel).toBeNull();
+  });
+
+  it('rejects a blank agent model', async () => {
+    const { issues } = setup();
+    const created = await create(issues);
+
+    const result = await issues.update('project-1', created.id, { agentModel: '   ' });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
   });
 
   it('rejects a negative attempt count', async () => {

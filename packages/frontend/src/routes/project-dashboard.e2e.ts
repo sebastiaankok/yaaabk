@@ -8,11 +8,20 @@ const PROJECT = {
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
+  agentModel: null,
   deployedCommitSha: 'abc1234',
   lastDeployStatus: 'success',
   lastDeployAt: '2026-01-02T03:04:05.000Z',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+const MODELS = {
+  models: [
+    { id: 'openrouter/default-model', name: 'Default model' },
+    { id: 'openrouter/chosen', name: 'Chosen model' },
+  ],
+  defaultModel: 'openrouter/default-model',
 };
 
 async function mockProject(page: Page): Promise<void> {
@@ -22,6 +31,7 @@ async function mockProject(page: Page): Promise<void> {
     }),
   );
   await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/models', (route) => route.fulfill({ json: MODELS }));
 }
 
 /**
@@ -59,6 +69,36 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'href',
     '/projects/p1/stats',
   );
+});
+
+test('saves the project agent model and clears it', async ({ page }) => {
+  await mockProject(page);
+  let state: Record<string, unknown> = { ...PROJECT };
+  const patches: unknown[] = [];
+  await page.route('**/api/projects/p1', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patches.push(route.request().postDataJSON());
+      state = { ...state, ...(route.request().postDataJSON() as Record<string, unknown>) };
+      await route.fulfill({ json: state });
+      return;
+    }
+    await route.fulfill({ json: state });
+  });
+
+  await gotoHydrated(page, '/projects/p1');
+
+  const input = page.getByLabel('Default agent model');
+  await expect(page.getByText('Used by issues without an override:')).toBeVisible();
+  await expect(page.getByText('openrouter/default-model', { exact: false })).toBeVisible();
+  await input.fill('openrouter/chosen');
+  await input.press('Tab');
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+  await input.fill('');
+  await input.press('Tab');
+  await expect
+    .poll(() => patches)
+    .toEqual([{ agentModel: 'openrouter/chosen' }, { agentModel: null }]);
 });
 
 test('shows a failed last deploy to the developer', async ({ page }) => {

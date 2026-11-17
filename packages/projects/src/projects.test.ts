@@ -325,6 +325,45 @@ describe('get', () => {
 });
 
 describe('update', () => {
+  it('starts with no agent model, so the environment default applies', async () => {
+    const { module } = harness();
+
+    const created = await module.create(INPUT);
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.agentModel).toBeNull();
+  });
+
+  it('sets and clears the agent model', async () => {
+    const { module, store } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const set = await module.update(created.value.id, {
+      agentModel: '  openrouter/anthropic/claude-sonnet-4.5  ',
+    });
+
+    expect(set.ok && set.value.agentModel).toBe('openrouter/anthropic/claude-sonnet-4.5');
+    expect(store.get(created.value.id)?.agentModel).toBe('openrouter/anthropic/claude-sonnet-4.5');
+
+    const cleared = await module.update(created.value.id, { agentModel: null });
+
+    expect(cleared.ok && cleared.value.agentModel).toBeNull();
+    expect(store.get(created.value.id)?.agentModel).toBeNull();
+  });
+
+  it('rejects a blank agent model', async () => {
+    const { module } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.update(created.value.id, { agentModel: '   ' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
   it('updates the description and skill level, bumping updatedAt', async () => {
     const { module, store, clock } = harness();
     const created = await module.create(INPUT);

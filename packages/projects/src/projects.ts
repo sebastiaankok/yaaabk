@@ -259,6 +259,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           repoFullName: repository.fullName,
           namespace,
           lastModel: null,
+          agentModel: null,
           deployedCommitSha: null,
           lastDeployStatus: null,
           lastDeployAt: null,
@@ -335,10 +336,27 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           skillLevel = patch.skillLevel;
         }
 
+        let agentModel = project.agentModel;
+        if (patch.agentModel !== undefined) {
+          if (patch.agentModel === null) {
+            agentModel = null;
+          } else {
+            const trimmed = patch.agentModel.trim();
+            if (trimmed === '') {
+              throw projectError(
+                'invalid-input',
+                'An agent model is required; use null to clear it',
+              );
+            }
+            agentModel = trimmed;
+          }
+        }
+
         const updated: Project = {
           ...project,
           description,
           skillLevel,
+          agentModel,
           updatedAt: now().toISOString(),
         };
         store.update(updated);

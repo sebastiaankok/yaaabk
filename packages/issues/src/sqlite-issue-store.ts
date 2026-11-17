@@ -34,6 +34,7 @@ interface IssueRow {
   max_attempts: number;
   budget_cents: number;
   openrouter_key_hash: string | null;
+  agent_model: string | null;
   closed_at: string | null;
   created_at: string;
 }
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS issues (
   max_attempts        INTEGER NOT NULL,
   budget_cents        INTEGER NOT NULL,
   openrouter_key_hash TEXT,
+  agent_model         TEXT,
   closed_at           TEXT,
   created_at          TEXT NOT NULL,
   UNIQUE (project_id, title)
@@ -79,6 +81,7 @@ function toIssue(row: IssueRow): Issue {
     maxAttempts: row.max_attempts,
     budgetCents: row.budget_cents,
     openrouterKeyHash: row.openrouter_key_hash,
+    agentModel: row.agent_model ?? null,
     closedAt: row.closed_at,
     createdAt: row.created_at,
   };
@@ -114,6 +117,7 @@ function ensureColumn(
 export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
   database.exec(SCHEMA);
   ensureColumn(database, 'issues', 'github_synced_at', 'TEXT');
+  ensureColumn(database, 'issues', 'agent_model', 'TEXT');
 
   function requireRow(projectId: string, issueId: string): IssueRow {
     const row = database
@@ -131,9 +135,9 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
         .prepare(
           `INSERT INTO issues
              (id, project_id, plan_id, github_number, github_synced_at, title, body, status, label,
-              depends_on, attempt_count, max_attempts, budget_cents, openrouter_key_hash, closed_at,
-              created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              depends_on, attempt_count, max_attempts, budget_cents, openrouter_key_hash, agent_model,
+              closed_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           issue.id,
@@ -150,6 +154,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
           issue.maxAttempts,
           issue.budgetCents,
           issue.openrouterKeyHash,
+          issue.agentModel,
           issue.closedAt,
           issue.createdAt,
         );
@@ -191,7 +196,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
             `UPDATE issues SET
                plan_id = ?, github_number = ?, github_synced_at = ?, title = ?, body = ?, status = ?,
                label = ?, depends_on = ?, attempt_count = ?, max_attempts = ?, budget_cents = ?,
-               openrouter_key_hash = ?, closed_at = ?
+               openrouter_key_hash = ?, agent_model = ?, closed_at = ?
              WHERE project_id = ? AND id = ?`,
           )
           .run(
@@ -207,6 +212,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
             issue.maxAttempts,
             issue.budgetCents,
             issue.openrouterKeyHash,
+            issue.agentModel,
             issue.closedAt,
             issue.projectId,
             issue.id,

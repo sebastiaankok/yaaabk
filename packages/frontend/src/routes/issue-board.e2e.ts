@@ -9,11 +9,20 @@ const PROJECT = {
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
+  agentModel: null,
   deployedCommitSha: null,
   lastDeployStatus: null,
   lastDeployAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+const MODELS = {
+  models: [
+    { id: 'openrouter/default-model', name: 'Default model' },
+    { id: 'openrouter/chosen', name: 'Chosen model' },
+  ],
+  defaultModel: 'openrouter/default-model',
 };
 
 function issue(overrides: Record<string, unknown>): Record<string, unknown> {
@@ -31,6 +40,7 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
     maxAttempts: 3,
     budgetCents: 50,
     openrouterKeyHash: null,
+    agentModel: null,
     closedAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -90,6 +100,7 @@ async function mockBoard(page: Page): Promise<Mocks> {
         status: 'success',
         prUrl: 'https://github.com/acme/todo-app/pull/1',
         costCents: 10,
+        model: 'openrouter/default-model',
         logs: 'Agent finished: opened PR #1',
         startedAt: '2026-01-01T00:00:00.000Z',
         finishedAt: '2026-01-01T00:05:00.000Z',
@@ -112,6 +123,7 @@ async function mockBoard(page: Page): Promise<Mocks> {
   await page.route('**/api/projects/p1/agent-runs', (route) =>
     route.fulfill({ json: { runs: state.runs } }),
   );
+  await page.route('**/api/models', (route) => route.fulfill({ json: MODELS }));
   return state;
 }
 
@@ -221,6 +233,43 @@ test('re-runs an agent for the open issue', async ({ page }) => {
   const panel = page.getByRole('dialog', { name: 'Schema' });
   await expect(panel.getByText('Attempt 2')).toBeVisible();
   await expect(panel.getByText('queued')).toBeVisible();
+});
+
+test('saves and clears the issue agent model override', async ({ page }) => {
+  const state = await mockBoard(page);
+  const patches: unknown[] = [];
+  await page.route('**/api/projects/p1/issues/i1', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    const patch = route.request().postDataJSON() as Record<string, unknown>;
+    patches.push(patch);
+    const updated = { ...state.issues.find((item) => item.id === 'i1'), ...patch };
+    state.issues = state.issues.map((item) => (item.id === 'i1' ? updated : item));
+    await route.fulfill({ json: updated });
+  });
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  const select = panel.getByLabel('Agent model');
+  await expect(select).toHaveValue('');
+  await expect(panel.getByText('Model: openrouter/default-model')).toBeVisible();
+  await expect(select.locator('option[value=""]')).toHaveText(
+    'Use project default (openrouter/default-model)',
+  );
+
+  await select.selectOption('openrouter/chosen');
+  await expect(panel.getByText('Runs use openrouter/chosen.')).toBeVisible();
+  await expect(panel.getByText('Saved', { exact: true })).toBeVisible();
+
+  await select.selectOption('');
+  await expect(panel.getByText('Runs use openrouter/default-model.')).toBeVisible();
+  await expect
+    .poll(() => patches)
+    .toEqual([{ agentModel: 'openrouter/chosen' }, { agentModel: null }]);
 });
 
 test('edits and deletes the open issue', async ({ page }) => {

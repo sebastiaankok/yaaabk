@@ -66,6 +66,12 @@ export interface Issue {
   budgetCents: number;
   /** Hash of the OpenRouter key provisioned for this Issue, when any. */
   openrouterKeyHash: string | null;
+  /**
+   * OpenRouter model this Issue's Agent runs use, in `provider/model` form.
+   * `null` means the Project's `agentModel` applies, then the environment
+   * default.
+   */
+  agentModel: string | null;
   /** When the Issue was closed, if it has been. */
   closedAt: string | null;
   createdAt: string;
@@ -81,6 +87,8 @@ export interface NewIssue {
   dependsOn?: string[];
   budgetCents?: number;
   maxAttempts?: number;
+  /** Model override for this Issue's Agent runs; omit or null to inherit. */
+  agentModel?: string | null;
 }
 
 /** An Issue as emitted by the grill-me skill, before validation. */
@@ -105,6 +113,8 @@ export interface IssuePatch {
   githubNumber?: number | null;
   githubSyncedAt?: string | null;
   openrouterKeyHash?: string | null;
+  /** Model override for this Issue's Agent runs; null to inherit. */
+  agentModel?: string | null;
   closedAt?: string | null;
 }
 

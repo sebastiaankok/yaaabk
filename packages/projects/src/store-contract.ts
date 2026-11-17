@@ -30,6 +30,7 @@ export function projectRecord(overrides: Partial<Project> = {}): Project {
     repoFullName: 'acme/todo-app',
     namespace: 'yaaabk-a1b2c3d4',
     lastModel: null,
+    agentModel: null,
     deployedCommitSha: null,
     lastDeployStatus: null,
     lastDeployAt: null,
@@ -103,6 +104,13 @@ export function projectStoreContract(api: StoreTestApi, createStore: () => Proje
 
       expect(store.get('project-1')?.description).toBe('Updated');
       expect(store.get('project-1')?.updatedAt).toBe('2026-03-01T00:00:00.000Z');
+    });
+
+    it('stores the agent model default', () => {
+      const store = createStore();
+      store.create(projectRecord({ agentModel: 'openrouter/anthropic/claude-sonnet-4.5' }));
+
+      expect(store.get('project-1')?.agentModel).toBe('openrouter/anthropic/claude-sonnet-4.5');
     });
 
     it('stores the last deploy status and time', () => {
