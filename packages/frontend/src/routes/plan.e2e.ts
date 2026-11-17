@@ -211,7 +211,7 @@ test('preselects the Project model and starts the session with it', async ({ pag
   await expect.poll(() => startedWith).toBe('openrouter/chosen-model');
 });
 
-test('starts a live terminal session and cancels it', async ({ page }) => {
+test('starts a live terminal session and cancels it after confirmation', async ({ page }) => {
   await mockProject(page);
   await mockTerminal(page);
 
@@ -224,9 +224,31 @@ test('starts a live terminal session and cancels it', async ({ page }) => {
   expect(await page.locator('.xterm').count()).toBe(1);
 
   await page.getByRole('button', { name: 'Cancel session' }).click();
+  await expect(page.getByText(/will be discarded/)).toBeVisible();
+  await page.getByRole('button', { name: 'Discard and cancel' }).click();
 
   await expect(page.getByText('Session cancelled.')).toBeVisible();
   await expect(page.getByLabel('Your idea')).toBeVisible();
+});
+
+test('keeps the session when the Developer dismisses the cancel confirmation', async ({ page }) => {
+  await mockProject(page);
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await page.getByLabel('Your idea').fill('A todo app');
+  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel session' }).click();
+  await expect(page.getByText(/will be discarded/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Keep session' }).click();
+
+  await expect(page.getByText(/will be discarded/)).not.toBeVisible();
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+  expect(await page.locator('.xterm').count()).toBe(1);
 });
 
 test('reconnects to a running session after a refresh', async ({ page }) => {

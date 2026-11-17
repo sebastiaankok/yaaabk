@@ -35,6 +35,7 @@
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let finishConflict = $state<string | null>(null);
+  let confirmingCancel = $state(false);
 
   let idea = $state('');
   let catalogue = $state<ModelCatalogueView | null>(null);
@@ -141,6 +142,7 @@
     error = null;
     notice = null;
     finishConflict = null;
+    confirmingCancel = false;
     busy = true;
     try {
       session = await startGrill(projectId, idea.trim(), modelChoice.trim());
@@ -160,6 +162,7 @@
     error = null;
     notice = null;
     finishConflict = null;
+    confirmingCancel = false;
     busy = true;
     try {
       const published = await finishGrill(projectId, session.id, { force });
@@ -181,6 +184,16 @@
     }
   }
 
+  function requestCancel(): void {
+    if (session === null || busy) return;
+    finishConflict = null;
+    confirmingCancel = true;
+  }
+
+  function dismissCancel(): void {
+    confirmingCancel = false;
+  }
+
   async function cancel(): Promise<void> {
     if (projectId === undefined || session === null || busy) return;
     error = null;
@@ -190,6 +203,7 @@
     try {
       await cancelGrill(projectId, session.id);
       session = null;
+      confirmingCancel = false;
       notice = 'Session cancelled.';
       terminalStatus = 'closed';
       terminalError = null;
@@ -353,33 +367,55 @@
           {/if}
           <Terminal url={terminalUrl} onStatus={handleTerminalStatus} />
           <div class="flex flex-wrap gap-2">
-            {#if finishConflict === null}
+            {#if confirmingCancel}
+              <p class="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                Cancel this session? Its draft PRD and Issues will be discarded.
+              </p>
               <button
                 type="button"
-                onclick={() => void finish()}
+                onclick={() => void cancel()}
                 disabled={busy}
-                class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                class="rounded-md bg-red-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
               >
-                Finish
+                Discard and cancel
+              </button>
+              <button
+                type="button"
+                onclick={dismissCancel}
+                disabled={busy}
+                class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50"
+              >
+                Keep session
               </button>
             {:else}
+              {#if finishConflict === null}
+                <button
+                  type="button"
+                  onclick={() => void finish()}
+                  disabled={busy}
+                  class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                >
+                  Finish
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  onclick={() => void finish(true)}
+                  disabled={busy}
+                  class="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                >
+                  Publish anyway
+                </button>
+              {/if}
               <button
                 type="button"
-                onclick={() => void finish(true)}
+                onclick={requestCancel}
                 disabled={busy}
-                class="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
               >
-                Publish anyway
+                Cancel session
               </button>
             {/if}
-            <button
-              type="button"
-              onclick={() => void cancel()}
-              disabled={busy}
-              class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
-            >
-              Cancel session
-            </button>
           </div>
         </div>
       {:else}
