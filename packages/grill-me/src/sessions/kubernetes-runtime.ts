@@ -31,6 +31,7 @@ export const SESSION_REPO_PATH = `${SESSION_WORKSPACE_PATH}/repo`;
 
 const LABEL_SESSION = 'yaaabk.io/session-id';
 const LABEL_PROJECT = 'yaaabk.io/project-id';
+const LABEL_PROJECT_NAME = 'yaaabk.io/project-name';
 const LABEL_APP = 'app.kubernetes.io/name';
 const SESSION_APP = 'yaaabk-session';
 const MAX_POD_NAME = 63;
@@ -423,6 +424,21 @@ export function createKubernetesSessionRuntime(
     }
   }
 
+  /** Rebuilds what stop/inspect need from a ref persisted by a previous process. */
+  function recordFromRef(ref: SessionRuntimeRef): RuntimeRecord | undefined {
+    if (ref.namespace === undefined) return undefined;
+    const podName = ref.handle;
+    return {
+      ref,
+      namespace: ref.namespace,
+      podName,
+      policyName: podName,
+      cloneSecret: `${podName}-clone`,
+      sessionSecret: `${podName}-session`,
+      state: 'starting',
+    };
+  }
+
   return {
     async start(spec) {
       const invalid = validSpec(spec);
@@ -522,6 +538,7 @@ export function createKubernetesSessionRuntime(
         projectId: spec.projectId,
         provider: 'kubernetes',
         handle: podName,
+        namespace,
         terminal,
       };
       const record: RuntimeRecord = {
@@ -582,7 +599,7 @@ export function createKubernetesSessionRuntime(
     },
 
     async stop(ref) {
-      const record = records.get(ref.sessionId);
+      const record = records.get(ref.sessionId) ?? recordFromRef(ref);
       if (record === undefined) {
         return {
           ok: false,
@@ -600,7 +617,7 @@ export function createKubernetesSessionRuntime(
     },
 
     async inspect(ref) {
-      const record = records.get(ref.sessionId);
+      const record = records.get(ref.sessionId) ?? recordFromRef(ref);
       if (record === undefined) {
         return {
           ok: false,
@@ -632,6 +649,28 @@ export function createKubernetesSessionRuntime(
           },
         };
       }
+      // A reconstructed ref is only valid when the Pod belongs to that session;
+      // otherwise the caller is inspecting a runtime this adapter never owned.
+      if (pod.value.labels[LABEL_SESSION] !== ref.sessionId) {
+        return {
+          ok: false,
+          error: {
+            kind: 'not-found',
+            operation: 'inspect',
+            message: `No Kubernetes runtime for session "${ref.sessionId}"`,
+          },
+        };
+      }
+      if (pod.value.ready && pod.value.podIP !== null) {
+        // A restarted backend reconnects to the Pod's current IP; the ttyd
+        // credential from the persisted ref is still the one the Pod requires.
+        record.ref.terminal = {
+          url: `ws://${pod.value.podIP}:${SESSION_TTYD_PORT}/ws`,
+          ...(record.ref.terminal.credential === undefined
+            ? {}
+            : { credential: record.ref.terminal.credential }),
+        };
+      }
       const inspection: SessionRuntimeInspection = {
         state: pod.value.ready ? 'ready' : pod.value.phase === 'failed' ? 'failed' : 'starting',
         ready: pod.value.ready,
@@ -642,13 +681,60 @@ export function createKubernetesSessionRuntime(
     },
 
     async list(filter = {}) {
-      const refs = [...records.values()]
-        .filter((record) => record.state !== 'stopped')
-        .filter(
-          (record) => filter.projectId === undefined || record.ref.projectId === filter.projectId,
-        )
-        .map((record) => record.ref);
-      return { ok: true, value: refs };
+      const refs = new Map<string, SessionRuntimeRef>();
+      for (const record of records.values()) {
+        if (record.state !== 'stopped') refs.set(record.ref.sessionId, record.ref);
+      }
+
+      // A restarted backend has no in-memory records; discover the Pods it left
+      // behind in the Project Namespaces so reconciliation can stop them.
+      const namespaces = await options.k8s.namespaces.list();
+      if (namespaces.ok) {
+        for (const namespace of namespaces.value) {
+          if (namespace.labels[LABEL_PROJECT_NAME] === undefined) continue;
+          const pods = await options.k8s.pods.list(namespace.name, { [LABEL_APP]: SESSION_APP });
+          if (!pods.ok) continue;
+          for (const pod of pods.value) {
+            const sessionId = pod.labels[LABEL_SESSION];
+            const projectId = pod.labels[LABEL_PROJECT];
+            if (sessionId === undefined || projectId === undefined) continue;
+            const known = refs.get(sessionId);
+            if (known !== undefined) {
+              if (pod.podIP !== null) {
+                known.terminal = {
+                  url: `ws://${pod.podIP}:${SESSION_TTYD_PORT}/ws`,
+                  ...(known.terminal.credential === undefined
+                    ? {}
+                    : { credential: known.terminal.credential }),
+                };
+              }
+              continue;
+            }
+            refs.set(sessionId, {
+              sessionId,
+              projectId,
+              provider: 'kubernetes',
+              handle: pod.name,
+              namespace: namespace.name,
+              terminal: {
+                url: pod.podIP === null ? '' : `ws://${pod.podIP}:${SESSION_TTYD_PORT}/ws`,
+              },
+            });
+          }
+        }
+      } else {
+        logger.info('session runtime namespace discovery failed', {
+          kind: namespaces.error.kind,
+          message: namespaces.error.message,
+        });
+      }
+
+      return {
+        ok: true,
+        value: [...refs.values()].filter(
+          (ref) => filter.projectId === undefined || ref.projectId === filter.projectId,
+        ),
+      };
     },
   };
 }

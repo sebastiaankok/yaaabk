@@ -64,6 +64,35 @@ one. Cancel stops the runtime and ends the session. The session view never
 contains the ttyd credential; only `terminal()` returns it, to the backend
 proxy.
 
+### Lifecycle and restart recovery
+
+Sessions are persisted through a `GrillSessionStore` (in-memory by default; the
+backend uses `createSqliteGrillSessionStore`). A session is reaped after 30
+minutes without terminal activity and stopped at four hours from start,
+whichever comes first. `sweep()` applies both rules through the injected clock:
+
+```ts
+const swept = await sessions.sweep();
+// { ended: [sessionId] }
+```
+
+Each reaped session is marked `failed` with `endReason: 'timeout'`, its runtime
+is stopped, its OpenRouter key is revoked and its report token stops
+authenticating. `sweep()` leaves finished and already-ended sessions alone.
+
+On backend start, `reconcile()` compares the persisted sessions with the
+runtimes that exist now. Live runtimes are re-adopted (the terminal endpoint is
+refreshed from the adapter), missing or failed runtimes mark their session
+failed with the runtime's reason, and runtimes no live session owns are stopped.
+It also revokes any key or report token a crash left on an ended session. The
+Kubernetes adapter rediscovers its Pods by label after a restart, so a new
+process can inspect and stop what the previous one created:
+
+```ts
+const reconciled = await sessions.reconcile();
+// { adopted: [id], failed: [id], stopped: [id] }
+```
+
 ### Reporting and Finish
 
 The session's agent reports through `@yaaabk/grill-mcp`, authenticated by a

@@ -64,6 +64,9 @@ cp .env.example .env
 | `YAAABK_SESSION_RUNTIME` | auto | `kubernetes` or `local`; auto-detected from `KUBERNETES_SERVICE_HOST`. Deployed instances use Pods in the Project Namespace. |
 | `YAAABK_SESSION_IMAGE` | `YAAABK_AGENT_IMAGE` | Shared OpenCode + ttyd image session Pods run |
 | `YAAABK_SESSION_API_URL` | `YAAABK_API_URL` | Backend base URL a session's reporting MCP server posts to |
+| `YAAABK_SESSION_IDLE_TIMEOUT_MS` | `1800000` | How long a session may go without terminal traffic before it is reaped |
+| `YAAABK_SESSION_MAX_MS` | `14400000` | Hard cap on a session's lifetime, measured from its start |
+| `YAAABK_SESSION_SWEEP_MS` | `60000` | How often the backend checks for sessions to reap; `0` disables it |
 | `YAAABK_NAMESPACE` | `yaaabk` | Namespace the backend runs in; session NetworkPolicies allow it |
 | `YAAABK_KUBERNETES_API_CIDR` | `10.43.0.1/32` | API endpoint a session Pod may reach with `kubectl` |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |

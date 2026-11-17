@@ -74,7 +74,9 @@ kubectl --context k3s-home auth can-i --list \
 
 - The backend talks to the cluster in-cluster as ServiceAccount
   `yaaabk-backend` with four narrow cluster-scoped ClusterRoles of its own:
-  - `yaaabk-backend-namespaces` (`create`, `get`, `delete` on Namespaces)
+  - `yaaabk-backend-namespaces` (`create`, `get`, `list`, `delete` on
+    Namespaces; `list` lets session reconciliation find leftover Pods after a
+    backend restart)
   - `yaaabk-backend-rbac` (`create`, `get`, `list`, `watch`, `patch`, `delete`
     on ServiceAccounts and RoleBindings in Project Namespaces, plus `bind` on
     only the `yaaabk-project-agent` and `yaaabk-project-deploy` ClusterRoles)

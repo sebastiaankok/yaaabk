@@ -216,6 +216,12 @@ export interface FakeSessionRuntime extends SessionRuntime {
   readonly stopped: SessionRuntimeRef[];
   /** Changes what the next start returns. */
   failNextStart(reason: string | undefined): void;
+  /** Forgets a runtime, as a fresh adapter after a backend restart would. */
+  forget(sessionId: string): void;
+  /** Marks a runtime failed with the reason an inspection should report. */
+  markFailed(sessionId: string, reason: string): void;
+  /** Adds a runtime that no session owns, to exercise orphan cleanup. */
+  addOrphan(ref: SessionRuntimeRef): void;
 }
 
 /** A scripted runtime for orchestrator and route tests. */
@@ -226,6 +232,7 @@ export function createFakeSessionRuntime(
   const refs: SessionRuntimeRef[] = [];
   const stopped: SessionRuntimeRef[] = [];
   const states = new Map<string, SessionRuntimeState>();
+  const reasons = new Map<string, string>();
   let startFailure = options.startFailure;
 
   return {
@@ -234,6 +241,18 @@ export function createFakeSessionRuntime(
     stopped,
     failNextStart(reason) {
       startFailure = reason;
+    },
+    forget(sessionId) {
+      states.delete(sessionId);
+      reasons.delete(sessionId);
+    },
+    markFailed(sessionId, reason) {
+      states.set(sessionId, 'failed');
+      reasons.set(sessionId, reason);
+    },
+    addOrphan(ref) {
+      refs.push(ref);
+      states.set(ref.sessionId, 'ready');
     },
     async start(spec) {
       requests.push(spec);
@@ -284,12 +303,14 @@ export function createFakeSessionRuntime(
           },
         };
       }
+      const reason = reasons.get(ref.sessionId);
       return {
         ok: true,
         value: {
           state,
           ready: state === 'ready',
           terminal: ref.terminal,
+          ...(reason === undefined ? {} : { reason }),
         },
       };
     },
