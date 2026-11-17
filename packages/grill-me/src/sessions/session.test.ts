@@ -11,6 +11,7 @@ function setup(
       projectId: string;
       repoFullName: string;
     }) => Promise<string | undefined>;
+    defaultIds?: boolean;
   } = {},
 ) {
   const runtime = createFakeSessionRuntime();
@@ -33,7 +34,7 @@ function setup(
     keys,
     ...(options.cloneToken === undefined ? {} : { cloneToken: options.cloneToken }),
     clock: () => new Date(clock.ms),
-    ids: () => `session-${++sequence}`,
+    ...(options.defaultIds === true ? {} : { ids: () => `session-${++sequence}` }),
     logger: { info: () => {}, error: () => {} },
   });
   return { runtime, sessions, clock, keys };
@@ -47,6 +48,17 @@ const INPUT: StartGrillSessionInput = {
 };
 
 describe('starting a grill session', () => {
+  it('mints session ids in the namespace OpenCode accepts', async () => {
+    const { runtime, sessions } = setup({ defaultIds: true });
+
+    const started = await sessions.start(INPUT);
+
+    expect(started.ok).toBe(true);
+    const sessionId = runtime.requests[0]?.sessionId ?? '';
+    expect(sessionId).toMatch(/^ses_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    if (started.ok) expect(started.value.id).toBe(sessionId);
+  });
+
   it('uses the configured default model when the request supplies none', async () => {
     const { runtime, sessions } = setup({ defaultModel: 'openrouter/default-model' });
 

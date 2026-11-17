@@ -38,6 +38,10 @@ export interface SessionRuntimeRef {
 
 /** What a spec must provide to start one session runtime. */
 export interface SessionRuntimeSpec {
+  /**
+   * The YAAABK session id, also passed to `opencode --session`, so it must
+   * start with `ses`.
+   */
   sessionId: string;
   projectId: string;
   projectName: string;
