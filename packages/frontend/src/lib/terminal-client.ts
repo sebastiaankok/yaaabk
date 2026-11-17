@@ -86,6 +86,8 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
   let socket: TerminalSocketLike | null = null;
   let size: TerminalSize | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let live = false;
+  let replayRequested = false;
   let disposed = false;
 
   function status(next: TerminalConnectionStatus, reason?: string): void {
@@ -102,6 +104,21 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
     send({ type: 'resize', columns: size.columns, rows: size.rows });
   }
 
+  /**
+   * Makes OpenCode replay the settled history into the fresh terminal.
+   *
+   * ttyd only delivers `SIGWINCH` when the PTY size actually changes, and
+   * OpenCode replays on resize. A refresh normally fits to the same
+   * dimensions, so an unchanged resize would leave the new xterm blank. Nudge
+   * one row first and then restore the real size.
+   */
+  function requestReplay(): void {
+    if (size === null || replayRequested) return;
+    replayRequested = true;
+    send({ type: 'resize', columns: size.columns, rows: size.rows + 1 });
+    sendResize();
+  }
+
   const unsubscribeInput = options.sink.onInput((data) => {
     send({ type: 'input', data });
   });
@@ -110,7 +127,8 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
 
   function storeSize(next: TerminalSize): void {
     size = next;
-    sendResize();
+    if (live && !replayRequested) requestReplay();
+    else sendResize();
   }
 
   function scheduleReconnect(): void {
@@ -128,8 +146,9 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
     socket = next;
 
     next.onopen = () => {
-      // A resize after reconnect makes OpenCode replay the settled history.
-      sendResize();
+      live = true;
+      replayRequested = false;
+      requestReplay();
     };
 
     next.onmessage = (event: { data: unknown }) => {
@@ -143,6 +162,8 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
 
     next.onclose = (event: { code?: number; reason?: string }) => {
       if (socket === next) socket = null;
+      live = false;
+      replayRequested = false;
       if (disposed) return;
       status('reconnecting', event.reason);
       scheduleReconnect();
@@ -150,6 +171,8 @@ export function createTerminalClient(options: TerminalClientOptions): TerminalCl
 
     next.onerror = () => {
       if (socket === next) socket = null;
+      live = false;
+      replayRequested = false;
       if (disposed) return;
       status('reconnecting', 'terminal connection failed');
       scheduleReconnect();
