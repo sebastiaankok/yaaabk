@@ -36,6 +36,7 @@ export function issueRecord(overrides: Partial<Issue> = {}): Issue {
     maxAttempts: 3,
     budgetCents: 50,
     openrouterKeyHash: null,
+    agentModel: null,
     closedAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -120,6 +121,13 @@ export function issueStoreContract(api: StoreTestApi, createStore: () => IssueSt
       expect(store.get('project-1', 'issue-1')).toEqual(
         issueRecord({ githubNumber: 12, githubSyncedAt: '2026-02-01T00:00:00.000Z' }),
       );
+    });
+
+    it('stores an issue-level agent model override', () => {
+      const store = createStore();
+      store.create(issueRecord({ agentModel: 'openrouter/openai/gpt-5' }));
+
+      expect(store.get('project-1', 'issue-1')?.agentModel).toBe('openrouter/openai/gpt-5');
     });
 
     it('deletes an issue', () => {

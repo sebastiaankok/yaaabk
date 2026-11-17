@@ -32,6 +32,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoFullName: REPO,
     namespace: 'yaaabk-a1b2c3d4',
     lastModel: null,
+    agentModel: null,
     deployedCommitSha: null,
     lastDeployStatus: null,
     lastDeployAt: null,

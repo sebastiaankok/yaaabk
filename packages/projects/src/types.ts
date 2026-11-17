@@ -31,6 +31,12 @@ export interface Project {
    * `provider/model` form. `null` until the first session.
    */
   lastModel: string | null;
+  /**
+   * The OpenRouter model this Project's Agent Jobs use when an Issue does not
+   * choose one, in `provider/model` form. `null` means the environment default
+   * (`YAAABK_DEFAULT_MODEL`) applies.
+   */
+  agentModel: string | null;
   /** Commit SHA of the last successful deploy, or `null` if never deployed. */
   deployedCommitSha: string | null;
   /** How the last deploy ended, or `null` if the Project has never deployed. */
@@ -60,6 +66,11 @@ export interface NewProject {
 export interface ProjectPatch {
   description?: string;
   skillLevel?: SkillLevel;
+  /**
+   * Default model for this Project's Agent Jobs, or `null` to fall back to the
+   * environment default. Grill-Me Sessions keep their own `lastModel`.
+   */
+  agentModel?: string | null;
 }
 
 /** The kinds of failure a Projects Module command can report. */
