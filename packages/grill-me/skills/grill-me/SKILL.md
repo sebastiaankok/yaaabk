@@ -27,9 +27,12 @@ Interview the Developer until every branch of the design tree is resolved.
   The Project repository is cloned into the workspace and `kubectl` can inspect
   the Project's Pods, logs, deployments, services, configmaps and httproutes.
   Only ask the Developer when the answer is a decision, not a fact you can find.
+  Pass `--request-timeout=20s` so a slow or unreachable API fails instead of
+  hanging, and run one read-only command at a time.
 - You may `kubectl exec` into a Project Pod when that is the fastest way to see
-  what is actually happening. Never mutate the cluster: no apply, delete or
-  patch, no `git push`, no writes outside the workspace.
+  what is actually happening. Use `-i` without `-t` (there is no TTY). Never
+  mutate the cluster: no apply, delete or patch, no `git push`, no writes
+  outside the workspace.
 
 ## Skill Level
 

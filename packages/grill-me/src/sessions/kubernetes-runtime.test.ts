@@ -281,7 +281,7 @@ describe('Kubernetes session Pods', () => {
     expect(main.envFrom).toEqual([{ secretRef: { name: 'grill-session-next-session' } }]);
   });
 
-  it('restricts ingress to the backend and egress to the backend, cluster API, GitHub, OpenRouter and DNS', async () => {
+  it('restricts ingress to the backend and egress to the backend, the Kubernetes API, HTTPS and DNS', async () => {
     const harness = createHarness();
 
     await harness.runtime.start(harness.spec());
@@ -315,7 +315,16 @@ describe('Kubernetes session Pods', () => {
     expect(flatEgress).toContain('"port":443');
     expect(flatEgress).toContain('"port":6443');
     expect(flatEgress).toContain('kubernetes.io/metadata.name');
-    expect(flatEgress).toContain('10.43.0.1/32');
+    // The API server must be reachable on 443/6443 after kube-proxy DNATs the
+    // `kubernetes` Service to a control-plane node. Peerless rules match every
+    // destination; scoping them to an ipBlock (including 0.0.0.0/0) breaks
+    // that on kube-router.
+    expect(policy.egress).toContainEqual({
+      ports: [
+        { protocol: 'TCP', port: 443 },
+        { protocol: 'TCP', port: 6443 },
+      ],
+    });
   });
 
   it('returns the Pod waiting reason when a session cannot start', async () => {

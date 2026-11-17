@@ -95,9 +95,10 @@ kubectl --context k3s-home auth can-i --list \
   short-lived `contents:read` GitHub token; that Secret is never mounted into
   the main container, which runs ttyd and `opencode mini` in `/workspace/repo`.
   A per-session NetworkPolicy admits the backend pod only and permits egress to
-  the backend, the Kubernetes API (`YAAABK_KUBERNETES_API_CIDR`), HTTPS for
-  GitHub/OpenRouter, and DNS. `YAAABK_SESSION_RUNTIME=kubernetes` selects the
-  adapter; `YAAABK_SESSION_IMAGE` must name the shared agent image.
+  the backend, HTTPS for GitHub/OpenRouter and the Kubernetes API (ports 443 and
+  6443, because kube-proxy DNATs the API Service to a control-plane node before
+  egress policy is evaluated), and DNS. `YAAABK_SESSION_RUNTIME=kubernetes`
+  selects the adapter; `YAAABK_SESSION_IMAGE` must name the shared agent image.
 - Per-Project permissions live in the fixed `yaaabk-project-agent` and
   `yaaabk-project-deploy` ClusterRoles. Project creation only creates the
   ServiceAccounts and a RoleBinding to each, so the backend never needs to hold

@@ -65,9 +65,6 @@ spec:
               value: http://yaaabk-backend.yaaabk.svc.cluster.local:3000
             - name: YAAABK_NAMESPACE
               value: yaaabk
-            # k3s exposes its API on the `kubernetes` Service ClusterIP.
-            - name: YAAABK_KUBERNETES_API_CIDR
-              value: 10.43.0.1/32
             # The scaffold template bundled into the image (see backend
             # Dockerfile). Must name the template directory itself, not the
             # directory holding it: the scaffolder copies this directory's
