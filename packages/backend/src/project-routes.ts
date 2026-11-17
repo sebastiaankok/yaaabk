@@ -1,3 +1,4 @@
+import type { ModelCatalogue } from '@yaaabk/cost-control';
 import type {
   ExportProjectInput,
   ProjectError,
@@ -8,6 +9,7 @@ import type {
 import type { SkillLevel } from '@yaaabk/shared';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { invalidModelField, parseAgentModel, validateAgentModel } from './model-validation';
 
 /**
  * Upstream provisioning failures (`repository`, `scaffold`, `kubernetes`) map to
@@ -93,7 +95,7 @@ function streamCreate(
 }
 
 /** Builds the `/api/projects/*` routes. */
-export function projectRoutes(projects: ProjectsModule): Hono {
+export function projectRoutes(projects: ProjectsModule, catalogue?: ModelCatalogue): Hono {
   const app = new Hono();
 
   app.post('/api/projects', async (c) => {
@@ -128,6 +130,15 @@ export function projectRoutes(projects: ProjectsModule): Hono {
     }
     if (input.skillLevel !== undefined || input.skill_level !== undefined) {
       patch.skillLevel = asSkillLevel(input);
+    }
+    const agentModel = parseAgentModel(input);
+    if (agentModel !== undefined) {
+      if (!agentModel.ok) return invalidModelField(c);
+      if (agentModel.value !== null) {
+        const invalid = await validateAgentModel(c, catalogue, agentModel.value);
+        if (invalid !== null) return invalid;
+      }
+      patch.agentModel = agentModel.value;
     }
     const result = await projects.update(c.req.param('id'), patch);
     return result.ok ? c.json(result.value) : fail(c, result.error);

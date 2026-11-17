@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { asString, body, fail, projectOrResponse } from './http';
+import { validateAgentModel } from './model-validation';
 
 /** A session failure maps to the status the caller should act on. */
 const STATUS_BY_KIND: Record<GrillSessionError['kind'], ContentfulStatusCode> = {
@@ -169,26 +170,9 @@ export function grillRoutes(
     }
 
     const model = asString(input.model).trim();
-    if (model !== '' && options.catalogue !== undefined) {
-      const catalogue = await options.catalogue.list();
-      if (!catalogue.ok) {
-        return c.json(
-          {
-            error: catalogue.error.kind,
-            message: `Could not load the model catalogue: ${catalogue.error.message}`,
-          },
-          502,
-        );
-      }
-      if (!catalogue.value.some((entry) => entry.id === model)) {
-        return c.json(
-          {
-            error: 'invalid-model',
-            message: `"${model}" is not a tool-capable model in the OpenRouter catalogue`,
-          },
-          400,
-        );
-      }
+    if (model !== '') {
+      const invalid = await validateAgentModel(c, options.catalogue, model);
+      if (invalid !== null) return invalid;
     }
 
     const result = await sessions.start({

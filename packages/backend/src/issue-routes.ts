@@ -1,8 +1,10 @@
+import type { ModelCatalogue } from '@yaaabk/cost-control';
 import type { IssueError, IssueLabel, IssuePatch, IssueStatus, IssuesModule } from '@yaaabk/issues';
 import type { ProjectsModule } from '@yaaabk/projects';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { asString, body, fail, projectOrResponse } from './http';
+import { invalidModelField, parseAgentModel, validateAgentModel } from './model-validation';
 
 /**
  * Issue failures map to the HTTP status the caller should act on: a malformed
@@ -23,7 +25,11 @@ function pick(input: Record<string, unknown>, camel: string, snake: string): unk
 }
 
 /** Builds the `/api/projects/:id/issues` routes. */
-export function issueRoutes(issues: IssuesModule, projects: ProjectsModule): Hono {
+export function issueRoutes(
+  issues: IssuesModule,
+  projects: ProjectsModule,
+  catalogue?: ModelCatalogue,
+): Hono {
   const app = new Hono();
 
   // The literal sub-paths are registered before `/issues/:issueId` so they are
@@ -53,6 +59,14 @@ export function issueRoutes(issues: IssuesModule, projects: ProjectsModule): Hon
     if (project instanceof Response) return project;
 
     const input = await body(c);
+    const agentModel = parseAgentModel(input);
+    if (agentModel !== undefined) {
+      if (!agentModel.ok) return invalidModelField(c);
+      if (agentModel.value !== null) {
+        const invalid = await validateAgentModel(c, catalogue, agentModel.value);
+        if (invalid !== null) return invalid;
+      }
+    }
     const result = await issues.create({
       projectId: project.id,
       planId: asOptionalString(pick(input, 'planId', 'plan_id')),
@@ -62,6 +76,9 @@ export function issueRoutes(issues: IssuesModule, projects: ProjectsModule): Hon
       dependsOn: asStringArray(pick(input, 'dependsOn', 'depends_on')),
       budgetCents: asOptionalNumber(pick(input, 'budgetCents', 'budget_cents')),
       maxAttempts: asOptionalNumber(pick(input, 'maxAttempts', 'max_attempts')),
+      ...(agentModel?.ok === true && agentModel.value !== null
+        ? { agentModel: agentModel.value }
+        : {}),
     });
     return result.ok
       ? c.json(result.value, 201)
@@ -93,7 +110,17 @@ export function issueRoutes(issues: IssuesModule, projects: ProjectsModule): Hon
     if (project instanceof Response) return project;
 
     const input = await body(c);
-    const result = await issues.update(project.id, c.req.param('issueId'), patchOf(input));
+    const patch = patchOf(input);
+    const agentModel = parseAgentModel(input);
+    if (agentModel !== undefined) {
+      if (!agentModel.ok) return invalidModelField(c);
+      if (agentModel.value !== null) {
+        const invalid = await validateAgentModel(c, catalogue, agentModel.value);
+        if (invalid !== null) return invalid;
+      }
+      patch.agentModel = agentModel.value;
+    }
+    const result = await issues.update(project.id, c.req.param('issueId'), patch);
     return result.ok
       ? c.json(result.value)
       : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
