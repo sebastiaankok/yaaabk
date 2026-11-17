@@ -2,7 +2,7 @@
 
 ## Yet Another AI App Builder for Kubernetes
 
-**Elevator Pitch**: An AI-native Internal Developer Platform that takes you from idea to deployed application on Kubernetes. Brainstorm with AI-powered grill-me sessions, automatically generate GitHub issues from refined plans, and have autonomous agents implement those issues — all from a browser.
+**Elevator Pitch**: An AI-native Internal Developer Platform that takes you from idea to deployed application on Kubernetes. Grill your idea in an interactive terminal session that produces a PRD-shaped Plan and vertical-slice Issues, then let autonomous agents implement those Issues — all from a browser.
 
 ---
 
@@ -26,17 +26,17 @@
 
 | Step | What Happens |
 |---|---|
-| 1. Create Project | User provides name + description. YAAABK creates a GitHub repo, bootstraps it from a Svelte+Bun template, and configures ArgoCD to deploy from it. |
-| 2. Brainstorm / Plan | User enters a grill-me session (via opencode) to refine their idea. Skill level (expert/beginner) controls the prompt depth. |
-| 3. Generate Issues | Once the plan is clear, YAAABK converts it into GitHub issues on the repo. |
-| 4. Triage Issues | Issues are labeled `ready`, `refinement-needed`, or `blocked`. |
+| 1. Create Project | User provides name + description. YAAABK creates a GitHub repo, bootstraps it from a Svelte+Bun template, and provisions a Namespace, RBAC and deploy pipeline. |
+| 2. Grill and Plan | User enters a Grill-Me Session: a real terminal running `opencode mini` behind ttyd, either locally or in a hardened per-session Pod. Skill level (expert/beginner) controls the prompt depth. |
+| 3. Publish Plan and Issues | The agent interviews, synthesises a PRD, and cuts it into vertical-slice Issues. Finish publishes them together as one Plan version labelled “Plan (PRD)” and replaces that Plan’s Issues. |
+| 4. Triage Issues | Issues are labeled `ready`, `refinement-needed`, `blocked` or `needs-human`. |
 | 5. Spawn Agents | `ready` issues get an autonomous K8s Job that implements the feature, creates a PR, and auto-merges after CI passes. |
 | 6. Auto-Fix | If CI fails, a new agent is spawned to fix the issue (max 3 attempts per issue). |
-| 7. Deploy | ArgoCD syncs the merged changes to the cluster. |
+| 7. Deploy | A merged change triggers the agent-driven Deploy Job. |
 
 ### Guiding Principles
 
-- **Secure by default** — least-privilege for agents, PSA/Kyverno policies, ArgoCD project boundaries.
+- **Secure by default** — least-privilege for agents and sessions, PSA/Kyverno policies, per-Project RBAC.
 - **Cost-controlled** — per-issue OpenRouter budgets prevent runaway spend.
 - **Human in the loop only when needed** — refinement feedback, manual intervention after 3 failures.
 - **Kubernetes-native** — everything runs on K8s, uses CRDs, Jobs, and RBAC.
@@ -48,48 +48,45 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Browser (Svelte UI)                     │
-│  Project Dashboard │ Grill-Me Session │ Issue Board │ Stats     │
+│  Project Dashboard │ Plan terminal │ Issue Board │ Stats        │
 └──────────────────────┬──────────────────────────────────────────┘
-                       │ HTTP/SSE
+                       │ HTTP + terminal WebSocket
                        ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    YAAABK Backend (Bun + Hono)                   │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
 │  │ Projects │  │  Auth    │  │  Issues  │  │ Agent Manager  │  │
-│  │  API     │  │ (GitHub) │  │  API     │  │                │  │
+│  │  API     │  │          │  │  API     │  │                │  │
 │  └──────────┘  └──────────┘  └──────────┘  └────────────────┘  │
 │                                                                  │
 │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐  │
-│  │ OpenCode       │  │ GitHub         │  │ ArgoCD            │  │
-│  │ Bridge (SSE)   │  │ Client (Octokit)│  │ Client (API)      │  │
+│  │ Grill sessions │  │ GitHub         │  │ Cost Control       │  │
+│  │ + terminal     │  │ Client         │  │ (OpenRouter keys)  │  │
+│  │ proxy          │  │                │  │                    │  │
 │  └────────────────┘  └────────────────┘  └────────────────────┘  │
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  SQLite: projects, plans, issues, agents, grill sessions  │  │
+│  └───────────────────────────────────────────────────────────┘  │
 └──────────────────────┬───────────────────────────────────────────┘
                        │
-        ┌──────────────┼──────────────────┐
-        ▼              ▼                   ▼
-┌──────────────┐ ┌──────────┐ ┌──────────────────────┐
-│  PostgreSQL  │ │  Redis   │ │  OpenCode Service    │
-│  (state)     │ │  (sess.) │ │  (sidecar or ext.)   │
-└──────────────┘ └──────────┘ └──────────────────────┘
-
 ┌──────────────────────────────────────────────────────────────────┐
 │                   Kubernetes Cluster                             │
 │                                                                  │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Namespace: yaaabk-system                                 │  │
-│  │  ┌────────────┐ ┌───────────┐ ┌──────────────────────┐   │  │
-│  │  │ YAAABK     │ │ ArgoCD    │ │ Kyverno / PSA        │   │  │
-│  │  │ Deployment │ │ Controller│ │ Admission Controller │   │  │
-│  │  └────────────┘ └───────────┘ └──────────────────────┘   │  │
+│  │  Namespace: yaaabk                                        │  │
+│  │  ┌────────────┐ ┌──────────────────────┐                 │  │
+│  │  │ YAAABK     │ │ Kyverno / PSA        │                 │  │
+│  │  │ Deployment │ │ Admission Controller │                 │  │
+│  │  └────────────┘ └──────────────────────┘                 │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Namespace: project-<id> (user app)                       │  │
+│  │  Namespace: yaaabk-<short-uuid> (one per Project)         │  │
 │  │  ┌────────────┐ ┌──────────────┐ ┌──────────────────┐   │  │
-│  │  │ User App   │ │ Agent        │ │ ServiceAccount   │   │  │
-│  │  │ Deployment │ │ Jobs (per-   │ │ (project-scoped) │   │  │
-│  │  │            │ │ issue)       │ │                  │   │  │
+│  │  │ User App   │ │ Agent Jobs   │ │ Session Pod      │   │  │
+│  │  │ Deployment │ │ (per issue)  │ │ (ttyd+OpenCode)  │   │  │
 │  │  └────────────┘ └──────────────┘ └──────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
@@ -97,13 +94,14 @@
 
 ### Key Communication Flows
 
-1. **UI ↔ Backend**: REST API (Hono) + Server-Sent Events for live grill-me sessions
-2. **Backend ↔ OpenCode**: YAAABK manages opencode sessions, pipes stdin/stdout to browser via SSE
-3. **Backend ↔ GitHub**: Octokit for repo creation, issue management, PRs
-4. **Backend ↔ ArgoCD**: ArgoCD API to create/update Application resources
-5. **Backend ↔ K8s API**: Create Jobs, ServiceAccounts, RoleBindings per issue
-6. **Agent ↔ GitHub**: Clone repo, create branches, push commits, open PRs
-7. **Agent ↔ OpenRouter**: LLM calls with per-issue API key/budget
+1. **UI ↔ Backend**: REST API (Hono) plus a WebSocket the backend proxies to a session's ttyd
+2. **Backend ↔ Session runtime**: start, stop and inspect a per-session Pod (or local ttyd/OpenCode child processes)
+3. **Browser ↔ terminal**: xterm.js input/resize frames translated to ttyd `tty` frames by the backend proxy
+4. **Session agent ↔ Backend**: typed `report_prd`, `report_issues` and `session_status` MCP tools authenticated by the session bearer token
+5. **Backend ↔ GitHub**: repo creation, issue management, pull requests and reviews
+6. **Backend ↔ K8s API**: create Project namespaces/RBAC plus Agent Jobs, session Pods and NetworkPolicies
+7. **Agent ↔ GitHub**: clone repo, create branches, push commits, open PRs
+8. **Agent ↔ OpenRouter**: LLM calls with a per-issue or per-session budgeted key
 
 ---
 
@@ -113,7 +111,7 @@
 
 **Framework**: SvelteKit (because Svelte is the template target — eat your own dogfood)
 **CSS**: Tailwind CSS
-**Real-time**: Server-Sent Events for grill-me session streaming
+**Terminal**: xterm.js in the Plan page, connecting over a WebSocket the backend proxies to the session's ttyd; no chat UI or SSE stream
 
 **Pages**:
 | Route | Purpose |
@@ -121,43 +119,42 @@
 | `/` | Landing / project list |
 | `/projects/new` | Create project wizard |
 | `/projects/:id` | Project dashboard (stats, open/closed issues) |
-| `/projects/:id/plan` | Grill-me session UI |
+| `/projects/:id/plan` | Start form, live terminal, then the published Plan (PRD) and Issues |
 | `/projects/:id/issues` | Issue board (kanban-ish) |
+| `/projects/:id/issues/review` | Review published Issues; links back to a new Grill-Me session |
 | `/settings` | GitHub connection, preferences |
 
 ### 3.2 Backend (Bun + Hono)
 
 **Runtime**: Bun (fast startup, TypeScript native)
 **Framework**: Hono (lightweight, fast, K8s-friendly)
-**Database**: Drizzle ORM + PostgreSQL
-**Session Store**: Redis (for opencode session state)
+**Database**: SQLite (Turso/libsql or better-sqlite3/bun:sqlite), a single file with no separate service
+**Session Store**: the same SQLite file; live terminal state stays in the session runtime
 
 **API Modules**:
 
 | Module | Endpoints | Purpose |
 |---|---|---|
-| Auth | `POST /auth/github` | GitHub OAuth login |
-| Projects | `CRUD /projects` | Project lifecycle + bootstrap |
-| Plans | `POST /projects/:id/plan` | Manage plan documents |
-| GrillMe | `GET /projects/:id/grill` | SSE stream for grill-me |
-| Issues | `CRUD /projects/:id/issues` | Issue management |
-| Agents | `POST /projects/:id/issues/:id/spawn` | Trigger agent Jobs |
-| Stats | `GET /projects/:id/stats` | Open/closed counts, velocity |
+| Auth | `/api/auth/*` | First-run setup, login, 2FA, logout |
+| Projects | `CRUD /api/projects` | Project lifecycle + bootstrap |
+| Plans | `CRUD /api/projects/:id/plans` | Manage versioned Plan documents |
+| Grill sessions | `POST|GET /api/projects/:id/grill`, `.../finish`, `.../cancel`, `.../terminal` | Start, inspect, finish, cancel and stream a terminal session |
+| Grill reports | `POST /api/grill-sessions/:id/report`, `GET .../status` | Typed drafts from the session MCP server (bearer token) |
+| Issues | `CRUD /api/projects/:id/issues` | Issue management, dependency graph and GitHub sync |
+| Agents | `POST /api/projects/:id/issues/:id/spawn` | Trigger agent Jobs |
+| Stats | `GET /api/projects/:id/stats` | Open/closed counts, velocity |
 
-### 3.3 OpenCode Bridge
+### 3.3 Grill-Me terminal sessions
 
-This is the most novel component. YAAABK needs to:
+The Grill-Me Session is a real interactive terminal, not a chat. YAAABK needs to:
 
-1. **Start an opencode session** inside a container (sidecar or K8s Job)
-2. **Pipe user messages** from the browser into opencode's stdin
-3. **Stream opencode's stdout** back to the browser via SSE
-4. **Intercept structured output** (e.g., "ISSUES_CREATED") to trigger GitHub issue creation
+1. **Start a session runtime**: a hardened Pod in the Project Namespace when deployed, or ttyd + `opencode mini` child processes for local development, both behind the same `SessionRuntime` port
+2. **Proxy the terminal**: authenticate the browser WebSocket, connect to ttyd with the `tty` subprotocol, translate input and resize frames, and translate output, title and preference frames back
+3. **Give the agent context**: clone the Project repository with a short-lived `contents:read` GitHub App token, then remove the credential from the remote; expose read-only workload inspection plus `pods/exec`, and never Secrets
+4. **Take typed reports, not parsed stdout**: the image's stdio MCP server exposes `report_prd`, `report_issues` and `session_status`; reports become drafts on the session
+5. **Publish once**: Finish creates one Plan version labelled “Plan (PRD)” and replaces that Plan's Issues. Cancel discards the drafts
 
-**Architecture options**:
-- **Option A (simpler)**: OpenCode runs as a sidecar container in the YAAABK pod. YAAABK manages its process lifecycle.
-- **Option B (more scalable)**: OpenCode runs in per-session K8s Jobs. YAAABK streams I/O via WebSocket/SSE.
-
-**Recommendation**: Start with **Option A** for simplicity. Move to Option B when sessions need isolation or scale.
+Sessions are reaped after 30 minutes of inactivity and hard-capped at four hours. One session is active per Project; starting another replaces the previous one. A browser refresh reconnects to the same runtime, and a backend restart reconciles live, missing and orphaned runtimes.
 
 ### 3.4 Agent System
 
@@ -168,11 +165,11 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: agent-issue-<id>
-  namespace: project-<id>
+  namespace: yaaabk-<short-uuid>
 spec:
   template:
     spec:
-      serviceAccountName: agent-<project-id>
+      serviceAccountName: yaaabk-agent
       containers:
       - name: agent
         image: yaaabk/agent:latest
@@ -215,7 +212,7 @@ spec:
 - Bun backend (Hono or Elysia)
 - Dockerfile + K8s manifests
 - GitHub Actions workflow (CI: type-check, test, build, push image, update manifest)
-- ArgoCD Application manifest in `/deploy/` directory
+- Deploy Job manifest in `/deploy/` directory
 - Pre-commit hooks config (lint, type-check, test)
 
 **Template repo**: `yaaabk/template-svelte-bun` (or embedded in YAAABK as a scaffolding script)
@@ -230,10 +227,11 @@ Project
 ├── name: string
 ├── description: string
 ├── github_repo_url: string
-├── argo_app_name: string
-├── k8s_namespace: string
+├── k8s_namespace: string (yaaabk-<short-uuid>)
 ├── skill_level: "beginner" | "expert"
-├── gh_installation_id: number (GitHub App)
+├── last_grill_model: string (nullable)
+├── deployed_commit_sha: string (nullable)
+├── last_deploy_status: string (nullable)
 ├── created_at: timestamp
 ├── updated_at: timestamp
 │
@@ -255,13 +253,30 @@ Project
 │   ├── title: string
 │   ├── body: text
 │   ├── status: "open" | "in_progress" | "closed" | "failed"
-│   ├── label: "ready" | "refinement-needed" | "blocked"
+│   ├── label: "ready" | "refinement-needed" | "blocked" | "needs-human"
 │   ├── attempt_count: int (default 0)
 │   ├── max_attempts: int (default 3)
 │   ├── budget_cents: int (default configurable)
 │   ├── openrouter_key_id: string (nullable)
 │   ├── closed_at: timestamp (nullable)
 │   └── created_at: timestamp
+│
+├── GrillSession
+│   ├── id: uuid
+│   ├── project_id: uuid FK
+│   ├── status: "starting" | "active" | "finishing" | "finished" | "cancelled" | "failed"
+│   ├── skill_level: "beginner" | "expert"
+│   ├── model: string
+│   ├── runtime_ref: (provider, handle, terminal URL)
+│   ├── report_token_hash: string
+│   ├── openrouter_key_hash: string
+│   ├── draft_prd: text (nullable)
+│   ├── draft_issues: JSON (nullable)
+│   ├── plan_id: uuid FK (nullable, set by Finish)
+│   ├── last_activity_at: timestamp
+│   ├── started_at: timestamp
+│   ├── ended_at: timestamp (nullable)
+│   └── end_reason: "finished" | "cancelled" | "replaced" | "failed" | "timeout" (nullable)
 │
 ├── AgentRun
 │   ├── id: uuid
@@ -290,56 +305,49 @@ User / Auth (future: multi-tenant)
 ### 5.1 Project Creation Flow
 
 ```
-[User]                    [YAAABK]                    [GitHub]          [ArgoCD]          [K8s]
-  │                          │                          │                  │                 │
-  │── POST /projects ───────►│                          │                  │                 │
-  │  {name, desc, level}    │                          │                  │                 │
-  │                          │── POST /repos ──────────►│                  │                 │
-  │                          │◄── repo_url ─────────────│                  │                 │
-  │                          │                          │                  │                 │
-  │                          │── Push template ────────►│                  │                 │
-  │                          │                          │                  │                 │
-  │                          │── Create namespace ──────│──────────────────│────────────────►│
-  │                          │── Create SA + RBAC ──────│──────────────────│────────────────►│
-  │                          │                          │                  │                 │
-  │                          │── POST Application ─────│──────────────────►│                 │
-  │                          │                          │                  │── sync ────────►│
-  │                          │                          │                  │◄── deployed ────│
-  │                          │◄── Application synced ───│──────────────────│                 │
-  │◄── 201 Created ──────────│                          │                  │                 │
-  │  {project, repo, argo}  │                          │                  │                 │
+[User]                    [YAAABK]                    [GitHub]                    [K8s]
+  │                          │                          │                          │
+  │── POST /projects ───────►│                          │                          │
+  │  {name, desc, level}     │                          │                          │
+  │                          │── POST /repos ──────────►│                          │
+  │                          │◄── repo_url ─────────────│                          │
+  │                          │                          │                          │
+  │                          │── Push template ────────►│                          │
+  │                          │                          │                          │
+  │                          │── Create namespace ──────│─────────────────────────►│
+  │                          │── Create SA + RBAC ──────│─────────────────────────►│
+  │                          │                          │                          │
+  │                          │── Trigger Deploy Job ────│─────────────────────────►│
+  │                          │◄── deployed commit ──────│──────────────────────────│
+  │◄── 201 Created ──────────│                          │                          │
+  │  {project, repo, ns}     │                          │                          │
 ```
 
 ### 5.2 Plan Refinement Flow (Grill-Me)
 
 ```
-[User Browser]          [YAAABK Backend]          [OpenCode Sidecar]
-     │                        │                        │
-     │── GET /grill (SSE) ────►                        │
-     │                        │── Spawn opencode ─────►│
-     │                        │◄── session ready ──────│
-     │◄── SSE: session_start ─│                        │
-     │                        │                        │
-     │── POST /grill/message ─►                        │
-     │  {text: "I want..."}  │── stdin ───────────────►│
-     │                        │                        │
-     │◄── SSE: stream tokens ─│◄── stdout (token) ─────│
-     │   ...(live streaming)  │                        │
-     │                        │                        │
-     │── POST /grill/action ──►                        │
-     │  "generate_issues"    │── stdin ───────────────►│
-     │                        │                        │
-     │◄── SSE: issues_created ─│◄── structured JSON ───│
-     │  [{title, body}]      │                        │
-     │                        │                        │
-     │                        │── POST /issues ───────►│ (to GitHub + DB)
-     │◄── issues list ────────│                        │
+[User Browser]              [YAAABK Backend]              [Session Pod]
+     │                            │                            │
+     │── POST /grill ────────────►│── start runtime ──────────►│
+     │  {idea, model}             │  (clone repo, mint key)    │
+     │◄── 201 {session} ──────────│◄── Pod + ttyd ready ───────│
+     │                            │                            │
+     │── GET .../terminal (WS) ──►│── ttyd WebSocket ─────────►│
+     │── input / resize ─────────►│── tty frames ─────────────►│
+     │◄── output / title ─────────│◄── agent output ───────────│
+     │                            │                            │
+     │                            │◄── report_prd (MCP) ───────│
+     │                            │◄── report_issues (MCP) ────│
+     │                            │    (stored as drafts)      │
+     │                            │                            │
+     │── POST .../finish ────────►│── publish Plan (PRD) + Issues
+     │◄── {plan, issues} ─────────│    then stop the runtime   │
 ```
 
 ### 5.3 Agent Implementation Flow
 
 ```
-[YAAABK]                 [K8s]                   [Agent Pod]           [GitHub]            [ArgoCD]
+[YAAABK]                 [K8s]                   [Agent Pod]           [GitHub]            [Deploy Job]
    │                       │                        │                    │                   │
    │── Create Job ────────►│                        │                    │                   │
    │                       │── Start Pod ──────────►│                    │                   │
@@ -363,7 +371,7 @@ User / Auth (future: multi-tenant)
    │── Wait for CI ────────│────────────────────────│───────────────────►│                   │
    │                       │                        │                    │◄── PR merged ─────│
    │                       │                        │                    │                   │
-   │                       │                        │                    │── Sync ──────────►│
+   │── Deploy merged ──────│────────────────────────│───────────────────►│                   │
    │                       │                        │                    │                   │
    │── Update issue ───────│                        │                    │                   │
    │   status=closed       │                        │                    │                   │
@@ -374,8 +382,8 @@ User / Auth (future: multi-tenant)
 ```
 [GitHub Actions]         [YAAABK]                 [K8s]                  [Agent Pod]
      │                       │                       │                       │
-     │── CI fails on PR ────►│                       │                       │
-     │  (webhook)            │                       │                       │
+     │◄── CI check fails ────│                       │                       │
+     │  (polled)             │                       │                       │
      │                       │── Increment attempt   │                       │
      │                       │── Check ≤ 3 attempts  │                       │
      │                       │── Create new Job ────►│                       │
@@ -404,18 +412,19 @@ User / Auth (future: multi-tenant)
 ┌─────────────────────────────────────────────────────────────────┐
 │  Cluster Level                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ yaaabk-system namespace                                   │   │
-│  │ ● YAAABK app SA: cluster-level ArgoCD + K8s API access   │   │
-│  │   (creates Projects, Applications, Namespaces)            │   │
+│  │ yaaabk namespace                                          │   │
+│  │ ● YAAABK app SA:                                          │   │
+│  │   - Creates Namespaces, RBAC, Jobs, Pods and              │   │
+│  │     NetworkPolicies inside Project Namespaces             │   │
+│  │   - No Secret reads in Project Namespaces                 │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ project-<id> namespace                                    │   │
-│  │ ● agent-<id> SA:                                         │   │
-│  │   - Read-only access to its own namespace                 │   │
-│  │   - NO cluster access                                     │   │
-│  │   - GitHub token (repo scope) in a Secret                 │   │
-│  │   - OpenRouter key in a Secret                            │   │
+│  │ yaaabk-<short-uuid> namespace                             │   │
+│  │ ● yaaabk-agent SA (Agent Jobs and Session Pods):          │   │
+│  │   - Read-only workloads + logs, plus pods/exec             │   │
+│  │   - NO Secret reads, NO cluster access                    │   │
+│  │   - Short-lived GitHub token and budgeted OpenRouter key  │   │
 │  │ ● User App SA:                                            │   │
 │  │   - No K8s API access at all                              │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -436,30 +445,30 @@ Apply to all `project-*` namespaces:
 | Limit resource ranges | CPU/memory limits required |
 | Deny cluster-admin binding | No ClusterRoleBinding |
 
-### 6.3 ArgoCD Project Restrictions
+### 6.3 Session Pod Restrictions
 
-Each project gets an ArgoCD Project that restricts:
+Each Grill-Me Session runs in its own Pod in the Project Namespace:
 
-- **Source repos**: Only the project's GitHub repo
-- **Destination clusters**: Only the local cluster
-- **Destination namespaces**: Only `project-<id>`
-- **Resource types**: Only Deployment, Service, Ingress, ConfigMap, Secret
-- **Sync policy**: Automated with Prune
+- **Identity**: the Project's `yaaabk-agent` ServiceAccount
+- **Pod Security**: `restricted` (non-root, no privilege escalation, all capabilities dropped, default seccomp, explicit CPU/memory limits)
+- **Network**: ingress only from the backend proxy; egress only to the backend, the Kubernetes API, GitHub, OpenRouter and DNS
+- **Cluster access**: read-only pods, logs, deployments, services, configmaps, events and HTTPRoutes, plus `pods/exec`; no Secret reads and no mutations
+- **Credentials**: a budget-limited OpenRouter key and a per-session report token, both revoked when the session ends; the clone token lives only in the init container
 
 ### 6.4 GitHub Token Scoping
 
 | Token | Scope | Used By |
 |---|---|---|
-| GitHub App Installation Token | Contents: write, Pull Requests: write, Issues: write, Metadata: read | YAAABK backend |
-| Per-Project PAT | Contents: write (on its repo only), Pull Requests: write | Agent Jobs |
+| GitHub App Installation Token | Contents: write, Pull Requests: write, Issues: write, Metadata: read | YAAABK backend / Agent Jobs |
+| Session clone token | Contents: read | Grill-Me Session init container (removed after cloning) |
 
 ---
 
 ## 7. Cost Control
 
-### 7.1 Per-Issue OpenRouter Budget
+### 7.1 Per-Issue and Per-Session OpenRouter Budget
 
-**Mechanism**: Create a limited API key via OpenRouter's API for each issue.
+**Mechanism**: Create a limited, expiring API key via OpenRouter's API for each Issue and each Grill-Me Session.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -469,9 +478,10 @@ Each project gets an ArgoCD Project that restricts:
 │ User can override when creating issue            │
 │ Max: $5.00 per issue (system limit)              │
 │                                                  │
-│ Budget covers: LLM calls for agent + refinement  │
-│ If budget exhausted → agent pauses, requests     │
-│ human approval for top-up                        │
+│ Budget covers: LLM calls for the Issue's agents  │
+│ or the session's grilling. A session key is also │
+│ short-lived and revoked when the session ends.   │
+│ If budget is exhausted → the run stops           │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -509,26 +519,27 @@ resources:
 ### Phase 0: Foundation (Week 1-2)
 
 - [x] Create project repo (`yaaabk`)
-- [ ] Set up monorepo structure (frontend + backend + agent + templates)
-- [ ] Set up CI/CD for YAAABK itself
+- [x] Set up monorepo structure (frontend + backend + agent + templates)
+- [x] Set up CI/CD for YAAABK itself
 - [ ] Set up development environment (local K8s via kind/minikube)
-- [ ] Deploy PostgreSQL + Redis to cluster
+- [x] Use a single SQLite file for state (no PostgreSQL or Redis)
 
 ### Phase 1: Core Platform (Week 3-5)
 
 - [ ] **Auth**: GitHub OAuth login
 - [ ] **Projects API**: CRUD + GitHub repo creation via GitHub App
 - [ ] **Template system**: Scaffold Svelte+Bun repos from template
-- [ ] **ArgoCD integration**: Create ArgoCD Application + Project per new project
-- [ ] **Namespace provisioning**: Create `project-<id>` namespace with policies
+- [x] **Deploy path**: agent-driven Deploy Job replaces ArgoCD
+- [x] **Namespace provisioning**: Create the `yaaabk-<short-uuid>` namespace with RBAC and policies
 - [ ] **Basic UI**: Project list, create project wizard, project dashboard
 
 ### Phase 2: Plan & Issues (Week 6-8)
 
-- [ ] **OpenCode Bridge**: Sidecar integration, stdin/stdout management, SSE streaming
-- [ ] **Grill-Me Session UI**: Real-time chat interface in browser
-- [ ] **Skill level prompts**: Expert vs beginner prompt templates
-- [ ] **Issue generation**: Parse grill-me output → create GitHub issues
+- [x] **Session runtime**: Per-session Pods in Kubernetes, local ttyd + OpenCode for development
+- [x] **Grill-Me Session UI**: xterm.js terminal behind the backend proxy, with reconnect and resize
+- [x] **Skill level prompts**: Expert vs beginner prompt depth in the image-baked skills
+- [x] **PRD handoff**: `grill-me` → `to-prd` → `to-issues` with typed draft reports
+- [x] **Publishing**: Finish creates one Plan (PRD) and replaces that Plan's Issues
 - [ ] **Issue board UI**: Kanban view, labels, status filtering
 - [ ] **Stats dashboard**: Open/closed counts, attempt tracking
 
@@ -547,7 +558,7 @@ resources:
 
 - [ ] **Kyverno policies**: Apply to all project namespaces
 - [ ] **PSA enforcement**: Pod Security Admission
-- [ ] **ArgoCD project restrictions**: Lock down source repos and destinations
+- [ ] **Session Pod hardening audit**: Verify the NetworkPolicy, Pod Security and OpenCode deny-list in a live cluster
 - [ ] **Error handling**: Dead letter queues, notifications (internal)
 - [ ] **Rate limiting**: Prevent abuse of agent spawning
 - [ ] **Monitoring**: Metrics for agent success rate, cost, latency
@@ -568,7 +579,7 @@ resources:
 These need decisions before/during implementation:
 
 ### Architecture
-1. **OpenCode integration**: Sidecar in the YAAABK pod, or per-session K8s Job? (Recommend: start with sidecar)
+1. **OpenCode integration**: ~~Sidecar in the YAAABK pod, or per-session K8s Job?~~ Resolved: a hardened per-session Pod in the Project Namespace, with a local ttyd/OpenCode adapter for development.
 2. **Template source**: Separate GitHub template repo, or embedded in YAAABK image? (Recommend: separate repo for versioning)
 3. **GitHub App vs PAT**: GitHub App (installation tokens) or Personal Access Tokens? (Recommend: GitHub App for multi-tenant, PAT for single-user)
 
@@ -583,8 +594,8 @@ These need decisions before/during implementation:
 9. **Agent timeout**: Maximum runtime per agent? (Recommend: 30 minutes)
 
 ### UX
-10. **Grill-me state persistence**: Can user refresh the page and resume? (Requires Redis session store)
-11. **Issue creation**: From grill-me output, does user review before creating? (Recommend: yes — show preview, let user edit)
+10. **Grill-me state persistence**: ~~Can user refresh the page and resume?~~ Resolved: the runtime keeps OpenCode alive and the browser reconnects to the terminal; sessions survive a refresh and a backend restart reconciles them.
+11. **Issue creation**: ~~Does the user review before creating?~~ Resolved: the agent reports drafts, Finish is the only publish point, and review happens on the Plan and Issue review pages.
 
 ---
 
@@ -594,15 +605,17 @@ These need decisions before/during implementation:
 |---|---|---|
 | Frontend | SvelteKit + Tailwind | Dogfood our own template stack, reactive UI |
 | Backend | Bun + Hono | Fast startup on K8s, TypeScript-native, single language |
-| Database | PostgreSQL + Drizzle ORM | Reliable, well-supported, Drizzle is type-safe |
-| Cache/Session | Redis | OpenCode session state, rate limiting |
+| Database | SQLite (libsql/better-sqlite3/bun:sqlite) | Single file, zero ops, doubles as the session/cache store |
+| Cache/Session | None (SQLite + in-process state) | No Redis dependency |
+| Terminal | ttyd + xterm.js | Real interactive OpenCode experience; the backend owns the protocol |
+| Session runtime | Per-session Pods (Kubernetes) or local child processes | Isolation without giving up a fast local loop |
 | LLM Provider | OpenRouter | Multi-model, per-key budget control |
 | Git Provider | GitHub (initially) | Largest ecosystem, well-documented API |
 | CI/CD | GitHub Actions | Tight GitHub integration |
-| GitOps | ArgoCD | Industry standard, CRD-based |
+| Deploy | Agent-driven Deploy Job | No GitOps controller to install or secure |
 | Policy | Kyverno + PSA | Kubernetes-native policy engine |
 | K8s Runtime | kind (dev) / EKS or GKE (prod) | Developer-friendly, managed production |
 
 ---
 
-*Last updated: 2026-11-13*
+*Last updated: 2026-11-17*

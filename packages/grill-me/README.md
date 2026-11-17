@@ -1,14 +1,12 @@
 # @yaaabk/grill-me
 
-The Grill-Me Module: YAAABK's OpenCode bridge, in two generations.
-
-**Interactive sessions (current).** `createGrillSessionsModule` owns the
-browser-facing lifecycle of a real terminal session: one live session per
-Project, start/get/cancel, activity tracking and the `SessionRuntime` port. The
-local adapter runs ttyd in front of `opencode mini` as child processes; the
-Kubernetes adapter runs one hardened Pod per session in the Project Namespace.
-`createTerminalBridge` translates the browser's JSON protocol to ttyd's `tty`
-frames, and `sessionRuntimeContract` is the shared suite every adapter runs.
+The Grill-Me Module owns the browser-facing lifecycle of a real terminal
+session: one live session per Project, start/get/cancel, activity tracking and
+the `SessionRuntime` port. The local adapter runs ttyd in front of
+`opencode mini` as child processes; the Kubernetes adapter runs one hardened Pod
+per session in the Project Namespace. `createTerminalBridge` translates the
+browser's JSON protocol to ttyd's `tty` frames, and `sessionRuntimeContract` is
+the shared suite every adapter runs.
 
 The opening prompt tells the agent to load the `grill-me` skill before anything
 else. That skill runs the interview, and three bundled skills carry the session
@@ -26,15 +24,8 @@ model loads them through OpenCode's `skill` tool rather than pasted prompt text.
 The Developer can say "write the PRD now" at any point to skip the rest of the
 interview.
 
-**Marker stream (legacy).** `createGrillMeModule` spawns `opencode run` and
-parses `<QUESTION>`, `<PLAN>` and `<ISSUES>` markers. It remains only for the
-one-shot Issue generation endpoints until the legacy path is removed; the
-interactive skills never emit markers. Its skill is
-[`skills/legacy-grill-me`](./skills/legacy-grill-me/SKILL.md).
-
-The legacy module is transport-free. It emits domain events; the backend adapts
-them to Server-Sent Events with `createSseStream`, and drives the conversation
-with `submitAnswer`, `refineIssues` and `cancelSession`.
+There is no marker protocol or stdout parsing: the agent reports through the
+typed MCP tools in `@yaaabk/grill-mcp`, and Finish is the only publish point.
 
 ## Interactive sessions
 
@@ -153,81 +144,19 @@ only to the backend, the Kubernetes API CIDR, HTTPS (GitHub and OpenRouter) and
 DNS. The session's ServiceAccount grants read-only workload inspection plus
 `pods/exec`, and never Secret reads.
 
-## Usage (legacy)
-
-```ts
-import { createGrillMeModule, createSseStream } from '@yaaabk/grill-me';
-
-const grillMe = createGrillMeModule();
-
-grillMe.on('question', ({ sessionId, question }) => {
-  // push to the browser
-});
-
-const started = await grillMe.startSession(projectId, 'A todo app', 'beginner');
-if (!started.ok) {
-  // started.error.kind is 'invalid-input' | 'spawn-failed' | ...
-} else {
-  await grillMe.submitAnswer(started.value, 'Postgres, please');
-}
-```
-
-Every command resolves to a `GrillMeResult` — `{ ok: true, value }` or
-`{ ok: false, error }` — so callers branch on `ok` instead of catching
-exceptions. Nothing throws across the module boundary.
-
-### Events
-
-`on(event, handler)` returns a disposer. Handlers receive the session id, so a
-single module can serve many sessions.
-
-| Event | Payload |
-|---|---|
-| `token` | `{ sessionId, text }` — raw stream text, for the live typing effect |
-| `question` | `{ sessionId, question }` |
-| `plan_ready` | `{ sessionId, plan }` — the final Plan as Markdown |
-| `issues_generated` | `{ sessionId, issues }` — parsed `{ title, body, labels, depends_on }` |
-| `error` | `{ sessionId, error }` — a typed `GrillMeError` |
-| `ended` | `{ sessionId, reason }` — `completed \| failed \| cancelled \| timeout` |
-
-### Commands
-
-| Command | Effect |
-|---|---|
-| `startSession(projectId, idea, skillLevel)` | Spawns the OpenCode process and resolves the session id |
-| `submitAnswer(sessionId, answer)` | Writes the Developer's answer to the process stdin |
-| `refineIssues(sessionId, feedback)` | Asks the agent for a revised `<ISSUES>` block |
-| `cancelSession(sessionId)` | Ends the session and stops the process |
-
-### Timeout
-
-A session is cancelled after 30 minutes (`timeoutMs` overrides it). The process
-is stopped and an `ended` event with reason `timeout` is emitted.
-
-### SSE
-
-```ts
-import { createSseStream } from '@yaaabk/grill-me';
-
-app.get('/projects/:id/grill/:sessionId', (c) =>
-  c.body(createSseStream(grillMe, c.req.param('sessionId'))),
-);
-```
-
-The stream filters out other sessions' events, sends keep-alive comments while
-idle (`heartbeatMs`, 0 to disable), and closes when the session ends.
-
 ## Design
 
-The high-level module depends on a narrow, process-shaped port —
-`OpenCodeSpawner` (`spawn`) and `OpenCodeProcess` (`send`, `stop`, `exited`). The
-real adapter shells out to the `opencode` CLI; unit tests inject
-`createFakeSpawner()`, so the whole module is testable with no cluster, network
-or LLM.
+The session orchestrator depends on the narrow `SessionRuntime` port —
+`start`, `stop`, `inspect` and `list` — with local and Kubernetes adapters. Both
+adapters satisfy the shared contract suite, so the backend routes never depend
+on which one is running. The terminal proxy is independent of session
+lifecycle: it authenticates the browser WebSocket, connects to ttyd with the
+`tty` subprotocol, translates input and resize into ttyd frames, and translates
+output, title and preference frames back. It can be tested against a stub
+upstream.
 
-Marker parsing is incremental (`createMarkerParser`): chunks may split a marker
-in half, and text that could still become a marker is held back rather than
-leaking to the browser.
+A session survives a browser refresh because the runtime keeps OpenCode alive;
+only Finish, Cancel, failure or a timeout stops it.
 
 ## Configuration
 
@@ -235,12 +164,11 @@ leaking to the browser.
   image ships one that lists `/app/skills` and registers the reporting MCP
   server; Agent Jobs do not load it. Without it, OpenCode only discovers skills
   from the project's own `.opencode/skills`.
-- `YAAABK_GRILL_ME_SKILL` — path to the legacy marker-based skill. Defaults to
-  the bundled [`skills/legacy-grill-me`](./skills/legacy-grill-me/SKILL.md).
-  It does not affect interactive sessions.
-- `createOpenCodeSpawner({ command, args, env, cwd })` — the legacy `opencode`
-  invocation for the one-shot Issue generation endpoints. The session runtime
-  uses `createLocalSessionRuntime()` instead.
+- `YAAABK_TTYD_BIN` and `YAAABK_OPENCODE_BIN` — the local adapter's binaries.
+  Both default to `ttyd` and `opencode` on `PATH`.
+- `YAAABK_SESSION_CWD` — the local adapter's working directory.
+- `YAAABK_SESSION_RUNTIME` — `local` (default) or `kubernetes`; the deployment
+  sets the latter.
 
 ## Tests
 
@@ -248,8 +176,8 @@ leaking to the browser.
 bun run test:unit
 ```
 
-Covers the streaming marker parser, issue parsing, session lifecycle (events,
-timeout, cancellation, process exit), the SSE stream and the real spawner
-(exercised against a stand-in command), all without an LLM or a cluster. The
-interactive skills are contract-tested for their one-question, handoff, PRD
-template and vertical-slice rules.
+Covers the runtime contract against both adapters, session lifecycle (start,
+finish, cancel, timeouts, reconciliation), draft reporting and publishing,
+terminal frame translation, and the prompt builder. The interactive skills are
+contract-tested for their one-question, handoff, PRD template and
+vertical-slice rules. No test needs a cluster, GitHub or an LLM.

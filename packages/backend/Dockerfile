@@ -55,7 +55,6 @@ COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
 COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
 ENV YAAABK_TTYD_BIN=/usr/local/bin/ttyd
 ENV YAAABK_OPENCODE_BIN=/usr/local/bin/opencode
-ENV YAAABK_GRILL_SKILL_PATH=/app/skills/grill-me/SKILL.md
 ENV YAAABK_SESSION_API_URL=http://127.0.0.1:3000
 ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 USER bun

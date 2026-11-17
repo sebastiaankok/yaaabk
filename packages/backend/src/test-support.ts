@@ -12,13 +12,9 @@ import {
 import {
   createFakeSessionKeys,
   createFakeSessionRuntime,
-  createFakeSpawner,
-  createGrillMeModule,
   createGrillSessionsModule,
   type FakeSessionKeys,
   type FakeSessionRuntime,
-  type FakeSpawner,
-  type GrillMeModule,
   type GrillSessionsModule,
 } from '@yaaabk/grill-me';
 import {
@@ -135,7 +131,6 @@ export interface TestContext {
   issues: IssuesModule;
   issueSync: IssueSyncModule;
   github: FakeGitHubIssues;
-  grillMe: GrillMeModule;
   grillSessions: GrillSessionsModule;
   sessionRuntime: FakeSessionRuntime;
   sessionKeys: FakeSessionKeys;
@@ -146,7 +141,6 @@ export interface TestContext {
   settings: SettingsModule;
   projectStore: ProjectStore;
   k8s: MockK8sClient;
-  spawner: FakeSpawner;
   store: AuthStore;
   clock: { ms: number };
   password: string;
@@ -243,13 +237,6 @@ export function createTestContext(
     logger: silent,
   });
 
-  const spawner = createFakeSpawner();
-  const grillMe = createGrillMeModule({
-    spawner,
-    skillPath: '/skills/grill-me/SKILL.md',
-    logger: silent,
-  });
-
   const sessionRuntime = createFakeSessionRuntime();
   const sessionKeys = createFakeSessionKeys();
   const grillSessions = createGrillSessionsModule({
@@ -299,7 +286,6 @@ export function createTestContext(
       plans,
       issues,
       issueSync,
-      grillMe,
       grillSessions,
       ...(overrides.upgradeWebSocket === undefined
         ? {}
@@ -320,7 +306,6 @@ export function createTestContext(
     issues,
     issueSync,
     github,
-    grillMe,
     grillSessions,
     sessionRuntime,
     sessionKeys,
@@ -331,7 +316,6 @@ export function createTestContext(
     settings,
     projectStore,
     k8s,
-    spawner,
     store,
     clock,
     password: TEST_PASSWORD,

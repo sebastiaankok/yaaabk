@@ -136,24 +136,14 @@ test('warns about circular dependencies', async ({ page }) => {
   await expect(page.getByText('i1 → i2 → i1')).toBeVisible();
 });
 
-test('refines the issue list with a prompt', async ({ page }) => {
-  const state = await mockReview(page);
-  const REVISED = issue({ id: 'i3', title: 'Add OAuth', label: 'ready' });
-  await page.route('**/api/projects/p1/issues/refine', (route) => {
-    state.issues = [REVISED];
-    state.graph = {
-      nodes: [{ id: 'i3', title: 'Add OAuth', dependsOn: [], missing: [], wave: 0 }],
-      cycles: [],
-    };
-    return route.fulfill({ json: { issues: state.issues } });
-  });
+test('offers no one-shot generation or prompt refinement', async ({ page }) => {
+  await mockReview(page);
 
   await page.goto('/projects/p1/issues/review');
-  await page.getByLabel('Refinement feedback').fill('Split the auth issue');
-  await page.getByRole('button', { name: 'Refine' }).click();
 
-  await expect(page.getByText('Add OAuth')).toBeVisible();
-  await expect(page.getByText('Schema')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Generate from plan' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Refine with prompt' })).toHaveCount(0);
+  await expect(page.getByLabel('Refinement feedback')).toHaveCount(0);
 });
 
 test('approves the issue list and pushes it to GitHub', async ({ page }) => {
@@ -198,12 +188,16 @@ test('syncs with GitHub on demand', async ({ page }) => {
   await expect(page.getByText('All 2 issues on GitHub')).toBeVisible();
 });
 
-test('offers to generate issues when there are none', async ({ page }) => {
+test('offers a route back to a new grill session when there are no issues', async ({ page }) => {
   const state = await mockReview(page);
   state.issues = [];
   state.graph = { nodes: [], cycles: [] };
 
   await page.goto('/projects/p1/issues/review');
+
   await expect(page.getByText('No issues yet.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Generate from plan' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start a new Grill-Me session' })).toHaveAttribute(
+    'href',
+    '/projects/p1/plan',
+  );
 });

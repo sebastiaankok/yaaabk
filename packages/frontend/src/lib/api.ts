@@ -422,20 +422,6 @@ export function getIssueGraph(projectId: string): Promise<IssueGraph> {
   return request<IssueGraph>(`/api/projects/${encodeURIComponent(projectId)}/issues/graph`);
 }
 
-export function generateIssues(projectId: string): Promise<Issue[]> {
-  return request<{ issues: Issue[] }>(
-    `/api/projects/${encodeURIComponent(projectId)}/issues/generate`,
-    { method: 'POST' },
-  ).then((body) => body.issues);
-}
-
-export function refineIssues(projectId: string, feedback: string): Promise<Issue[]> {
-  return request<{ issues: Issue[] }>(
-    `/api/projects/${encodeURIComponent(projectId)}/issues/refine`,
-    { method: 'POST', body: JSON.stringify({ feedback }) },
-  ).then((body) => body.issues);
-}
-
 export function approveIssues(projectId: string): Promise<Issue[]> {
   return request<{ issues: Issue[] }>(
     `/api/projects/${encodeURIComponent(projectId)}/issues/approve`,

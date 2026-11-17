@@ -29,11 +29,11 @@ An interactive AI-driven conversation where a **Developer** refines an idea into
 _Avoid_: Chat, brainstorming session
 
 **Plan**:
-A versioned markdown document produced by a **Grill-Me Session**, representing the refined specification of a **Project**. Stored in the database with version tracking. Can be reviewed in the UI before issues are generated.
+A versioned markdown document produced by a **Grill-Me Session**, representing the refined specification of a **Project**. Shaped as a PRD and labelled "Plan (PRD)" in the UI. **Finish** publishes one Plan version together with that Plan's **Issues**; there is no separate issue-generation step.
 _Avoid_: Specification, design doc
 
 **Issue**:
-A unit of work derived from a **Plan**. Maps 1:1 to a GitHub Issue on the **Project**'s repository. Has a label (`ready`, `refinement-needed`, `blocked`) and tracks agent implementation attempts. Stored in both GitHub and the local database.
+A unit of work derived from a **Plan**. Maps 1:1 to a GitHub Issue on the **Project**'s repository. Has a label (`ready`, `refinement-needed`, `blocked`, `needs-human`) and tracks agent implementation attempts. Stored in both GitHub and the local database.
 _Avoid_: Task, ticket, story
 
 **Agent**:
@@ -51,8 +51,8 @@ _Avoid_: Bot, worker, runner
 - A **Platform Admin** installs YAAABK so that **Developers** can safely create and manage **Projects**.
 - A **Developer** creates a **Project**, which creates a GitHub repo and a **Namespace (K8s)**.
 - Each **Namespace (K8s)** hosts exactly one **Project**'s application and its agent Jobs.
-- A **Grill-Me Session** produces a **Plan**.
-- A **Plan** generates zero or more **Issues**.
+- A **Grill-Me Session** publishes exactly one **Plan** and zero or more **Issues** when the Developer finishes it.
+- A **Plan** owns the **Issues** published with it; a later session publishes a new Plan version and replaces that Plan's Issues.
 - Each **Issue** belongs to exactly one **Project** and is backed by a GitHub Issue.
 - An **Agent** implements exactly one **Issue**. Multiple **Agent** attempts may exist per **Issue** (up to 3).
 

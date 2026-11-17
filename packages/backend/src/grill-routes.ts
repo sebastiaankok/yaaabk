@@ -42,8 +42,8 @@ export interface GrillRoutesOptions {
   /** Test seam for the upstream ttyd bridge. */
   terminalBridgeFactory?: typeof createTerminalBridge;
   /**
-   * The catalogue a requested model must appear in. Omitted in legacy tests
-   * that do not exercise model selection.
+   * The catalogue a requested model must appear in. Omitted in tests that do
+   * not exercise model selection.
    */
   catalogue?: ModelCatalogue;
 }

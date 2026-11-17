@@ -1,9 +1,9 @@
 # YAAABK — Yet Another AI App Builder for Kubernetes
 
 An AI-native Internal Developer Platform that takes a developer from idea to
-deployed application on Kubernetes: brainstorm in an AI-driven grill-me session,
-turn the refined plan into GitHub issues, and let autonomous agents implement
-them.
+deployed application on Kubernetes: grill your idea in an interactive terminal
+session that produces a PRD-shaped Plan and its Issues, then let autonomous
+agents implement them.
 
 - Product requirements: [`PRD.md`](./PRD.md)
 - Implementation plan and architecture: [`PLAN.md`](./PLAN.md)
@@ -309,8 +309,6 @@ Plan generates. The backend exposes it over HTTP:
 | `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status` or `depends_on` |
 | `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
 | `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
-| `POST /api/projects/:id/issues/generate` | Run the grill-me one-shot over the active Plan and record its Issues |
-| `POST /api/projects/:id/issues/refine` | Re-run generation with revision feedback |
 | `POST /api/projects/:id/issues/approve` | Mark every Issue `ready` |
 | `GET /api/projects/:id/issues/sync/status` | How much of the Issue set is mirrored to GitHub |
 | `POST /api/projects/:id/issues/sync/push` | Create or update the Project's Issues on GitHub |
@@ -318,10 +316,11 @@ Plan generates. The backend exposes it over HTTP:
 | `POST /api/projects/:id/issues/sync` | A full push-then-pull cycle |
 
 The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
-the generated Issues grouped by wave (with label pills, dependency tags and any
-circular-dependency warning), a "Refine with prompt" box, and "Approve & Create".
-New grill sessions publish their Plan and Issues through Finish; the one-shot
-generate/refine endpoints remain until the legacy marker path is removed.
+the Issues grouped by wave (with label pills, dependency tags and any
+circular-dependency warning), and "Approve & Create". It offers no one-shot
+generation or prompt refinement; changing a Plan or its Issues means starting
+another Grill-Me session, and the page links back to the Plan page for that.
+Finish is the only endpoint that publishes a Plan or replaces its Issues.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency
