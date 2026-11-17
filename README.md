@@ -68,7 +68,6 @@ cp .env.example .env
 | `YAAABK_SESSION_MAX_MS` | `14400000` | Hard cap on a session's lifetime, measured from its start |
 | `YAAABK_SESSION_SWEEP_MS` | `60000` | How often the backend checks for sessions to reap; `0` disables it |
 | `YAAABK_NAMESPACE` | `yaaabk` | Namespace the backend runs in; session NetworkPolicies allow it |
-| `YAAABK_KUBERNETES_API_CIDR` | `10.43.0.1/32` | API endpoint a session Pod may reach with `kubectl` |
 | `YAAABK_API_URL` | _unset_ | Base URL an agent Job reports its result back to |
 | `YAAABK_AGENT_POLL_MS` | `15000` | How often the Agent Manager reconciles in-flight Jobs |
 | `YAAABK_CI_POLL_MS` | `30000` | How often the CI Tracker watches `automerge` pull requests |

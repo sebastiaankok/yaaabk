@@ -420,9 +420,6 @@ const sessionRuntime =
         k8s,
         image: sessionImage!,
         backendNamespace: process.env['YAAABK_NAMESPACE'] ?? 'yaaabk',
-        ...(process.env['YAAABK_KUBERNETES_API_CIDR'] === undefined
-          ? {}
-          : { kubernetesApiCidr: process.env['YAAABK_KUBERNETES_API_CIDR'] }),
         logger: {
           info: (message, fields) => console.info(message, fields ?? ''),
         },

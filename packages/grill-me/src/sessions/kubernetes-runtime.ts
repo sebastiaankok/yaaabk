@@ -45,8 +45,6 @@ export interface KubernetesSessionRuntimeOptions {
   backendNamespace?: string;
   /** Pod label selecting the backend, so only its proxy may reach the terminal. */
   backendPodSelector?: Record<string, string>;
-  /** The Kubernetes API endpoint CIDR the session may reach for kubectl. */
-  kubernetesApiCidr?: string;
   /** ServiceAccount the Pod runs as. Defaults to `yaaabk-agent`. */
   serviceAccountName?: string;
   /** ttyd executable inside the image. Defaults to `ttyd`. */
@@ -84,7 +82,6 @@ interface RuntimeRecord {
 }
 
 const LOOPBACK = '0.0.0.0';
-const DEFAULT_API_CIDR = '10.43.0.1/32';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -290,7 +287,6 @@ function sessionNetworkPolicy(
   options: {
     backendNamespace: string;
     backendPodSelector: Record<string, string>;
-    kubernetesApiCidr: string;
   },
 ) {
   const backend = {
@@ -329,14 +325,13 @@ function sessionNetworkPolicy(
         ],
       },
       {
-        // GitHub and OpenRouter over HTTPS. NetworkPolicy cannot name hosts,
-        // so the fixed 443 port is the narrowest portable restriction.
-        to: [{ ipBlock: { cidr: '0.0.0.0/0' } }],
-        ports: [{ protocol: 'TCP' as const, port: 443 }],
-      },
-      {
-        // The Kubernetes API endpoint for kubectl (ClusterIP or host).
-        to: [{ ipBlock: { cidr: options.kubernetesApiCidr } }],
+        // GitHub, OpenRouter and the Kubernetes API over HTTPS. The peer is
+        // deliberately omitted (all destinations) for two reasons: NetworkPolicy
+        // cannot name hosts, and kube-proxy DNATs the `kubernetes` Service IP to
+        // a control-plane node before egress policy is evaluated, so neither
+        // the Service ClusterIP nor an `ipBlock` peer matches the API. Port 6443
+        // is the API server's usual port; 443 covers distributions that front it
+        // with a TLS proxy.
         ports: [
           { protocol: 'TCP' as const, port: 443 },
           { protocol: 'TCP' as const, port: 6443 },
@@ -356,7 +351,6 @@ export function createKubernetesSessionRuntime(
   const backendPodSelector = options.backendPodSelector ?? {
     'app.kubernetes.io/name': 'yaaabk-backend',
   };
-  const kubernetesApiCidr = options.kubernetesApiCidr ?? DEFAULT_API_CIDR;
   const serviceAccountName = options.serviceAccountName ?? SESSION_SERVICE_ACCOUNT;
   const ttydCommand = options.ttydCommand ?? 'ttyd';
   const opencodeCommand = options.opencodeCommand ?? 'opencode';
@@ -484,7 +478,6 @@ export function createKubernetesSessionRuntime(
           sessionNetworkPolicy(spec, {
             backendNamespace,
             backendPodSelector,
-            kubernetesApiCidr,
           }),
         );
         if (!policy.ok) throw new Error(`NetworkPolicy: ${policy.error.message}`);
