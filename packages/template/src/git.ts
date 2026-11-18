@@ -76,10 +76,37 @@ export function explainPushFailure(message: string): string {
   );
 }
 
+/**
+ * Git variables that pin a command to a repository, removed from every child.
+ *
+ * Git exports `GIT_DIR` and `GIT_INDEX_FILE` to hooks. Inherited here they win
+ * over `-C`, so a scaffold started from a git hook (the pre-commit suite runs
+ * these tests) would commit into the caller's repository instead of the
+ * directory the scaffold created — which is how a test run landed scaffold
+ * commits on a developer's branch.
+ */
+const REPOSITORY_ENV_VARS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+] as const;
+
+/** The process environment without repository-pinning git variables. */
+export function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of REPOSITORY_ENV_VARS) {
+    delete env[name];
+  }
+  return env;
+}
+
 /** Runs `git` in `directory`, rejecting with the command's stderr on failure. */
 async function git(directory: string, args: string[]): Promise<void> {
   try {
-    await exec('git', ['-C', directory, ...args]);
+    await exec('git', ['-C', directory, ...args], { env: cleanGitEnv() });
   } catch (error) {
     throw new Error(gitMessage(error), { cause: error });
   }
@@ -113,7 +140,7 @@ export function createGitBackend(): GitBackend {
           args.push('--branch', source.ref);
         }
         args.push(source.url, directory);
-        await exec('git', args);
+        await exec('git', args, { env: cleanGitEnv() });
       } catch (error) {
         throw templateError('missing-template', gitMessage(error), error);
       }
@@ -121,7 +148,7 @@ export function createGitBackend(): GitBackend {
 
     async initRepository(directory) {
       await rm(join(directory, '.git'), { recursive: true, force: true });
-      await exec('git', ['init', '-b', 'main', directory]);
+      await exec('git', ['init', '-b', 'main', directory], { env: cleanGitEnv() });
     },
 
     async commitAll(directory, { message, author }) {

@@ -34,9 +34,24 @@ export interface KubernetesAdapterOptions {
 /** A function that yields the next chunk of a stream, or null at its end. */
 type ChunkReader = () => Promise<Uint8Array | null>;
 
-/** Kubernetes answers 204 until the container has written its first log line. */
-function isNoContent(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 204;
+/**
+ * Whether a log request failed only because the container has no log yet.
+ *
+ * Kubernetes answers 204 from the moment a Pod starts until its first byte of
+ * output. While the container is still being created — which is exactly when
+ * the UI opens the live stream — it answers 400 with "container … is waiting to
+ * start: ContainerCreating". Both mean "nothing to read yet", not a failure.
+ */
+function isLogNotReady(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === 204) return true;
+  if (code !== 400) return false;
+  const message = (error as { message?: unknown }).message;
+  return (
+    typeof message === 'string' &&
+    /is waiting to start|PodInitializing|ContainerCreating/.test(message)
+  );
 }
 
 function buildKubeConfig(connection: K8sConnectionConfig): KubeConfig {
@@ -144,12 +159,13 @@ export function createKubernetesObjectApi(options: KubernetesAdapterOptions = {}
         });
 
       /**
-       * Opens the log, waiting out a 204.
+       * Opens the log, waiting out a "not ready" answer.
        *
-       * A Job's container answers 204 from the moment the Pod starts until its
-       * first byte of output, which is exactly when the UI opens the stream.
-       * Treating that as an error made a starting attempt look broken, so when
-       * following, poll until there is a log to read instead.
+       * A Job's container answers 204 (or 400 while it is still being created)
+       * from the moment the Pod starts until its first byte of output, which is
+       * exactly when the UI opens the stream. Treating that as an error made a
+       * starting attempt look broken, so when following, poll until there is a
+       * log to read instead.
        */
       async function connect(): Promise<void> {
         while (!cancelled) {
@@ -169,7 +185,7 @@ export function createKubernetesObjectApi(options: KubernetesAdapterOptions = {}
             };
             return;
           } catch (error) {
-            if (!isNoContent(error)) throw error;
+            if (!isLogNotReady(error)) throw error;
             if (!follow) {
               read = async () => null;
               return;

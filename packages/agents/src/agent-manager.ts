@@ -469,6 +469,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
       const jobResult = await k8s.jobs.create(namespace, job, {
         image,
+        // A Job is created fresh for every attempt, but the node keeps the
+        // image it first pulled under a release tag. Without `Always`, a tag
+        // that was re-pushed (a fix released under the same version) never
+        // reaches the attempt — which is how a fixed agent image kept running
+        // pre-fix code.
+        imagePullPolicy: 'Always',
         env,
         envFrom,
         serviceAccountName: isDeploy
@@ -523,10 +529,11 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
     // Capture the dead Pod's output before recording the failure: a run killed
     // by the kubelet (OOMKilled, evicted) never reports, and this is the only
-    // clue the Developer gets.
+    // clue the Developer gets. A run that did report keeps its own log — that
+    // log carries the agent's real error, which the Pod's stream often lacks.
     let logs = run.logs;
     const project = projects.get(run.projectId);
-    if (project !== undefined) {
+    if (project !== undefined && (logs === null || logs.trim() === '')) {
       try {
         const captured = await failureLogs(project.namespace, run);
         if (captured !== undefined) logs = captured;
