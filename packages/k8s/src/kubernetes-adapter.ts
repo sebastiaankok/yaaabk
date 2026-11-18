@@ -4,11 +4,39 @@ import { detectK8sConnection, type K8sConnectionConfig } from './config';
 import type { K8sObject, ListOptions, LogOptions, ObjectApi } from './object-api';
 import { labelSelector, resourcePath } from './selectors';
 
+/**
+ * What the adapter needs from a container-log client.
+ *
+ * Narrowed so tests can script an empty response (a container that has not
+ * written anything yet answers HTTP 204) without a cluster.
+ */
+export interface ContainerLogReader {
+  log(
+    namespace: string,
+    podName: string,
+    containerName: string,
+    stream: NodeJS.WritableStream,
+    options?: { follow?: boolean; tailLines?: number },
+  ): Promise<AbortController>;
+}
+
 export interface KubernetesAdapterOptions {
   /** Overrides in-cluster/kubeconfig auto-detection. */
   connection?: K8sConnectionConfig;
   /** Pre-built config, mainly for tests that point at a kind cluster. */
   kubeConfig?: KubeConfig;
+  /** Container-log client. Defaults to the real API; tests inject a fake. */
+  logReader?: ContainerLogReader;
+  /** How long to wait before re-asking for a log that has no output yet. */
+  logRetryMs?: number;
+}
+
+/** A function that yields the next chunk of a stream, or null at its end. */
+type ChunkReader = () => Promise<Uint8Array | null>;
+
+/** Kubernetes answers 204 until the container has written its first log line. */
+function isNoContent(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 204;
 }
 
 function buildKubeConfig(connection: K8sConnectionConfig): KubeConfig {
@@ -38,7 +66,8 @@ export function createKubernetesObjectApi(options: KubernetesAdapterOptions = {}
   const kubeConfig = options.kubeConfig ?? buildKubeConfig(connection);
   const objects = KubernetesObjectApi.makeApiClient(kubeConfig);
   const watcher = new Watch(kubeConfig);
-  const logReader = new Log(kubeConfig);
+  const logReader = options.logReader ?? new Log(kubeConfig);
+  const logRetryMs = options.logRetryMs ?? 1_000;
 
   /** The first container's name, which the log endpoint needs explicitly. */
   async function firstContainerName(ref: K8sObject['metadata']): Promise<string> {
@@ -91,31 +120,86 @@ export function createKubernetesObjectApi(options: KubernetesAdapterOptions = {}
       if (ref.metadata.namespace === undefined) {
         throw new Error(`Pod ${ref.metadata.name} needs a namespace to read logs`);
       }
+      const namespace = ref.metadata.namespace;
       const container = options.container ?? (await firstContainerName(ref.metadata));
-      const sink = new PassThrough();
-      const upstream = await logReader.log(
-        ref.metadata.namespace,
-        ref.metadata.name,
-        container,
-        sink,
-        {
-          follow: options.follow ?? false,
-          ...(options.tailLines === undefined ? {} : { tailLines: options.tailLines }),
-        },
-      );
-      const reader = Readable.toWeb(sink).getReader();
+      const follow = options.follow ?? false;
+      const logOptions = {
+        follow,
+        ...(options.tailLines === undefined ? {} : { tailLines: options.tailLines }),
+      };
+
+      let cancelled = false;
+      let upstream: AbortController | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let wake: (() => void) | undefined;
+      let read: ChunkReader | undefined;
+
+      const pause = (ms: number): Promise<void> =>
+        new Promise((resolve) => {
+          wake = resolve;
+          timer = setTimeout(() => {
+            wake = undefined;
+            resolve();
+          }, ms);
+        });
+
+      /**
+       * Opens the log, waiting out a 204.
+       *
+       * A Job's container answers 204 from the moment the Pod starts until its
+       * first byte of output, which is exactly when the UI opens the stream.
+       * Treating that as an error made a starting attempt look broken, so when
+       * following, poll until there is a log to read instead.
+       */
+      async function connect(): Promise<void> {
+        while (!cancelled) {
+          try {
+            const sink = new PassThrough();
+            upstream = await logReader.log(
+              namespace,
+              ref.metadata.name,
+              container,
+              sink,
+              logOptions,
+            );
+            const reader = Readable.toWeb(sink).getReader();
+            read = async () => {
+              const { done, value } = await reader.read();
+              return done ? null : (value as Uint8Array);
+            };
+            return;
+          } catch (error) {
+            if (!isNoContent(error)) throw error;
+            if (!follow) {
+              read = async () => null;
+              return;
+            }
+            await pause(logRetryMs);
+          }
+        }
+        read = async () => null;
+      }
+
       return new ReadableStream<Uint8Array>({
         async pull(controller) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            return;
+          try {
+            if (read === undefined) await connect();
+            const chunk = await read?.();
+            if (cancelled) return;
+            if (chunk === undefined || chunk === null) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk);
+          } catch (error) {
+            if (!cancelled) controller.error(error);
           }
-          controller.enqueue(value as Uint8Array);
         },
-        async cancel(reason) {
-          upstream.abort();
-          await reader.cancel(reason);
+        cancel() {
+          cancelled = true;
+          if (timer !== undefined) clearTimeout(timer);
+          wake?.();
+          upstream?.abort();
         },
       });
     },
