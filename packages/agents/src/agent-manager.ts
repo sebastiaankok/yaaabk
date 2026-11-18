@@ -184,6 +184,8 @@ function toPublicRun(run: StoredAgentRun): AgentRun {
     status: run.status,
     model: run.model,
     prUrl: run.prUrl,
+    reviewVerdict: run.reviewVerdict,
+    reviewBody: run.reviewBody,
     logs: run.logs,
     costCents: run.costCents,
     createdAt: run.createdAt,
@@ -576,6 +578,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       return;
     }
 
+    if (issue.status === 'closed') {
+      // The pull request merged while this attempt was failing (or its deploy
+      // is in flight). Re-implementing would reopen work that is already on
+      // main — and did, as a duplicate pull request after the first merge.
+      return;
+    }
+
     if (issue.attemptCount < issue.maxAttempts) {
       // Continue the pull request this run was working on. A bare retry would
       // clone the default branch and implement the Issue again from scratch,
@@ -679,6 +688,8 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       status: 'queued',
       model: null,
       prUrl: null,
+      reviewVerdict: null,
+      reviewBody: null,
       logs: null,
       costCents: 0,
       createdAt: now().toISOString(),
@@ -793,6 +804,8 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           ...(report.prUrl === undefined ? {} : { prUrl: report.prUrl }),
           ...(report.costCents === undefined ? {} : { costCents: report.costCents }),
           ...(report.logs === undefined ? {} : { logs: report.logs }),
+          ...(report.reviewVerdict === undefined ? {} : { reviewVerdict: report.reviewVerdict }),
+          ...(report.reviewBody === undefined ? {} : { reviewBody: report.reviewBody }),
           ...(report.commitSha === undefined ? {} : { commitSha: report.commitSha }),
         };
         store.update(updated);

@@ -594,6 +594,25 @@ describe('reconcile', () => {
     expect(stored.ok && stored.value.status).toBe('in_progress');
   });
 
+  it('does not retry an attempt for an Issue whose pull request already merged', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+    const spawned = await manager.spawn('project-1', issue.id);
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    // The CI tracker closes the Issue when it merges the pull request.
+    await issues.update('project-1', issue.id, {
+      status: 'closed',
+      closedAt: NOW.toISOString(),
+    });
+    await finishJob(k8s, NS, spawned.value.jobName!, 'failed');
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value).toMatchObject({ failed: 1, dispatched: 0 });
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value.map((run) => run.status)).toEqual(['failed']);
+  });
+
   it('continues the same pull request branch when retrying a failed attempt', async () => {
     const { manager, issues, k8s } = await harness();
     const issue = await readyIssue(issues, { maxAttempts: 3 });
@@ -783,6 +802,35 @@ describe('report', () => {
     expect(reported.ok && reported.value).toMatchObject({ prUrl, costCents: 123 });
     const runs = await manager.runs('project-1', issue.id);
     expect(runs.ok && runs.value[0]).toMatchObject({ prUrl, costCents: 123 });
+  });
+
+  it('records the verdict and body a review reported', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { container } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    if (token === undefined) throw new Error('run token missing');
+
+    const reported = await manager.report(spawned.value.id, token, {
+      prUrl: 'https://github.com/acme/todo-app/pull/7',
+      logs: 'Reviewed the diff.',
+      reviewVerdict: 'request-changes',
+      reviewBody: 'Return JSON 404 for /api/* paths.',
+    });
+    if (!reported.ok) throw new Error(`report failed: ${reported.error.message}`);
+
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      reviewVerdict: 'request-changes',
+      reviewBody: 'Return JSON 404 for /api/* paths.',
+    });
   });
 });
 

@@ -311,6 +311,12 @@ describe('runAgent', () => {
     expect(reviews).toEqual([
       { pullNumber: 7, event: 'request-changes', body: 'Please fix src/a.ts:12.' },
     ]);
+    // The verdict is also reported to YAAABK so the app can show it without
+    // the Developer opening the pull request.
+    expect(reports[0]).toMatchObject({
+      reviewVerdict: 'request-changes',
+      reviewBody: 'Please fix src/a.ts:12.',
+    });
     expect(outcome).toMatchObject({
       ok: true,
       branch: 'agent/issue-42',
@@ -318,7 +324,12 @@ describe('runAgent', () => {
     });
     // The review run reports the pull request it judged, never a new one.
     expect(reports).toEqual([
-      { prUrl: 'https://github.com/acme/todo-app/pull/7', logs: 'reviewed' },
+      {
+        prUrl: 'https://github.com/acme/todo-app/pull/7',
+        logs: 'reviewed',
+        reviewVerdict: 'request-changes',
+        reviewBody: 'Please fix src/a.ts:12.',
+      },
     ]);
   });
 
@@ -334,6 +345,8 @@ describe('runAgent', () => {
         prUrl: 'https://github.com/acme/todo-app/pull/7',
         logs: 'reviewed',
         costCents: 10,
+        reviewVerdict: 'approve',
+        reviewBody: 'Looks good.',
       },
     ]);
   });

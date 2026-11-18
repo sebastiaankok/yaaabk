@@ -150,6 +150,10 @@ export interface Reporter {
     prUrl: string | null;
     logs: string;
     costCents?: number;
+    /** The verdict a review run reached. Omitted by other kinds. */
+    reviewVerdict?: 'approve' | 'request-changes';
+    /** The reviewer's written summary. Omitted with {@link reviewVerdict}. */
+    reviewBody?: string;
     commitSha?: string;
     /**
      * How a deploy run ended. A failed deploy is reported so YAAABK can record

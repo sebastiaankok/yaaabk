@@ -102,6 +102,13 @@
 
   const spend = $derived(spendByIssue(runs));
 
+  /** What a run is, so reviews are not mistaken for implement attempts. */
+  function runLabel(run: AgentRun): string {
+    if (run.kind === 'review') return `Review ${run.attemptNumber}`;
+    if (run.kind === 'deploy') return `Deploy ${run.attemptNumber}`;
+    return `Attempt ${run.attemptNumber}`;
+  }
+
   /** The issue whose detail panel is open, taken from the unfiltered list. */
   const selected = $derived(issues.find((candidate) => candidate.id === selectedId) ?? null);
 
@@ -714,13 +721,30 @@
                   <li
                     class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
                   >
-                    <span class="font-medium">Attempt {run.attemptNumber}</span>
+                    <span class="font-medium">{runLabel(run)}</span>
                     <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                       {run.status}
                     </span>
+                    {#if run.reviewVerdict != null}
+                      <span
+                        class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'}"
+                      >
+                        {run.reviewVerdict === 'approve' ? 'approved' : 'changes requested'}
+                      </span>
+                    {/if}
                     <span class="text-xs text-neutral-500">
                       {(run.costCents / 100).toFixed(2)}
                     </span>
+                    {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
+                      <div
+                        class="prose prose-neutral mt-1 max-h-64 w-full max-w-none overflow-auto rounded bg-neutral-50 p-2 text-sm"
+                      >
+                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                        {@html renderMarkdown(run.reviewBody)}
+                      </div>
+                    {/if}
                     {#if run.model !== null && run.model !== undefined}
                       <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
                     {/if}
