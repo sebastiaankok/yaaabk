@@ -3,12 +3,14 @@ import type {
   CreateKeyInput,
   CreatedOpenRouterKey,
   OpenRouterApi,
+  OpenRouterCredits,
   OpenRouterKey,
   UpdateKeyInput,
 } from './openrouter-api';
 
 /** An operation the fake can be told to fail, used to exercise error mapping. */
-export type FakeOpenRouterOperation = 'createKey' | 'updateKey' | 'getKey' | 'deleteKey';
+export type FakeOpenRouterOperation =
+  'createKey' | 'updateKey' | 'getKey' | 'deleteKey' | 'getCredits';
 
 /**
  * The in-memory OpenRouter Management API used by unit tests.
@@ -30,6 +32,8 @@ export interface FakeOpenRouterApi extends OpenRouterApi {
   setUsage(hash: string, usageUsd: number): void;
   /** Disables or re-enables a key, as an operator would in the dashboard. */
   setDisabled(hash: string, disabled: boolean): void;
+  /** Sets the account-wide balance `getCredits` reports. */
+  setCredits(totalCreditsUsd: number, totalUsageUsd?: number): void;
   /** Queues `error` for the next call to `operation`. */
   fail(operation: FakeOpenRouterOperation, error: Error): void;
 }
@@ -43,6 +47,11 @@ export function createFakeOpenRouterApi(): FakeOpenRouterApi {
   const failures = new Map<FakeOpenRouterOperation, Error>();
   let lastCreate: CreateKeyInput | undefined;
   let lastUpdate: { hash: string; input: UpdateKeyInput } | undefined;
+  let credits: OpenRouterCredits = {
+    totalCreditsUsd: 10,
+    totalUsageUsd: 0,
+    remainingUsd: 10,
+  };
   let counter = 0;
 
   function maybeFail(operation: FakeOpenRouterOperation): void {
@@ -133,6 +142,12 @@ export function createFakeOpenRouterApi(): FakeOpenRouterApi {
       usageByHash.delete(hash);
     },
 
+    async getCredits() {
+      calls.push('getCredits');
+      maybeFail('getCredits');
+      return { ...credits };
+    },
+
     setUsage(hash, usageUsd) {
       usageByHash.set(hash, usageUsd);
     },
@@ -143,6 +158,14 @@ export function createFakeOpenRouterApi(): FakeOpenRouterApi {
         throw new OpenRouterApiError(`API key not found: ${hash}`, { statusCode: 404 });
       }
       entry.info = { ...entry.info, disabled };
+    },
+
+    setCredits(totalCreditsUsd, totalUsageUsd = 0) {
+      credits = {
+        totalCreditsUsd,
+        totalUsageUsd,
+        remainingUsd: Math.max(0, totalCreditsUsd - totalUsageUsd),
+      };
     },
 
     fail(operation, error) {

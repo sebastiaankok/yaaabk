@@ -462,7 +462,7 @@ export function createGrillSessionsModule(
       let openRouterKeyHash: string | null = null;
       if (options.keys !== undefined) {
         try {
-          const issued = await options.keys.issue(sessionId);
+          const issued = await options.keys.issue(sessionId, model);
           if (!issued.ok) {
             logger.error('grill session key mint failed', { sessionId });
             return fail('start', 'start-failed', issued.message);

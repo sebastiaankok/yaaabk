@@ -442,12 +442,19 @@ const sessionRuntime =
           info: (message, fields) => console.info(message, fields ?? ''),
         },
       });
+/**
+ * The live OpenRouter catalogue. Routes offer it to the UI, and the key issuer
+ * prices the selected model with it so a paid run is refused before it starts
+ * when its budget or the account balance cannot cover one full reply.
+ */
+const modelCatalogue = createOpenRouterModelCatalogue();
 const openrouterKeyOptions: SessionKeyIssuerOptions = {
   credentials: () => settings.credentials(),
   ...(process.env['OPENROUTER_MANAGEMENT_KEY'] === undefined
     ? {}
     : { envManagementKey: process.env['OPENROUTER_MANAGEMENT_KEY'] }),
   budgetCents: costControlConfig.defaultBudgetCents,
+  catalogue: modelCatalogue,
   logger: {
     info: (message, fields) => console.info(message, fields ?? ''),
     error: (message, fields) => console.error(message, fields ?? ''),
@@ -533,8 +540,8 @@ const agents = createAgentManager({
   k8s,
   githubIssues: resolveGitHubIssues(settings),
   githubToken: resolveGithubTokenForAgents,
-  mintOpenrouterKey: async (issue, attemptNumber) => {
-    const minted = await agentKeys.mint(issue.id, issue.budgetCents, attemptNumber);
+  mintOpenrouterKey: async (issue, attemptNumber, model) => {
+    const minted = await agentKeys.mint(issue.id, issue.budgetCents, attemptNumber, model);
     return minted.ok
       ? { ok: true, key: minted.value.key, hash: minted.value.hash }
       : { ok: false, message: minted.message };
@@ -579,7 +586,7 @@ const app = createApp({
   agents,
   ciTracker,
   settings,
-  models: createOpenRouterModelCatalogue(),
+  models: modelCatalogue,
   defaultModel,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },
