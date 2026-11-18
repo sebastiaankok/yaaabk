@@ -348,3 +348,38 @@ describe('createGitHub createReview', () => {
     expect(bodies[1]?.['body']).toContain('Fix the API.');
   });
 });
+
+describe('createGitHub openPullRequest', () => {
+  it('reuses the open pull request when a fix run pushes to its branch', async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const responses = [
+      new Response(JSON.stringify({ message: 'Validation Failed' }), { status: 422 }),
+      new Response(
+        JSON.stringify([{ number: 5, html_url: 'https://github.com/acme/todo-app/pull/5' }]),
+        { status: 200 },
+      ),
+      new Response(JSON.stringify({}), { status: 200 }),
+    ];
+    const fetchStub = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) as unknown }),
+      });
+      return responses.shift()!;
+    }) as unknown as typeof fetch;
+
+    const github = createGitHub(CONFIG, { fetch: fetchStub });
+    const pull = await github.openPullRequest({
+      branch: 'agent/issue-42',
+      title: 'Add login',
+      body: 'Implements #42.',
+      labels: ['automerge'],
+    });
+
+    expect(pull).toEqual({ number: 5, url: 'https://github.com/acme/todo-app/pull/5' });
+    expect(calls[1]?.url).toContain('/pulls?state=open&head=acme%3Aagent%2Fissue-42');
+    // The label is still applied, so automerge is set on a reused pull request.
+    expect(calls[2]?.url).toContain('/issues/5/labels');
+  });
+});

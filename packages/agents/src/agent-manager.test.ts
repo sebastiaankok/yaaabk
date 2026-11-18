@@ -594,6 +594,32 @@ describe('reconcile', () => {
     expect(stored.ok && stored.value.status).toBe('in_progress');
   });
 
+  it('continues the same pull request branch when retrying a failed attempt', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues, { maxAttempts: 3 });
+    const first = await manager.spawn('project-1', issue.id, {
+      branch: 'agent/issue-42',
+      reviewFeedback: 'Return JSON 404 for /api/* paths.',
+    });
+    if (!first.ok) throw new Error('spawn failed');
+
+    await finishJob(k8s, NS, first.value.jobName!, 'failed');
+    await manager.reconcile();
+
+    const runs = await manager.runs('project-1', issue.id);
+    if (!runs.ok) throw new Error('runs failed');
+    const retry = runs.value.find((run) => run.attemptNumber === 2);
+    if (retry?.jobName === null || retry?.jobName === undefined) throw new Error('no retry');
+    const { container } = await readJobContainer(k8s, NS, retry.jobName);
+
+    // A bare retry would clone main and implement the Issue again from scratch.
+    expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
+    expect(container.env).toContainEqual({
+      name: 'REVIEW_FEEDBACK',
+      value: 'Return JSON 404 for /api/* paths.',
+    });
+  });
+
   it('retries a failed attempt, then escalates once the attempts are exhausted', async () => {
     const { manager, issues, k8s } = await harness();
     const issue = await readyIssue(issues, { maxAttempts: 2 });
