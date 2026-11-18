@@ -48,7 +48,7 @@ export interface Git {
   checkoutBranch(directory: string, branch: string): Promise<void>;
   /** Checks out a specific commit SHA in detached HEAD. */
   checkoutCommit(directory: string, commitSha: string): Promise<void>;
-  /** Stages and commits every change. */
+  /** Stages and commits every change; a clean tree (the Agent already committed) is left as-is. */
   commitAll(directory: string, message: string): Promise<void>;
   /** Pushes `branch` to `origin`, force-updating it when `force` is set. */
   push(directory: string, branch: string, options?: { force?: boolean }): Promise<void>;
