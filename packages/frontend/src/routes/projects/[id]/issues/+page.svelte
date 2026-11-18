@@ -322,6 +322,9 @@
   let watchedRunId: string | null = null;
   let watchController: AbortController | null = null;
 
+  /** How many times to re-open a dropped log stream before showing the error. */
+  const LOG_STREAM_RETRIES = 5;
+
   /** Subscribes to a running attempt's log and starts or stops cleanly. */
   function watchRun(run: AgentRun | null): void {
     watchController?.abort();
@@ -342,22 +345,37 @@
         })
         .catch(() => undefined);
     };
-    void streamAgentRunLogs(
-      project,
-      run.id,
-      (chunk) => {
-        if (watchedRunId === run.id) liveLog += chunk;
-      },
-      controller.signal,
-    )
-      .catch((cause) => {
-        if (!controller.signal.aborted) liveError = describe(cause);
-      })
-      .finally(() => {
-        // After an abort (issue switched, panel closed) the list is refreshed
-        // by whoever caused it; a stale fetch here would race that.
-        if (!controller.signal.aborted) refresh();
-      });
+    void (async () => {
+      for (let attempt = 0; !controller.signal.aborted; attempt += 1) {
+        try {
+          await streamAgentRunLogs(
+            project,
+            run.id,
+            (chunk) => {
+              if (watchedRunId === run.id) liveLog += chunk;
+            },
+            controller.signal,
+          );
+          return;
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          if (attempt >= LOG_STREAM_RETRIES - 1) {
+            liveError = describe(cause);
+            return;
+          }
+          // A long silence (a model thinking, a proxy idle timeout) can drop
+          // the stream while the Job keeps writing. The endpoint replays the
+          // Pod log from the start, so clear what is shown and re-open rather
+          // than leave the panel frozen.
+          liveLog = '';
+          await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
+        }
+      }
+    })().finally(() => {
+      // After an abort (issue switched, panel closed) the list is refreshed
+      // by whoever caused it; a stale fetch here would race that.
+      if (!controller.signal.aborted) refresh();
+    });
   }
 
   // Follow the running attempt for whichever issue is open; switching issues or

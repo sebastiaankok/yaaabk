@@ -48,6 +48,11 @@ export function createGit(): Git {
       await Bun.$`git -C ${directory} checkout ${commitSha}`.quiet();
     },
     async commitAll(directory, message) {
+      // The implement-issue skill tells the Agent to leave its work committed,
+      // so the tree is often already clean. Committing nothing exits non-zero
+      // and fails an attempt whose checks passed, so skip the commit then.
+      const changes = await Bun.$`git -C ${directory} status --porcelain`.quiet();
+      if (changes.stdout.toString().trim() === '') return;
       await Bun.$`git -C ${directory} add -A`.quiet();
       await Bun.$`git -C ${directory} -c user.name=yaaabk -c user.email=agent@yaaabk.io commit -m ${message}`.quiet();
     },
