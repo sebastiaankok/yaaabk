@@ -280,7 +280,12 @@ plaintext key goes only into the runtime as `OPENROUTER_API_KEY`; the session
 stores only its hash and revokes it on Finish, Cancel, replacement or a failed
 start. The model is the start request's choice, then the Project's last-used
 model, then `YAAABK_DEFAULT_MODEL`; a requested model outside the tool-capable
-catalogue is rejected with a `400`.
+catalogue is rejected with a `400`. Before minting, the selected model's
+worst-case reply — its full `max_completion_tokens` at the completion price — is
+checked against the budget and the account's remaining OpenRouter credits.
+OpenRouter reserves that much up front, so a paid model that cannot cover one
+reply is refused at start with the required amount and what to change; free
+models need no balance.
 
 The session runtime also injects `YAAABK_API_URL`, `YAAABK_SESSION_ID` and a
 per-session `YAAABK_REPORT_TOKEN`; the report routes accept that bearer token
@@ -393,6 +398,12 @@ queued run picks up the settings current at dispatch. Changing a model does not
 reset the attempt budget or start work. Model writes are validated against the
 same live, tool-capable catalogue the Grill-Me page uses; clearing the setting
 (`null`) restores inheritance.
+
+Before minting an attempt's key, the resolved model's full reply reservation is
+checked against the Issue budget and the account's remaining credits. A run that
+cannot afford even one reply is refused with the required amount instead of
+dispatching a Job that OpenRouter would reject; free models skip the check, and
+an unavailable balance endpoint never blocks a run.
 
 Concurrency is enforced by reserving an attempt's slot synchronously before the
 first cluster call, so two racing `spawn`s cannot both claim the last slot. The

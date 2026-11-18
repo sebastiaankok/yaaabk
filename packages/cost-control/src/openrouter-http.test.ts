@@ -136,6 +136,32 @@ describe('createOpenRouterApi', () => {
     });
   });
 
+  it('reads the account balance through GET /credits', async () => {
+    const { calls, fetch } = recordingFetch([
+      jsonResponse({ data: { total_credits: 40, total_usage: 39.9928 } }),
+    ]);
+    const api = createOpenRouterApi({ managementKey: MANAGEMENT_KEY, fetch });
+
+    const credits = await api.getCredits();
+
+    expect(calls[0]).toMatchObject({
+      url: 'https://openrouter.ai/api/v1/credits',
+      method: 'GET',
+    });
+    expect(credits.totalCreditsUsd).toBe(40);
+    expect(credits.totalUsageUsd).toBe(39.9928);
+    expect(credits.remainingUsd).toBeCloseTo(0.0072, 6);
+  });
+
+  it('never reports a negative balance', async () => {
+    const { fetch } = recordingFetch([
+      jsonResponse({ data: { total_credits: 10, total_usage: 12 } }),
+    ]);
+    const api = createOpenRouterApi({ managementKey: MANAGEMENT_KEY, fetch });
+
+    expect((await api.getCredits()).remainingUsd).toBe(0);
+  });
+
   it('reports a rejected request as an OpenRouterApiError with its status', async () => {
     const { fetch } = recordingFetch([
       jsonResponse(

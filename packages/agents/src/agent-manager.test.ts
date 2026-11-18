@@ -378,10 +378,16 @@ describe('spawn', () => {
   });
 
   it('mints a budgeted OpenRouter key for each attempt, including retries', async () => {
-    const calls: Array<{ issueId: string; attempt: number; budgetCents: number }> = [];
+    const calls: Array<{ issueId: string; attempt: number; budgetCents: number; model: string }> =
+      [];
     const { manager, issues, k8s } = await harness({
-      mintOpenrouterKey: async (issue, attemptNumber) => {
-        calls.push({ issueId: issue.id, attempt: attemptNumber, budgetCents: issue.budgetCents });
+      mintOpenrouterKey: async (issue, attemptNumber, model) => {
+        calls.push({
+          issueId: issue.id,
+          attempt: attemptNumber,
+          budgetCents: issue.budgetCents,
+          model,
+        });
         return { ok: true, key: `sk-attempt-${attemptNumber}`, hash: `hash-${attemptNumber}` };
       },
     });
@@ -390,7 +396,14 @@ describe('spawn', () => {
     const spawned = await manager.spawn('project-1', issue.id);
 
     expect(spawned.ok && spawned.value.openrouterSecretName).toBe('agent-openrouter-issue-1-1');
-    expect(calls).toEqual([{ issueId: issue.id, attempt: 1, budgetCents: issue.budgetCents }]);
+    expect(calls).toEqual([
+      {
+        issueId: issue.id,
+        attempt: 1,
+        budgetCents: issue.budgetCents,
+        model: DEFAULT_AGENT_MODEL,
+      },
+    ]);
     const firstSecret = await k8s.objectApi.read({
       apiVersion: 'v1',
       kind: 'Secret',
@@ -409,8 +422,8 @@ describe('spawn', () => {
 
     expect(reconciled.ok && reconciled.value.dispatched).toBe(1);
     expect(calls).toEqual([
-      { issueId: issue.id, attempt: 1, budgetCents: issue.budgetCents },
-      { issueId: issue.id, attempt: 2, budgetCents: issue.budgetCents },
+      { issueId: issue.id, attempt: 1, budgetCents: issue.budgetCents, model: DEFAULT_AGENT_MODEL },
+      { issueId: issue.id, attempt: 2, budgetCents: issue.budgetCents, model: DEFAULT_AGENT_MODEL },
     ]);
     const retrySecret = await k8s.objectApi.read({
       apiVersion: 'v1',

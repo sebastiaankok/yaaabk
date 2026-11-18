@@ -3,6 +3,7 @@ import type {
   CreateKeyInput,
   CreatedOpenRouterKey,
   OpenRouterApi,
+  OpenRouterCredits,
   OpenRouterKey,
   UpdateKeyInput,
 } from './openrouter-api';
@@ -121,6 +122,19 @@ export function createOpenRouterApi(options: OpenRouterApiOptions): OpenRouterAp
 
     async deleteKey(hash: string): Promise<void> {
       await request(`/keys/${encodeURIComponent(hash)}`, { method: 'DELETE' });
+    },
+
+    async getCredits(): Promise<OpenRouterCredits> {
+      const payload = (await request('/credits', { method: 'GET' })) as {
+        data: { total_credits: number; total_usage: number };
+      };
+      const totalCreditsUsd = payload.data.total_credits;
+      const totalUsageUsd = payload.data.total_usage;
+      return {
+        totalCreditsUsd,
+        totalUsageUsd,
+        remainingUsd: Math.max(0, totalCreditsUsd - totalUsageUsd),
+      };
     },
   };
 }

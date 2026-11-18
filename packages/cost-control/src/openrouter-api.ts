@@ -49,9 +49,21 @@ export interface CreatedOpenRouterKey {
   keyInfo: OpenRouterKey;
 }
 
+/** The account-wide credit balance every sub-key draws from. */
+export interface OpenRouterCredits {
+  /** Credits purchased, in USD. */
+  totalCreditsUsd: number;
+  /** Credits spent, in USD. */
+  totalUsageUsd: number;
+  /** What is left to spend, in USD; never negative. */
+  remainingUsd: number;
+}
+
 export interface OpenRouterApi {
   createKey(input: CreateKeyInput): Promise<CreatedOpenRouterKey>;
   updateKey(hash: string, input: UpdateKeyInput): Promise<OpenRouterKey>;
   getKey(hash: string): Promise<OpenRouterKey>;
   deleteKey(hash: string): Promise<void>;
+  /** Reads the account balance a paid request actually draws on. */
+  getCredits(): Promise<OpenRouterCredits>;
 }

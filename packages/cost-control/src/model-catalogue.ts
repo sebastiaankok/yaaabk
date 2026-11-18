@@ -19,6 +19,8 @@ export interface SessionModel {
   id: string;
   name: string;
   contextLength: number | null;
+  /** Largest reply the provider will produce in one request, when it reports one. */
+  maxCompletionTokens: number | null;
   promptUsdPerMillion: number | null;
   completionUsdPerMillion: number | null;
 }
@@ -47,6 +49,7 @@ interface RawModel {
   pricing?: { prompt?: unknown; completion?: unknown };
   architecture?: { modality?: unknown; output_modalities?: unknown };
   supported_parameters?: unknown;
+  top_provider?: { max_completion_tokens?: unknown };
 }
 
 /** Converts OpenRouter's per-token USD string to USD per million tokens. */
@@ -81,9 +84,25 @@ function toSessionModel(model: RawModel): SessionModel | undefined {
       : `${OPENROUTER_MODEL_PREFIX}${upstreamId}`,
     name: typeof model.name === 'string' && model.name.trim() !== '' ? model.name : upstreamId,
     contextLength: numberOrNull(model.context_length),
+    maxCompletionTokens: numberOrNull(model.top_provider?.max_completion_tokens),
     promptUsdPerMillion: perMillion(model.pricing?.prompt),
     completionUsdPerMillion: perMillion(model.pricing?.completion),
   };
+}
+
+/**
+ * The most one maximum-length reply can cost, in USD.
+ *
+ * OpenRouter reserves a request against the key and account balance as if the
+ * model produced its full `max_completion_tokens`, which is why a key with a
+ * small limit is rejected even when the actual reply would be cheap. Returns 0
+ * when the catalogue does not publish enough pricing or limit data to check.
+ */
+export function maxCompletionCostUsd(model: SessionModel): number {
+  const tokens = model.maxCompletionTokens;
+  const price = model.completionUsdPerMillion;
+  if (typeof tokens !== 'number' || typeof price !== 'number') return 0;
+  return (tokens * price) / 1_000_000;
 }
 
 /**

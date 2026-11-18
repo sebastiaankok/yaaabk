@@ -95,9 +95,14 @@ export interface AgentManagerOptions {
    * Mints the budgeted OpenRouter key a run uses when the caller supplies none.
    * Retries and CI-tracker fix attempts go through the same resolver, so a run
    * never starts without a credential. Deploy runs are skipped: they apply
-   * manifests rather than call an LLM.
+   * manifests rather than call an LLM. The resolved model is passed so the
+   * issuer can refuse a budget or account balance that cannot cover one reply.
    */
-  mintOpenrouterKey?: (issue: Issue, attemptNumber: number) => Promise<AgentOpenrouterKeyResult>;
+  mintOpenrouterKey?: (
+    issue: Issue,
+    attemptNumber: number,
+    model: string,
+  ) => Promise<AgentOpenrouterKeyResult>;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
@@ -268,6 +273,14 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   }
 
   /**
+   * The model an attempt runs with: the Issue's choice, then the Project's,
+   * then the environment default.
+   */
+  function resolveModel(issue: Issue, project: Project): string {
+    return issue.agentModel ?? project.agentModel ?? defaultModel;
+  }
+
+  /**
    * Gives a queued attempt its PVC, Secret reference and Job, then records it
    * as running.
    *
@@ -290,7 +303,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       const namespace = project.namespace;
       // Resolve per-issue, then per-project, then the environment default. A
       // queued run therefore picks up settings as they are when it dispatches.
-      const runModel = isDeploy ? null : (issue.agentModel ?? project.agentModel ?? defaultModel);
+      const runModel = isDeploy ? null : resolveModel(issue, project);
       const labels = runLabels(run);
       const pvc = isDeploy ? null : pvcName(run.issueId, run.attemptNumber, run.kind);
       const job = jobName(run.issueId, run.attemptNumber, run.kind);
@@ -512,7 +525,11 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       kind !== 'deploy' &&
       options.mintOpenrouterKey !== undefined
     ) {
-      const minted = await options.mintOpenrouterKey(issue, attemptNumber);
+      const minted = await options.mintOpenrouterKey(
+        issue,
+        attemptNumber,
+        resolveModel(issue, project),
+      );
       if (!minted.ok) {
         throw agentsError('unknown', minted.message);
       }

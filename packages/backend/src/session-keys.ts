@@ -1,4 +1,12 @@
-import { createOpenRouterApi, mintKey, revokeKey, type OpenRouterApi } from '@yaaabk/cost-control';
+import {
+  createOpenRouterApi,
+  maxCompletionCostUsd,
+  mintKey,
+  revokeKey,
+  usdFromCents,
+  type ModelCatalogue,
+  type OpenRouterApi,
+} from '@yaaabk/cost-control';
 import type { SessionKeyIssuer } from '@yaaabk/grill-me';
 
 /** How long a session's key may live; the session itself is capped at 4 hours. */
@@ -15,6 +23,11 @@ export interface SessionKeyIssuerOptions {
   envManagementKey?: string;
   /** Spending cap in cents when Settings holds no budget preference. */
   budgetCents: number;
+  /**
+   * Prices the selected model so a run can be refused before it starts when
+   * neither its budget nor the account balance can cover one full reply.
+   */
+  catalogue?: ModelCatalogue;
   /** Key lifetime. Defaults to {@link SESSION_KEY_TTL_MS}. */
   ttlMs?: number;
   /** Builds the OpenRouter client for a management key. Defaults to HTTP. */
@@ -25,6 +38,19 @@ export interface SessionKeyIssuerOptions {
     info(message: string, fields?: Record<string, unknown>): void;
     error(message: string, fields?: Record<string, unknown>): void;
   };
+}
+
+/**
+ * What a paid model may reserve for one reply, in USD.
+ *
+ * OpenRouter checks this before streaming: a request asking for a model's full
+ * reply limit is rejected unless the key and the account can cover it, even if
+ * the model would stop far short.
+ */
+export interface CreditRequirement {
+  /** The OpenCode model id, used only in the refusal message. */
+  model: string;
+  requiredUsd: number;
 }
 
 /** A key minted for one caller, returned once with its plaintext value. */
@@ -40,8 +66,16 @@ export type OpenRouterKeyResult =
 
 /** Mints and revokes budgeted OpenRouter keys from the platform credential. */
 export interface OpenRouterKeyIssuer {
-  /** Mints a key for a stable subject, optionally overriding the default budget. */
-  mint(subject: string, budgetCents?: number): Promise<OpenRouterKeyResult>;
+  /**
+   * Mints a key for a stable subject, optionally overriding the default budget.
+   * A requirement refuses the key up front when the budget or account balance
+   * cannot cover one full reply from the selected model.
+   */
+  mint(
+    subject: string,
+    budgetCents?: number,
+    requirement?: CreditRequirement,
+  ): Promise<OpenRouterKeyResult>;
   /** Deletes a key by hash. */
   revoke(hash: string): Promise<void>;
 }
@@ -52,11 +86,41 @@ export interface AgentKeyIssuer {
    * Mints a key capped at the Issue's budget for one attempt. Each attempt gets
    * its own short-lived key, so a leak cannot outlive the run that created it.
    */
-  mint(issueId: string, budgetCents: number, attempt: number): Promise<OpenRouterKeyResult>;
+  mint(
+    issueId: string,
+    budgetCents: number,
+    attempt: number,
+    model?: string,
+  ): Promise<OpenRouterKeyResult>;
 }
 
 const MISSING_CREDENTIAL_MESSAGE =
   'OpenRouter is not configured: add a management key in Settings, or set OPENROUTER_MANAGEMENT_KEY, to run an agent or start a session.';
+
+/** Formats a USD amount for an actionable refusal message. */
+function usdLabel(usd: number): string {
+  return usd > 0 && usd < 0.01 ? 'less than $0.01' : `$${usd.toFixed(2)}`;
+}
+
+/**
+ * Reads the selected model's worst-case reply cost from the live catalogue.
+ *
+ * Returns `undefined` when the model is unknown or the catalogue is unavailable:
+ * a preflight must never be the reason a run cannot start. Free models need no
+ * check because their maximum cost is zero.
+ */
+async function creditRequirement(
+  catalogue: ModelCatalogue | undefined,
+  model: string | undefined,
+): Promise<CreditRequirement | undefined> {
+  if (catalogue === undefined || model === undefined || model.trim() === '') return undefined;
+  const listed = await catalogue.list();
+  if (!listed.ok) return undefined;
+  const entry = listed.value.find((candidate) => candidate.id === model);
+  if (entry === undefined) return undefined;
+  const requiredUsd = maxCompletionCostUsd(entry);
+  return requiredUsd > 0 ? { model, requiredUsd } : undefined;
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -93,16 +157,55 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
   }
 
   return {
-    async mint(subject, budgetOverride) {
+    async mint(subject, budgetOverride, requirement) {
       const { managementKey, budgetCents } = await resolveCredentials();
       if (managementKey === undefined) {
         logger.error('openrouter key mint failed: no management credential', { subject });
         return { ok: false, message: MISSING_CREDENTIAL_MESSAGE };
       }
+      const cents = budgetOverride ?? budgetCents;
+      const api = buildApi(managementKey);
+      if (requirement !== undefined && requirement.requiredUsd > 0) {
+        // A key's limit and the account balance are both checked by OpenRouter
+        // before a token is produced. Refuse here, before a Job exists, when
+        // either cannot cover one full reply; the provider's own message names
+        // neither the real cause nor the setting to change.
+        const budgetUsd = usdFromCents(cents);
+        if (budgetUsd < requirement.requiredUsd) {
+          logger.error('openrouter key mint refused: budget below reply reservation', {
+            subject,
+            model: requirement.model,
+          });
+          return {
+            ok: false,
+            message: `The ${usdLabel(budgetUsd)} budget is below the ${usdLabel(requirement.requiredUsd)} ${requirement.model} can reserve for one reply. Raise the budget or choose a cheaper model.`,
+          };
+        }
+        try {
+          const credits = await api.getCredits();
+          if (credits.remainingUsd < requirement.requiredUsd) {
+            logger.error('openrouter key mint refused: account credits below reply reservation', {
+              subject,
+              model: requirement.model,
+            });
+            return {
+              ok: false,
+              message: `The OpenRouter account has ${usdLabel(credits.remainingUsd)} in credits left, but ${requirement.model} can reserve up to ${usdLabel(requirement.requiredUsd)} for one reply. Add credits at https://openrouter.ai/settings/credits or choose a free model.`,
+            };
+          }
+        } catch (error) {
+          // A balance lookup is a convenience: the provider still enforces the
+          // real limit, so never refuse a run because the check itself failed.
+          logger.error('openrouter credit preflight failed', {
+            subject,
+            message: messageOf(error),
+          });
+        }
+      }
       try {
-        const minted = await mintKey(buildApi(managementKey), {
+        const minted = await mintKey(api, {
           subject,
-          budgetCents: budgetOverride ?? budgetCents,
+          budgetCents: cents,
           ttlMs,
           ...(options.now === undefined ? {} : { now: options.now }),
         });
@@ -142,7 +245,12 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
 export function createOpenRouterSessionKeys(options: SessionKeyIssuerOptions): SessionKeyIssuer {
   const issuer = createOpenRouterKeyIssuer(options);
   return {
-    issue: (sessionId) => issuer.mint(`session-${sessionId}`),
+    issue: async (sessionId, model) =>
+      issuer.mint(
+        `session-${sessionId}`,
+        undefined,
+        await creditRequirement(options.catalogue, model),
+      ),
     revoke: (hash) => issuer.revoke(hash),
   };
 }
@@ -155,7 +263,11 @@ export function createOpenRouterSessionKeys(options: SessionKeyIssuerOptions): S
 export function createOpenRouterAgentKeys(options: SessionKeyIssuerOptions): AgentKeyIssuer {
   const issuer = createOpenRouterKeyIssuer(options);
   return {
-    mint: (issueId, budgetCents, attempt) =>
-      issuer.mint(`agent-${issueId}-attempt-${attempt}`, budgetCents),
+    mint: async (issueId, budgetCents, attempt, model) =>
+      issuer.mint(
+        `agent-${issueId}-attempt-${attempt}`,
+        budgetCents,
+        await creditRequirement(options.catalogue, model),
+      ),
   };
 }

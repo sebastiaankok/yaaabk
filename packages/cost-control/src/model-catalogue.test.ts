@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MODEL_CACHE_TTL_MS, createOpenRouterModelCatalogue } from './model-catalogue';
+import {
+  MODEL_CACHE_TTL_MS,
+  createOpenRouterModelCatalogue,
+  maxCompletionCostUsd,
+} from './model-catalogue';
 
 const MODELS = {
   data: [
@@ -10,6 +14,7 @@ const MODELS = {
       pricing: { prompt: '0.000003', completion: '0.000015' },
       architecture: { output_modalities: ['text'] },
       supported_parameters: ['temperature', 'tools'],
+      top_provider: { context_length: 200000, max_completion_tokens: 64000 },
     },
     {
       id: 'google/gemini-image',
@@ -51,6 +56,7 @@ describe('OpenRouter model catalogue', () => {
         id: 'openrouter/anthropic/claude-sonnet-4.5',
         name: 'Claude Sonnet 4.5',
         contextLength: 200000,
+        maxCompletionTokens: 64000,
         promptUsdPerMillion: 3,
         completionUsdPerMillion: 15,
       },
@@ -112,5 +118,46 @@ describe('OpenRouter model catalogue', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('server');
+  });
+});
+
+describe('maxCompletionCostUsd', () => {
+  it('reserves the full reply limit at the completion price', () => {
+    expect(
+      maxCompletionCostUsd({
+        id: 'openrouter/anthropic/claude-sonnet-4.5',
+        name: 'Claude Sonnet 4.5',
+        contextLength: 200000,
+        maxCompletionTokens: 64000,
+        promptUsdPerMillion: 3,
+        completionUsdPerMillion: 15,
+      }),
+    ).toBe(0.96);
+  });
+
+  it('is free for a zero-priced model', () => {
+    expect(
+      maxCompletionCostUsd({
+        id: 'openrouter/baidu/ernie-5.5-flash-preview:free',
+        name: 'Ernie',
+        contextLength: 1024000,
+        maxCompletionTokens: 921600,
+        promptUsdPerMillion: 0,
+        completionUsdPerMillion: 0,
+      }),
+    ).toBe(0);
+  });
+
+  it('cannot check a model without a published limit', () => {
+    expect(
+      maxCompletionCostUsd({
+        id: 'openrouter/acme/model',
+        name: 'Acme',
+        contextLength: null,
+        maxCompletionTokens: null,
+        promptUsdPerMillion: null,
+        completionUsdPerMillion: null,
+      }),
+    ).toBe(0);
   });
 });

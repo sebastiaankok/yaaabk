@@ -22,8 +22,12 @@ export type SessionKeyIssueResult =
 
 /** Mints and revokes the key a single session uses. */
 export interface SessionKeyIssuer {
-  /** Mints one key for the session. A failure names what to configure. */
-  issue(sessionId: string): Promise<SessionKeyIssueResult>;
+  /**
+   * Mints one key for the session. A failure names what to configure. The model
+   * lets the issuer refuse a budget that cannot cover one full reply before the
+   * runtime starts.
+   */
+  issue(sessionId: string, model?: string): Promise<SessionKeyIssueResult>;
   /** Deletes the key by hash. Already-revoked keys are not an error. */
   revoke(hash: string): Promise<void>;
 }
