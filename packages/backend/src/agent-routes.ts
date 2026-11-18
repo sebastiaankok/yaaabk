@@ -42,6 +42,16 @@ const SSE_HEADERS = {
 } as const;
 
 /**
+ * How often a silent stream gets a comment frame.
+ *
+ * Bun closes an HTTP connection after 10 seconds without bytes, and a model
+ * can think for longer than that between tool calls; without these the panel
+ * froze mid-attempt while the Job kept writing. A comment is ignored by the
+ * SSE parser but counts as traffic for Bun and any proxy in between.
+ */
+const KEEPALIVE_MS = 5_000;
+
+/**
  * Proxies a run's log stream to the browser as SSE: one `log` frame per chunk,
  * then `end`. A chunk may split mid-line, so the client appends frames as they
  * arrive rather than treating them as complete lines.
@@ -51,6 +61,7 @@ function logStream(source: ReadableStream<Uint8Array>): Response {
   const decoder = new TextDecoder();
   let stopReading: (() => Promise<void>) | undefined;
   let closed = false;
+  let keepalive: ReturnType<typeof setInterval> | undefined;
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const reader = source.getReader();
@@ -62,6 +73,14 @@ function logStream(source: ReadableStream<Uint8Array>): Response {
       const emit = (event: string, data: unknown): void => {
         controller.enqueue(encoder.encode(sseFrame(event, data)));
       };
+      keepalive = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(': keepalive\n\n'));
+        } catch {
+          // The browser closed the page between frames; nothing left to send.
+        }
+      }, KEEPALIVE_MS);
       try {
         for (;;) {
           const { done, value } = await reader.read();
@@ -83,12 +102,15 @@ function logStream(source: ReadableStream<Uint8Array>): Response {
         } catch {
           // The browser closed the page; nothing left to tell it.
         }
+      } finally {
+        if (keepalive !== undefined) clearInterval(keepalive);
       }
     },
     async cancel() {
       // The browser went away: stop reading the Pod log instead of holding the
       // kubectl stream open for the rest of the attempt.
       closed = true;
+      if (keepalive !== undefined) clearInterval(keepalive);
       await stopReading?.();
     },
   });
