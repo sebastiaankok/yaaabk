@@ -31,6 +31,9 @@ export function isAgentRunKind(value: unknown): value is AgentRunKind {
  */
 export type AgentTokenScope = 'implement-issue' | 'review' | 'deploy';
 
+/** The verdict a review run reaches. */
+export type AgentReviewVerdict = 'approve' | 'request-changes';
+
 /** Every valid {@link AgentRunStatus}, for validation and the UI. */
 export const AGENT_RUN_STATUSES: readonly AgentRunStatus[] = [
   'queued',
@@ -99,6 +102,13 @@ export interface AgentRun {
   model: string | null;
   /** Pull request the attempt opened, once it reported one. */
   prUrl: string | null;
+  /**
+   * The verdict a review run reached, once it reported. `null` for other kinds
+   * and for reviews that have not finished.
+   */
+  reviewVerdict: AgentReviewVerdict | null;
+  /** The reviewer's written summary, once the review run reported. */
+  reviewBody: string | null;
   /** Captured agent output, when available. */
   logs: string | null;
   /** LLM spend attributed to the attempt, in whole cents. */
@@ -188,6 +198,10 @@ export interface AgentReport {
   costCents?: number;
   /** Captured agent output. */
   logs?: string;
+  /** The verdict a review run reached. Omitted by other kinds. */
+  reviewVerdict?: AgentReviewVerdict;
+  /** The reviewer's written summary. Omitted with {@link reviewVerdict}. */
+  reviewBody?: string;
   /** Commit SHA deployed by a successful deploy run. */
   commitSha?: string;
   /**

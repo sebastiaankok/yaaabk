@@ -211,6 +211,10 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
   await deps.reporter.report({
     prUrl,
     logs: logs.join('\n'),
+    // The verdict also goes to GitHub, but the Developer should see it in
+    // YAAABK without opening the pull request.
+    reviewVerdict: result.verdict.event,
+    reviewBody: result.verdict.body,
     ...(costCents === undefined ? {} : { costCents }),
   });
   return { ok: true, prUrl, branch };

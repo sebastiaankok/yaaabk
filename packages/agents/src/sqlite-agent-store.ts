@@ -2,6 +2,7 @@ import { agentsError } from './errors';
 import {
   isAgentRunKind,
   isAgentRunStatus,
+  type AgentReviewVerdict,
   type AgentRunStatus,
   type AgentStore,
   type StoredAgentRun,
@@ -41,6 +42,8 @@ interface AgentRunRow {
   status: string;
   model: string | null;
   pr_url: string | null;
+  review_verdict: string | null;
+  review_body: string | null;
   logs: string | null;
   cost_cents: number;
   token_hash: string;
@@ -66,6 +69,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   status         TEXT NOT NULL,
   model          TEXT,
   pr_url         TEXT,
+  review_verdict TEXT,
+  review_body    TEXT,
   logs           TEXT,
   cost_cents     INTEGER NOT NULL,
   token_hash     TEXT NOT NULL,
@@ -78,6 +83,11 @@ CREATE INDEX IF NOT EXISTS agent_runs_project_created ON agent_runs (project_id,
 CREATE INDEX IF NOT EXISTS agent_runs_issue ON agent_runs (project_id, issue_id, created_at, id);
 CREATE INDEX IF NOT EXISTS agent_runs_status ON agent_runs (status);
 `;
+
+/** Narrows a stored column to a review verdict. */
+function isReviewVerdict(value: unknown): value is AgentReviewVerdict {
+  return value === 'approve' || value === 'request-changes';
+}
 
 function toRun(row: AgentRunRow): StoredAgentRun {
   return {
@@ -96,6 +106,8 @@ function toRun(row: AgentRunRow): StoredAgentRun {
     status: isAgentRunStatus(row.status) ? row.status : 'queued',
     model: row.model ?? null,
     prUrl: row.pr_url,
+    reviewVerdict: isReviewVerdict(row.review_verdict) ? row.review_verdict : null,
+    reviewBody: row.review_body ?? null,
     logs: row.logs,
     costCents: row.cost_cents,
     tokenHash: row.token_hash,
@@ -136,6 +148,8 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
   ensureColumn(database, 'agent_runs', 'commit_sha', 'TEXT');
   ensureColumn(database, 'agent_runs', 'review_feedback', 'TEXT');
   ensureColumn(database, 'agent_runs', 'model', 'TEXT');
+  ensureColumn(database, 'agent_runs', 'review_verdict', 'TEXT');
+  ensureColumn(database, 'agent_runs', 'review_body', 'TEXT');
 
   function requireRow(runId: string): AgentRunRow {
     const row = database.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId) as
@@ -152,9 +166,10 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
         .prepare(
           `INSERT INTO agent_runs
              (id, project_id, issue_id, kind, attempt_number, pull_number, commit_sha, job_name, pvc_name,
-              openrouter_secret_name, branch, review_feedback, status, model, pr_url, logs, cost_cents,
+              openrouter_secret_name, branch, review_feedback, status, model, pr_url,
+              review_verdict, review_body, logs, cost_cents,
               token_hash, created_at, started_at, finished_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.id,
@@ -172,6 +187,8 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.status,
           run.model,
           run.prUrl,
+          run.reviewVerdict,
+          run.reviewBody,
           run.logs,
           run.costCents,
           run.tokenHash,
@@ -224,7 +241,7 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
              project_id = ?, issue_id = ?, kind = ?, attempt_number = ?, pull_number = ?,
              commit_sha = ?, job_name = ?, pvc_name = ?,
              openrouter_secret_name = ?, branch = ?, review_feedback = ?, status = ?, model = ?,
-             pr_url = ?, logs = ?,
+             pr_url = ?, review_verdict = ?, review_body = ?, logs = ?,
              cost_cents = ?, token_hash = ?, started_at = ?, finished_at = ?
            WHERE id = ?`,
         )
@@ -243,6 +260,8 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.status,
           run.model,
           run.prUrl,
+          run.reviewVerdict,
+          run.reviewBody,
           run.logs,
           run.costCents,
           run.tokenHash,

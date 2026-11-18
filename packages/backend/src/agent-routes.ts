@@ -29,6 +29,11 @@ function asDeployOutcome(value: unknown): 'success' | 'failed' | undefined {
   return value === 'success' || value === 'failed' ? value : undefined;
 }
 
+/** Reads a review verdict, treating anything else as absent. */
+function asReviewVerdict(value: unknown): 'approve' | 'request-changes' | undefined {
+  return value === 'approve' || value === 'request-changes' ? value : undefined;
+}
+
 /** One SSE frame: an event name and a JSON payload. */
 function sseFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -194,6 +199,8 @@ export function agentRoutes(agents: AgentManager, projects: ProjectsModule): Hon
       prUrl: typeof input.prUrl === 'string' ? input.prUrl : undefined,
       costCents: asOptionalNumber(input.costCents ?? input.cost_cents),
       logs: typeof input.logs === 'string' ? input.logs : undefined,
+      reviewVerdict: asReviewVerdict(input.reviewVerdict ?? input.review_verdict),
+      reviewBody: typeof input.reviewBody === 'string' ? input.reviewBody : undefined,
       commitSha: typeof input.commitSha === 'string' ? input.commitSha : undefined,
       deployOutcome: asDeployOutcome(input.deployOutcome ?? input.deploy_outcome),
     });

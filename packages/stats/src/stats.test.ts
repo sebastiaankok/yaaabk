@@ -43,6 +43,8 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
     status: 'success',
     model: null,
     prUrl: null,
+    reviewVerdict: null,
+    reviewBody: null,
     logs: null,
     costCents: 0,
     createdAt: '2026-01-01T00:00:00.000Z',

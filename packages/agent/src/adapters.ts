@@ -528,7 +528,7 @@ export function createReporter(
 ): Reporter {
   const doFetch = options.fetch ?? globalThis.fetch;
   return {
-    async report({ prUrl, logs, costCents, commitSha, deployOutcome }) {
+    async report({ prUrl, logs, costCents, reviewVerdict, reviewBody, commitSha, deployOutcome }) {
       if (
         config.apiUrl === undefined ||
         config.runId === undefined ||
@@ -544,6 +544,8 @@ export function createReporter(
           prUrl,
           logs,
           ...(costCents === undefined ? {} : { costCents }),
+          ...(reviewVerdict === undefined ? {} : { reviewVerdict }),
+          ...(reviewBody === undefined ? {} : { reviewBody }),
           ...(commitSha === undefined ? {} : { commitSha }),
           ...(deployOutcome === undefined ? {} : { deployOutcome }),
         }),
