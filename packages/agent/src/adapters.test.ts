@@ -54,14 +54,7 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: [
-          '--standalone',
-          'run',
-          '--model',
-          'openrouter/chosen',
-          '--auto',
-          'Implement issue #42',
-        ],
+        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Implement issue #42'],
       },
     ]);
     expect(result).toEqual({ exitCode: 0, output: 'done' });
@@ -86,6 +79,67 @@ describe('createOpenCode', () => {
     });
   });
 
+  it('retries when OpenCode has not synced its model catalogue yet', async () => {
+    const queued = [
+      { exitCode: 1, stdout: '', stderr: 'Error: Model unavailable: openrouter/chosen' },
+      { exitCode: 1, stdout: '', stderr: 'Error: Model unavailable: openrouter/chosen' },
+      { exitCode: 0, stdout: 'done' },
+    ];
+    const requests: Array<{ directory: string; args: string[] }> = [];
+    const run = async (request: { directory: string; args: string[] }) => {
+      requests.push(request);
+      const next = queued.shift();
+      if (next === undefined) throw new Error('unexpected extra invocation');
+      return next;
+    };
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      { run, retryDelaysMs: [0, 0, 0] },
+    );
+    const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
+
+    expect(requests).toHaveLength(3);
+    expect(result).toEqual({ exitCode: 0, output: 'done' });
+  });
+
+  it('does not retry a failure that is not the model catalogue', async () => {
+    const runner = recordingRunner({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Error: This request requires more credits',
+    });
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      { run: runner.run, retryDelaysMs: [0, 0] },
+    );
+    const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
+
+    expect(runner.requests).toHaveLength(1);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('reports the failure once every retry is exhausted', async () => {
+    const runner = recordingRunner({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Error: Model unavailable: openrouter/chosen',
+    });
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      { run: runner.run, retryDelaysMs: [0, 0] },
+    );
+    const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
+
+    expect(runner.requests).toHaveLength(3);
+    expect(result).toEqual({
+      exitCode: 1,
+      output: 'Error: Model unavailable: openrouter/chosen',
+    });
+  });
+
   it('runs a review with the same explicit model and automatic approvals', async () => {
     const runner = recordingRunner();
     const verdict = { event: 'approve' as const, body: 'Looks good.' };
@@ -102,14 +156,7 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: [
-          '--standalone',
-          'run',
-          '--model',
-          'openrouter/chosen',
-          '--auto',
-          'Review pull request #7',
-        ],
+        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Review pull request #7'],
       },
     ]);
     expect(result).toEqual({ exitCode: 0, output: 'done', verdict });
