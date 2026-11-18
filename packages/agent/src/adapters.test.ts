@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenCode, createOpenRouterMeter, createReporter } from './adapters';
+import { BoundedOutput, createOpenCode, createOpenRouterMeter, createReporter } from './adapters';
 import type { AgentConfig } from './config';
 
 const CONFIG: AgentConfig = {
@@ -247,5 +247,24 @@ describe('createReporter', () => {
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
     expect(body).not.toHaveProperty('costCents');
+  });
+});
+
+describe('BoundedOutput', () => {
+  const encoder = new TextEncoder();
+
+  it('keeps only the tail, so a long run cannot grow without bound', () => {
+    const output = new BoundedOutput(10);
+    output.append(encoder.encode('0123456789'));
+    output.append(encoder.encode('abc'));
+
+    expect(output.text()).toBe('3456789abc');
+  });
+
+  it('trims a single chunk larger than the limit', () => {
+    const output = new BoundedOutput(4);
+    output.append(encoder.encode('abcdefgh'));
+
+    expect(output.text()).toBe('efgh');
   });
 });

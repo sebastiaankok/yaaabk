@@ -165,13 +165,95 @@ export function openCodeRunArgs(model: string, prompt: string): string[] {
   return ['--standalone', 'run', '--model', model, '--auto', prompt];
 }
 
-/** Runs OpenCode through Bun's shell, returning its exit code and output. */
+/** Largest output tail kept for the final report, so a chatty run cannot grow without bound. */
+export const MAX_CAPTURED_OUTPUT_BYTES = 256 * 1024;
+
+/**
+ * Keeps the last `limit` bytes written to it.
+ *
+ * The Job streams OpenCode's whole session to its own stdout so the UI can
+ * follow along, but only the tail is worth reporting back: keeping everything
+ * in memory is what let a six-minute run grow until the kubelet killed it.
+ */
+export class BoundedOutput {
+  private readonly chunks: Uint8Array[] = [];
+  private size = 0;
+
+  constructor(private readonly limit: number = MAX_CAPTURED_OUTPUT_BYTES) {}
+
+  append(chunk: Uint8Array): void {
+    if (chunk.byteLength === 0) return;
+    this.chunks.push(chunk);
+    this.size += chunk.byteLength;
+    let excess = this.size - this.limit;
+    while (excess > 0) {
+      const first = this.chunks[0];
+      if (first === undefined) break;
+      if (first.byteLength <= excess) {
+        this.chunks.shift();
+        this.size -= first.byteLength;
+        excess -= first.byteLength;
+      } else {
+        this.chunks[0] = first.subarray(excess);
+        this.size -= excess;
+        excess = 0;
+      }
+    }
+  }
+
+  text(): string {
+    const merged = new Uint8Array(this.size);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(merged);
+  }
+}
+
+/** Copies one stream to `write` as it arrives, keeping a bounded tail. */
+async function pump(
+  source: ReadableStream<Uint8Array> | undefined,
+  write: (chunk: Uint8Array) => void,
+  captured: BoundedOutput,
+): Promise<void> {
+  if (source === undefined) return;
+  const reader = source.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    write(value);
+    captured.append(value);
+  }
+}
+
+/**
+ * Runs OpenCode through Bun's process API, streaming its output live.
+ *
+ * The Job's own stdout is what `kubectl logs` and the YAAABK UI read, so the
+ * child's output is forwarded as it arrives rather than echoed on exit — a
+ * long, healthy run must not look identical to a hung one. The returned tail
+ * is what gets reported back when the run ends.
+ */
 const runWithBun: OpenCodeRunner = async ({ directory, args }) => {
-  const result = await Bun.$`opencode ${args}`.cwd(directory).nothrow().quiet();
+  const child = Bun.spawn(['opencode', ...args], {
+    cwd: directory,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const stdout = new BoundedOutput();
+  const stderr = new BoundedOutput();
+  await Promise.all([
+    pump(child.stdout, (chunk) => process.stdout.write(chunk), stdout),
+    pump(child.stderr, (chunk) => process.stderr.write(chunk), stderr),
+    child.exited,
+  ]);
   return {
-    exitCode: result.exitCode,
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
+    exitCode: child.exitCode ?? 1,
+    stdout: stdout.text(),
+    stderr: stderr.text(),
   };
 };
 
