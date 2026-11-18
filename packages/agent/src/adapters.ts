@@ -397,6 +397,19 @@ export function createGitHub(config: AgentConfig, options: { fetch?: typeof fetc
     'content-type': 'application/json',
   };
 
+  /** The open pull request whose head is `branch`, when the API lists one. */
+  async function findOpenPullRequest(
+    branch: string,
+  ): Promise<{ number: number; html_url: string } | undefined> {
+    const listed = await doFetch(
+      `${base}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+      { headers },
+    );
+    if (!listed.ok) return undefined;
+    const pulls = (await listed.json()) as Array<{ number: number; html_url: string }>;
+    return pulls[0];
+  }
+
   return {
     async fetchIssue(issueNumber): Promise<AgentIssue> {
       const response = await doFetch(`${base}/issues/${issueNumber}`, { headers });
@@ -416,10 +429,23 @@ export function createGitHub(config: AgentConfig, options: { fetch?: typeof fetc
         headers,
         body: JSON.stringify({ head: branch, base: 'main', title, body }),
       });
-      if (!response.ok) {
+
+      let pull: { number: number; html_url: string };
+      if (response.ok) {
+        pull = (await response.json()) as { number: number; html_url: string };
+      } else if (response.status === 422) {
+        // A fix run updates the branch of an existing pull request; opening it
+        // again is refused ("A pull request already exists"). Reuse that one
+        // instead of failing an attempt whose checks already passed.
+        const existing = await findOpenPullRequest(branch);
+        if (existing === undefined) {
+          throw new Error(`Failed to open pull request: ${response.status}`);
+        }
+        pull = existing;
+      } else {
         throw new Error(`Failed to open pull request: ${response.status}`);
       }
-      const pull = (await response.json()) as { number: number; html_url: string };
+
       if (labels.length > 0) {
         await doFetch(`${base}/issues/${pull.number}/labels`, {
           method: 'POST',

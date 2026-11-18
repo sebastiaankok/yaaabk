@@ -577,7 +577,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     }
 
     if (issue.attemptCount < issue.maxAttempts) {
-      const retry = await schedule(run.projectId, run.issueId);
+      // Continue the pull request this run was working on. A bare retry would
+      // clone the default branch and implement the Issue again from scratch,
+      // instead of finishing the change the previous attempt pushed.
+      const retry = await schedule(run.projectId, run.issueId, {
+        ...(run.branch === null ? {} : { branch: run.branch }),
+        ...(run.reviewFeedback === null ? {} : { reviewFeedback: run.reviewFeedback }),
+      });
       if (retry.status === 'running') {
         summary.dispatched += 1;
       }
