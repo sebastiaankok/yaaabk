@@ -58,8 +58,12 @@ COPY --from=build /app/packages/grill-me/skills/to-issues ./grill-skills/to-issu
 # whose report token they do not have.
 COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
 COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
+# kubectl does not discover the mounted ServiceAccount by itself; this points it
+# at the in-cluster API and lets the projected token authenticate every call.
+COPY --from=build /app/packages/agent/kubeconfig.yaml ./kubeconfig.yaml
 RUN mkdir -p /work && chown bun:bun /work
 ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
 ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
+ENV KUBECONFIG=/app/kubeconfig.yaml
 USER bun
 CMD ["bun", "dist/index.js"]
