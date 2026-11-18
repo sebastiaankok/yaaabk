@@ -136,3 +136,21 @@ kubectl --context k3s-home auth can-i --list \
   URL into Settings. Until then every create fails with "configured without an
   Installation ID", and `YAAABK_GITHUB_OWNER` must still name the account repos
   are created under (`yaaabk`).
+- **Project images (GHCR)**: each Project's CI publishes
+  `ghcr.io/<owner>/<repo>:<commit-sha>`, and the deploy Job pins the Deployment
+  to exactly that tag. The cluster pulls project images anonymously, so the
+  package must be **public**. GitHub cannot make a package public through its
+  API: open the package's settings and change its visibility to public.
+  A workflow can push a new package (it then inherits the repository's Actions
+  access), but a package that already exists — for example from a previous
+  Project with the same name — needs the repository added under **Manage
+  Actions access** with role **Write**. There is no REST or GraphQL API for
+  that setting. If a Project is deleted and recreated under the same name,
+  delete the old package first, or the new repository will keep getting a 403.
+- **YAAABK images**: `.github/workflows/publish-images.yml` builds the
+  backend, frontend, agent and optional Svelte/Bun base images on GitHub's
+  runners with the Actions layer cache. It needs the same package access for
+  `yaaabk-backend`, `yaaabk-frontend`, `yaaabk-agent` and
+  `yaaabk-svelte-bun-base`; the local `scripts/deploy.sh` remains the fallback.
+  Set `YAAABK_TEMPLATE_BASE_IMAGE` to the published base image to make project
+  Docker builds start with dependencies installed.

@@ -30,8 +30,11 @@ request once you finish. Do not open a pull request yourself.
    surrounding code's structure, naming and style. Do not reformat unrelated
    files or add speculative features.
 3. **Run the project's checks.** Run the pre-commit hooks — lint, type-check and
-   tests — and iterate until they pass. A change that does not pass the checks
-   will not be accepted; YAAABK fails the attempt and retries.
+   tests — and iterate until they pass. The bundled template exposes all three
+   as `bun run check`; use it when present. A change that does not pass the
+   checks will not be accepted; YAAABK fails the attempt and retries. Bun's
+   package cache is pre-warmed, so `bun install --frozen-lockfile` is fast;
+   only new dependencies need the network.
 4. **Debug with kubectl when needed.** If you need to inspect the Project's
    running workloads in Kubernetes, run `kubectl` from inside your Job:
    - Inspect resources: `kubectl get pods,services,configmaps,events,deployments,httproutes`

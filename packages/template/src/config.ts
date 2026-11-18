@@ -4,6 +4,23 @@ import type { GitAuthor, TemplateSource } from './git-backend';
 /** Port the scaffolded backend listens on when the project does not set one. */
 export const DEFAULT_PORT = 3000;
 
+/**
+ * Image the template builds on when no YAAABK base image is configured.
+ *
+ * A deployment can publish a base image containing the template's toolchain
+ * and cached dependencies and point `YAAABK_TEMPLATE_BASE_IMAGE` at it; the
+ * official Bun image remains the portable default.
+ */
+export const DEFAULT_BASE_IMAGE = 'oven/bun:1.3-alpine';
+
+/** The base image a newly scaffolded project's Dockerfile builds on. */
+export function defaultBaseImage(): string {
+  const configured = process.env['YAAABK_TEMPLATE_BASE_IMAGE'];
+  return configured === undefined || configured.trim() === ''
+    ? DEFAULT_BASE_IMAGE
+    : configured.trim();
+}
+
 /** Author recorded on the scaffold commit. */
 export const DEFAULT_AUTHOR: GitAuthor = {
   name: 'YAAABK',

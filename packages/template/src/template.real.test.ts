@@ -19,7 +19,18 @@ const PROJECT: TemplateProject = {
 };
 
 const silent = { info: () => {}, error: () => {} };
-const TOKENS = ['projectName', 'projectId', 'namespace', 'repoUrl', 'port'];
+const TOKENS = [
+  'projectName',
+  'projectId',
+  'namespace',
+  'repoUrl',
+  'repoOwner',
+  'repoName',
+  'imageRepository',
+  'repoWebUrl',
+  'baseImage',
+  'port',
+];
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -55,6 +66,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
 
     for (const relative of [
       'Dockerfile',
+      'bun.lock',
       'deploy/httproute.yaml',
       'deploy/deployment.yaml',
       '.github/workflows/ci.yml',
@@ -125,6 +137,15 @@ describe('scaffold against the bundled svelte-bun template', () => {
 
     const deployment = await readFile(join(directory, 'deploy/deployment.yaml'), 'utf8');
     expect(deployment).toContain('containerPort: 3000');
+    expect(deployment).toContain('image: ghcr.io/acme/todo-app:latest');
+    expect(deployment).not.toContain('your-org');
+
+    const dockerfile = await readFile(join(directory, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toContain('ARG BASE_IMAGE=oven/bun:1.3-alpine');
+    expect(dockerfile).toContain(
+      'org.opencontainers.image.source="https://github.com/acme/todo-app"',
+    );
+    expect(dockerfile).toContain('bun install --frozen-lockfile');
 
     const page = await readFile(join(directory, 'web/src/routes/+page.svelte'), 'utf8');
     expect(page).toContain('todo-app');

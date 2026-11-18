@@ -1,0 +1,104 @@
+name: Publish images
+
+# Builds the YAAABK images (and the optional Svelte/Bun base image) on GitHub's
+# runners with the GitHub Actions layer cache, instead of on the workstation.
+# Run it with a version tag, or push a `v*` tag:
+#
+#   gh workflow run publish-images.yml -f tag=0.1.2
+#
+# The deploy manifests pin the tag this workflow publishes.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to publish (for example 0.1.2)
+        required: true
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  svelte-bun-base:
+    name: Svelte/Bun base image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the image tag
+        id: tag
+        env:
+          REF: ${{ inputs.tag || github.ref_name }}
+        run: echo "value=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: templates/svelte-bun
+          file: base.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/yaaabk-svelte-bun-base:${{ steps.tag.outputs.value }}
+            ghcr.io/${{ github.repository_owner }}/yaaabk-svelte-bun-base:1
+          cache-from: type=gha,scope=svelte-bun-base
+          cache-to: type=gha,mode=max,scope=svelte-bun-base
+
+  images:
+    name: ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            dockerfile: packages/backend/Dockerfile
+          - image: frontend
+            dockerfile: packages/frontend/Dockerfile
+          - image: agent
+            dockerfile: packages/agent/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the image tag
+        id: tag
+        env:
+          REF: ${{ inputs.tag || github.ref_name }}
+        run: echo "value=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/yaaabk-${{ matrix.image }}:${{ steps.tag.outputs.value }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

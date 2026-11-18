@@ -5,6 +5,7 @@ import { projectNamespace } from '@yaaabk/shared';
 import {
   DEFAULT_AUTHOR,
   DEFAULT_PORT,
+  defaultBaseImage,
   defaultTemplateSource,
   isValidProjectName,
   isValidRepoUrl,
@@ -32,13 +33,69 @@ export interface TemplateModuleOptions {
   logger?: TemplateLogger;
 }
 
+/** The owner and repository name a git remote points at. */
+export interface RepoCoordinates {
+  owner: string;
+  name: string;
+}
+
+/** Splits an `owner/name` path into a repo coordinate pair. */
+function coordinates(path: string): RepoCoordinates | undefined {
+  const parts = path.split('/').filter((part) => part !== '');
+  if (parts.length < 2) return undefined;
+  const name = parts[parts.length - 1];
+  const owner = parts[parts.length - 2];
+  if (name === undefined || owner === undefined) return undefined;
+  return { owner: owner.toLowerCase(), name: name.toLowerCase() };
+}
+
+/**
+ * Parses the repository owner and name out of a git remote.
+ *
+ * Supports the HTTPS, SSH and SCP-like forms YAAABK's repository provider
+ * returns. A local or otherwise unparseable remote falls back to `your-org`
+ * so the template still renders; only GitHub remotes produce an image
+ * reference that can actually be pulled.
+ */
+export function repoCoordinates(repoUrl: string, fallbackName: string): RepoCoordinates {
+  const cleaned = repoUrl
+    .trim()
+    .replace(/\.git$/, '')
+    .replace(/\/$/, '');
+
+  let path: string | undefined;
+  if (/^[a-z]+:\/\//i.test(cleaned)) {
+    try {
+      const url = new URL(cleaned);
+      if (url.protocol !== 'file:') path = url.pathname;
+    } catch {
+      path = undefined;
+    }
+  } else if (/^[^@]+@[^:]+:/.test(cleaned)) {
+    path = cleaned.slice(cleaned.indexOf(':') + 1);
+  }
+
+  return (
+    (path === undefined ? undefined : coordinates(path)) ?? {
+      owner: 'your-org',
+      name: fallbackName.toLowerCase(),
+    }
+  );
+}
+
 /** The values every template file can interpolate. */
 export function templateValues(project: TemplateProject): TemplateValues {
+  const repo = repoCoordinates(project.repoUrl, project.name);
   return {
     projectId: project.id,
     projectName: project.name,
     namespace: projectNamespace(project.id),
     repoUrl: project.repoUrl,
+    repoOwner: repo.owner,
+    repoName: repo.name,
+    imageRepository: `ghcr.io/${repo.owner}/${repo.name}`,
+    repoWebUrl: `https://github.com/${repo.owner}/${repo.name}`,
+    baseImage: defaultBaseImage(),
     port: String(project.port ?? DEFAULT_PORT),
   };
 }

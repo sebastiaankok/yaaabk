@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createFakeGitBackend, type FakeGitBackend } from './fake-git-backend';
 import type { TemplateSource } from './git-backend';
-import { createTemplateModule, type TemplateModuleOptions } from './template';
+import {
+  createTemplateModule,
+  repoCoordinates,
+  templateValues,
+  type TemplateModuleOptions,
+} from './template';
 import type { TemplateProject } from './types';
 
 const FIXTURE = fileURLToPath(new URL('./__fixtures__/template', import.meta.url));
@@ -46,6 +51,28 @@ async function scaffoldFixture(
   });
   return { module, git };
 }
+
+describe('template values', () => {
+  it.each([
+    ['https://github.com/Acme/Todo-App', 'acme', 'todo-app'],
+    ['https://github.com/acme/todo-app.git', 'acme', 'todo-app'],
+    ['git@github.com:acme/todo-app.git', 'acme', 'todo-app'],
+    ['ssh://git@github.com/acme/todo-app.git', 'acme', 'todo-app'],
+  ])('derives image coordinates from %s', (repoUrl, owner, name) => {
+    expect(repoCoordinates(repoUrl, 'fallback')).toEqual({ owner, name });
+    expect(templateValues({ ...PROJECT, repoUrl })).toMatchObject({
+      imageRepository: `ghcr.io/${owner}/${name}`,
+      repoWebUrl: `https://github.com/${owner}/${name}`,
+    });
+  });
+
+  it('falls back to the project name for a remote it cannot parse', () => {
+    expect(repoCoordinates('file:///tmp/todo-app', 'todo-app')).toEqual({
+      owner: 'your-org',
+      name: 'todo-app',
+    });
+  });
+});
 
 describe('scaffold', () => {
   it('materialises the template into a new repository and pushes it', async () => {

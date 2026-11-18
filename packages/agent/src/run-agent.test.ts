@@ -9,11 +9,12 @@ import type {
   GitHub,
   Kubectl,
   OpenCode,
+  Registry,
   Reporter,
   SpendMeter,
 } from './ports';
 import { AUTOMERGE_LABEL } from './ports';
-import { runAgent } from './run-agent';
+import { containerImage, runAgent } from './run-agent';
 
 const CONFIG: AgentConfig = {
   kind: 'implement-issue',
@@ -71,6 +72,8 @@ function fakes(
     cloneError?: string;
     /** Message the rollout step fails with, when the deploy should fail. */
     deployError?: string;
+    /** Message the registry wait fails with, when CI never published the image. */
+    imageError?: string;
     /** Whether the Deployment has a previous revision to roll back to. */
     rolledBack?: boolean;
     /** Logs the deploy Job captures from the Deployment's pods. */
@@ -130,6 +133,9 @@ function fakes(
     async applyServerSide({ directory, namespace, path }) {
       calls.push(`apply:${directory}:${namespace}:${path}`);
     },
+    async setImage({ namespace, deploymentName, containerName, image }) {
+      calls.push(`set-image:${namespace}:${deploymentName}:${containerName}=${image}`);
+    },
     async waitForRollout({ namespace, deploymentName }) {
       calls.push(`rollout:${namespace}:${deploymentName}`);
       if (overrides.deployError !== undefined) throw new Error(overrides.deployError);
@@ -150,6 +156,12 @@ function fakes(
     async podLogs({ namespace, deploymentName }) {
       calls.push(`pod-logs:${namespace}:${deploymentName}`);
       return overrides.podLogs ?? 'pod log line';
+    },
+  };
+  const registry: Registry = {
+    async waitForImage({ image }) {
+      calls.push(`wait-image:${image}`);
+      if (overrides.imageError !== undefined) throw new Error(overrides.imageError);
     },
   };
   const openCode: OpenCode = {
@@ -197,6 +209,7 @@ function fakes(
     deps: {
       git,
       kubectl,
+      registry,
       openCode,
       checks,
       github,
@@ -370,7 +383,9 @@ describe('runAgent', () => {
     expect(calls).toEqual([
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout-commit:/work/repo:merge-sha-7',
+      'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
       'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
+      'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:merge-sha-7',
       'rollout:yaaabk-a1b2c3d4:todo-app',
       'health:yaaabk-a1b2c3d4:todo-app',
       'label:yaaabk-a1b2c3d4:todo-app:yaaabk.io/deployed-sha=merge-sha-7',
@@ -400,7 +415,9 @@ describe('runAgent', () => {
     expect(calls).toEqual([
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout-commit:/work/repo:merge-sha-7',
+      'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
       'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
+      'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:merge-sha-7',
       'rollout:yaaabk-a1b2c3d4:todo-app',
       'pod-logs:yaaabk-a1b2c3d4:todo-app',
       'undo:yaaabk-a1b2c3d4:todo-app:rolled-back',
@@ -440,5 +457,34 @@ describe('runAgent', () => {
     expect(calls).toEqual(['clone:https://github.com/acme/todo-app->/work/repo', 'report']);
     expect(reports[0]?.deployOutcome).toBe('failed');
     expect(reports[0]?.logs).toContain('repository not found');
+  });
+
+  it('reports a failed deploy without touching the cluster when CI never published the image', async () => {
+    const { deps, calls, reports } = fakes({
+      imageError: 'Image ghcr.io/acme/todo-app:merge-sha-7 was not published within 300s',
+    });
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'deploy-failed' });
+    expect(calls).toEqual([
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout-commit:/work/repo:merge-sha-7',
+      'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
+      'report',
+    ]);
+    expect(reports[0]?.deployOutcome).toBe('failed');
+    expect(reports[0]?.logs).toContain('was not published');
+  });
+});
+
+describe('containerImage', () => {
+  it('derives the SHA tag CI publishes from the repository URL', () => {
+    expect(containerImage('https://github.com/Acme/Todo-App.git', 'abc123')).toBe(
+      'ghcr.io/acme/todo-app:abc123',
+    );
+    expect(containerImage('git@github.com:acme/todo-app.git', 'abc123')).toBe(
+      'ghcr.io/acme/todo-app:abc123',
+    );
   });
 });

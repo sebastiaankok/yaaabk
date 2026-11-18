@@ -62,6 +62,19 @@ export interface Git {
 export interface Kubectl {
   /** Applies the manifests in `path` with `kubectl apply --server-side`. */
   applyServerSide(input: { directory: string; namespace: string; path: string }): Promise<void>;
+  /**
+   * Pins the Deployment's container to the image built for the merged commit.
+   *
+   * Applying the manifests alone cannot do this: the manifest is authored at
+   * scaffold time and does not know the commit SHA the image was published
+   * under.
+   */
+  setImage(input: {
+    namespace: string;
+    deploymentName: string;
+    containerName: string;
+    image: string;
+  }): Promise<void>;
   /** Waits for the rollout of `deploymentName` to complete. */
   waitForRollout(input: {
     namespace: string;
@@ -128,6 +141,18 @@ export interface Checks {
   run(directory: string): Promise<{ passed: boolean; output: string }>;
 }
 
+/**
+ * Watches the container registry for the image a deploy is about to run.
+ *
+ * CI builds and pushes the image after the merge; the deploy Job can start
+ * before that finishes. Waiting for the tag to appear avoids an
+ * `ImagePullBackOff` that the rollout would mistake for a broken release.
+ */
+export interface Registry {
+  /** Resolves once `image` is published, or rejects after `timeoutMs`. */
+  waitForImage(input: { image: string; timeoutMs?: number }): Promise<void>;
+}
+
 export interface GitHub {
   fetchIssue(issueNumber: number): Promise<AgentIssue>;
   openPullRequest(input: {
@@ -167,6 +192,8 @@ export interface Reporter {
 export interface AgentDependencies {
   git: Git;
   kubectl: Kubectl;
+  /** Registry the deploy waits on. Omitted by tests that do not deploy. */
+  registry?: Registry;
   openCode: OpenCode;
   checks: Checks;
   github: GitHub;
