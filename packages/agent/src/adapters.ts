@@ -144,7 +144,23 @@ export type OpenCodeVerdictReader = (directory: string) => Promise<ReviewVerdict
 export interface OpenCodeAdapterOptions {
   run?: OpenCodeRunner;
   readVerdict?: OpenCodeVerdictReader;
+  /**
+   * Delays between retries when OpenCode cannot resolve the model yet.
+   * Defaults to {@link MODEL_RETRY_DELAYS_MS}; tests pass `[]` to keep runs fast.
+   */
+  retryDelaysMs?: number[];
 }
+
+/**
+ * How long to wait before re-running when OpenCode has not synced its provider
+ * catalogue yet.
+ *
+ * On a cold container the first invocation resolves the model before the
+ * background service has fetched the catalogue, so it fails with
+ * `Model unavailable` even for a model OpenRouter does publish. The service it
+ * starts stays up and finishes syncing, so a retry seconds later succeeds.
+ */
+export const MODEL_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_000, 15_000, 15_000];
 
 /**
  * The non-interactive OpenCode arguments every Agent run uses.
@@ -153,16 +169,13 @@ export interface OpenCodeAdapterOptions {
  * approves routine permission prompts so a Job cannot hang waiting for a human
  * who is not attached to it.
  *
- * `--standalone` gives the Job a private server instead of the shared
- * background service. Without it, the first `run` in a fresh container resolves
- * the model before that service has synced providers, so any model the bundled
- * catalog does not know yet — notably new OpenRouter models and `:free`
- * variants — fails with `Model unavailable`. A private server initialises
- * providers before resolving the model and also keeps one attempt's credentials
- * and catalog state out of the next.
+ * Deliberately no `--standalone`: a private server does not wait for the
+ * catalogue either, and it dies with the failed invocation, so retrying never
+ * becomes possible. The shared background service does persist and finishes
+ * syncing, which is what makes {@link MODEL_RETRY_DELAYS_MS} work.
  */
 export function openCodeRunArgs(model: string, prompt: string): string[] {
-  return ['--standalone', 'run', '--model', model, '--auto', prompt];
+  return ['run', '--model', model, '--auto', prompt];
 }
 
 /** Largest output tail kept for the final report, so a chatty run cannot grow without bound. */
@@ -288,6 +301,7 @@ export function createOpenCode(
 ): OpenCode {
   const run = options.run ?? runWithBun;
   const readVerdict = options.readVerdict ?? readVerdictFile;
+  const retryDelays = options.retryDelaysMs ?? MODEL_RETRY_DELAYS_MS;
 
   /** The model to invoke, failing with the configuration to set when absent. */
   function requireModel(): string {
@@ -298,9 +312,28 @@ export function createOpenCode(
     return model;
   }
 
-  /** Runs OpenCode with `prompt` and returns its exit code and output. */
+  /**
+   * Whether OpenCode gave up before doing any work because its provider
+   * catalogue had not finished loading. Retrying such a run is safe: the error
+   * is raised while the session is loading, before a tool call or an edit.
+   */
+  function isModelUnavailable(result: OpenCodeRunResult): boolean {
+    if (result.exitCode === 0) return false;
+    return `${result.stdout}\n${result.stderr ?? ''}`.includes('Model unavailable');
+  }
+
+  /** Runs OpenCode with `prompt`, retrying until the model catalogue is ready. */
   async function invoke(directory: string, prompt: string) {
-    const result = await run({ directory, args: openCodeRunArgs(requireModel(), prompt) });
+    const args = openCodeRunArgs(requireModel(), prompt);
+    let result = await run({ directory, args });
+    for (const delay of retryDelays) {
+      if (!isModelUnavailable(result)) break;
+      process.stdout.write(
+        `[yaaabk] model catalogue not ready; retrying in ${Math.round(delay / 1000)}s\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      result = await run({ directory, args });
+    }
     // Provider failures arrive on stderr; dropping it leaves an empty run log
     // with no clue why the attempt failed.
     const output = [result.stdout, result.stderr ?? ''].filter((part) => part.trim() !== '');
