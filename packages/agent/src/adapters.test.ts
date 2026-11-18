@@ -54,7 +54,14 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Implement issue #42'],
+        args: [
+          '--standalone',
+          'run',
+          '--model',
+          'openrouter/chosen',
+          '--auto',
+          'Implement issue #42',
+        ],
       },
     ]);
     expect(result).toEqual({ exitCode: 0, output: 'done' });
@@ -95,7 +102,14 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Review pull request #7'],
+        args: [
+          '--standalone',
+          'run',
+          '--model',
+          'openrouter/chosen',
+          '--auto',
+          'Review pull request #7',
+        ],
       },
     ]);
     expect(result).toEqual({ exitCode: 0, output: 'done', verdict });
