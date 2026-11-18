@@ -725,7 +725,7 @@
                     <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                       {run.status}
                     </span>
-                    {#if run.reviewVerdict !== null}
+                    {#if run.reviewVerdict != null}
                       <span
                         class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
                           ? 'bg-emerald-100 text-emerald-800'
@@ -737,7 +737,7 @@
                     <span class="text-xs text-neutral-500">
                       {(run.costCents / 100).toFixed(2)}
                     </span>
-                    {#if run.reviewBody !== null && run.reviewBody.trim() !== ''}
+                    {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
                       <div
                         class="prose prose-neutral mt-1 max-h-64 w-full max-w-none overflow-auto rounded bg-neutral-50 p-2 text-sm"
                       >

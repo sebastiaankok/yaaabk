@@ -208,6 +208,37 @@ test('opens a card to show its body and agent run history', async ({ page }) => 
   await expect(panel.getByText('Agent finished: opened PR #1')).toBeVisible();
 });
 
+test('shows a review verdict and its written summary', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.runs = [
+    ...state.runs,
+    {
+      id: 'r-review',
+      issueId: 'i1',
+      kind: 'review',
+      attemptNumber: 2,
+      pullNumber: 1,
+      status: 'success',
+      prUrl: 'https://github.com/acme/todo-app/pull/1',
+      costCents: 4,
+      model: 'openrouter/default-model',
+      reviewVerdict: 'request-changes',
+      reviewBody: 'Return JSON 404 for unknown `/api/*` routes.',
+      logs: 'Reviewed the diff.',
+      startedAt: '2026-01-01T00:10:00.000Z',
+      finishedAt: '2026-01-01T00:12:00.000Z',
+    },
+  ];
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByText('Review 2')).toBeVisible();
+  await expect(panel.getByText('changes requested')).toBeVisible();
+  await expect(panel.getByText('Return JSON 404 for unknown')).toBeVisible();
+});
+
 test('re-runs an agent for the open issue', async ({ page }) => {
   const state = await mockBoard(page);
   await page.route('**/api/projects/p1/issues/i1/spawn', (route) => {
