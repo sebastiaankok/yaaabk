@@ -70,22 +70,62 @@ export function createGit(): Git {
   };
 }
 
+/** What a finished shell command exposes, regardless of how it was spawned. */
+interface ShellResult {
+  exitCode: number;
+  stdout: { toString(): string };
+  stderr: { toString(): string };
+}
+
+/**
+ * Rejects with the command's own output when it failed.
+ *
+ * Bun's shell error only says "Failed with exit code 1"; kubectl writes the
+ * reason — a rejected manifest, a missing permission — to stderr, and that is
+ * what tells a Developer why a deploy stopped.
+ */
+async function expectSuccess(what: string, command: PromiseLike<ShellResult>): Promise<void> {
+  const result = await command;
+  if (result.exitCode === 0) return;
+  const stderr = result.stderr.toString().trim();
+  const stdout = result.stdout.toString().trim();
+  throw new Error(`${what} failed: ${stderr === '' ? stdout : stderr}`);
+}
+
 /** The real `kubectl` + `wget` adapter for the deploy run. */
 export function createKubectl(): Kubectl {
   return {
     async applyServerSide({ directory, namespace, path }) {
       const manifestPath = join(directory, path);
-      await Bun.$`kubectl apply --server-side --namespace ${namespace} -f ${manifestPath}`.quiet();
+      await expectSuccess(
+        'kubectl apply',
+        Bun.$`kubectl apply --server-side --namespace ${namespace} -f ${manifestPath}`
+          .quiet()
+          .nothrow(),
+      );
     },
     async waitForRollout({ namespace, deploymentName, timeoutSeconds = 180 }) {
-      await Bun.$`kubectl rollout status deployment/${deploymentName} --namespace ${namespace} --timeout=${`${timeoutSeconds}s`}`.quiet();
+      await expectSuccess(
+        'kubectl rollout status',
+        Bun.$`kubectl rollout status deployment/${deploymentName} --namespace ${namespace} --timeout=${`${timeoutSeconds}s`}`
+          .quiet()
+          .nothrow(),
+      );
     },
     async checkHealth({ namespace, serviceName }) {
       const healthUrl = `http://${serviceName}.${namespace}.svc.cluster.local/health`;
-      await Bun.$`wget -q -O - --timeout=5 ${healthUrl}`.quiet();
+      await expectSuccess(
+        'the health check',
+        Bun.$`wget -q -O - --timeout=5 ${healthUrl}`.quiet().nothrow(),
+      );
     },
     async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
-      await Bun.$`kubectl label deployment ${deploymentName} --namespace ${namespace} ${`${labelKey}=${labelValue}`} --overwrite`.quiet();
+      await expectSuccess(
+        'kubectl label',
+        Bun.$`kubectl label deployment ${deploymentName} --namespace ${namespace} ${`${labelKey}=${labelValue}`} --overwrite`
+          .quiet()
+          .nothrow(),
+      );
     },
     async undoRollout({ namespace, deploymentName }) {
       const history =
