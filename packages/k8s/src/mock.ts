@@ -7,6 +7,8 @@ import type { K8sClient } from './types';
 export interface MockK8sClientOptions {
   /** Objects the fake cluster starts with, as if they already existed. */
   seed?: K8sObject[];
+  /** Scripted container output keyed by `namespace/name`, for Pod log tests. */
+  logs?: Record<string, string>;
   logger?: K8sClientOptions['logger'];
 }
 
@@ -25,7 +27,9 @@ export interface MockK8sClient extends K8sClient {
  * responses.
  */
 export function createMockK8sClient(options: MockK8sClientOptions = {}): MockK8sClient {
-  const objectApi = createInMemoryObjectApi(options.seed ?? []);
+  const objectApi = createInMemoryObjectApi(options.seed ?? [], {
+    ...(options.logs === undefined ? {} : { logs: options.logs }),
+  });
   return {
     ...createK8sClient({ objectApi, logger: options.logger ?? silentLogger }),
     objectApi,

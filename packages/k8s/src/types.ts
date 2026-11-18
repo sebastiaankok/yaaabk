@@ -184,6 +184,13 @@ export interface PodInfo extends ResourceMeta {
    * Names the real cause when a session Pod cannot start.
    */
   waitingReason: string | null;
+  /**
+   * Why the first container last terminated, e.g. `OOMKilled` or `Error`.
+   * Names the real cause when a Job fails without reporting anything.
+   */
+  terminationReason: string | null;
+  /** The first container's exit code from its last termination, if any. */
+  exitCode: number | null;
 }
 
 /** A single peer a NetworkPolicy allows traffic from or to. */
@@ -288,6 +295,15 @@ export interface K8sClient {
     create(namespace: string, name: string, spec: PodSpec): Promise<K8sResult<PodInfo>>;
     get(namespace: string, name: string): Promise<K8sResult<PodInfo>>;
     list(namespace: string, labels?: Record<string, string>): Promise<K8sResult<PodInfo[]>>;
+    /**
+     * Streams a Pod container's log. With `follow` the stream stays open until
+     * the container exits, so a caller can proxy it to a browser as it runs.
+     */
+    logs(
+      namespace: string,
+      name: string,
+      options?: { follow?: boolean; tailLines?: number; container?: string },
+    ): Promise<K8sResult<ReadableStream<Uint8Array>>>;
     delete(namespace: string, name: string): Promise<K8sResult<void>>;
   };
   networkPolicies: {

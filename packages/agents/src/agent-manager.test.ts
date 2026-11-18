@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeGitHubIssues, type FakeGitHubIssues } from '@yaaabk/github';
 import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
-import { createMockK8sClient, type MockK8sClient } from '@yaaabk/k8s';
+import { createMockK8sClient, type K8sObject, type MockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import { DEFAULT_ACTIVE_DEADLINE_SECONDS, DEFAULT_AGENT_MODEL, REVIEW_SKILL_PATH } from './config';
@@ -54,6 +54,10 @@ async function harness(
     model?: string;
     storageClassName?: string;
     mintOpenrouterKey?: AgentManagerOptions['mintOpenrouterKey'];
+    /** Objects the fake cluster starts with, e.g. a Job's Pod. */
+    seed?: K8sObject[];
+    /** Scripted Pod output keyed by `namespace/name`. */
+    logs?: Record<string, string>;
   } = {},
 ): Promise<Harness> {
   const projectStore = createInMemoryProjectStore();
@@ -86,7 +90,10 @@ async function harness(
     store: createInMemoryAgentStore(),
     issues,
     projects: projectStore,
-    k8s: createMockK8sClient(),
+    k8s: createMockK8sClient({
+      ...(options.seed === undefined ? {} : { seed: options.seed }),
+      ...(options.logs === undefined ? {} : { logs: options.logs }),
+    }),
     githubIssues: github,
     clock: () => NOW,
     ids: () => `run-${++runSequence}`,
@@ -597,6 +604,92 @@ describe('reconcile', () => {
     expect(secondPass.ok && secondPass.value).toMatchObject({ failed: 1, escalated: 1 });
     const stored = await issues.get('project-1', issue.id);
     expect(stored.ok && stored.value).toMatchObject({ status: 'failed', label: 'needs-human' });
+  });
+});
+
+/** Reads a byte stream to text. */
+async function streamText(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
+describe('logs', () => {
+  /** The Pod a Job creates; `backoffLimit` is 0, so there is only ever one. */
+  const POD = 'agent-issue-1-attempt-1-abcde';
+
+  /** A Pod the kubelet killed for exceeding its memory limit. */
+  function oomPod(): K8sObject {
+    return {
+      apiVersion: 'v1',
+      kind: 'Pod',
+      metadata: {
+        name: POD,
+        namespace: NS,
+        labels: { 'job-name': 'agent-issue-1-attempt-1' },
+      },
+      status: {
+        phase: 'Failed',
+        containerStatuses: [{ state: { terminated: { reason: 'OOMKilled', exitCode: 137 } } }],
+      },
+    };
+  }
+
+  it('captures the cause and last output of a run killed before it could report', async () => {
+    const h = await harness({
+      seed: [oomPod()],
+      logs: { [`${NS}/${POD}`]: 'cloning repo\nrunning OpenCode\n' },
+    });
+    const issue = await readyIssue(h.issues);
+    const spawned = await h.manager.spawn('project-1', issue.id);
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    await finishJob(h.k8s, NS, spawned.value.jobName ?? '', 'failed');
+    await h.manager.reconcile();
+
+    const runs = await h.manager.runs('project-1', issue.id);
+    if (!runs.ok) throw new Error('runs failed');
+    const run = runs.value[0];
+    expect(run).toMatchObject({ status: 'failed' });
+    expect(run?.logs).toContain(
+      'Pod agent-issue-1-attempt-1-abcde terminated: OOMKilled (exit code 137)',
+    );
+    expect(run?.logs).toContain('running OpenCode');
+  });
+
+  it('streams a running attempt’s Pod output and returns a finished run’s stored log', async () => {
+    const h = await harness({
+      seed: [oomPod()],
+      logs: { [`${NS}/${POD}`]: 'cloning repo\nrunning OpenCode\n' },
+    });
+    const issue = await readyIssue(h.issues);
+    const spawned = await h.manager.spawn('project-1', issue.id);
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const live = await h.manager.logs(spawned.value.id, { follow: true });
+    if (!live.ok) throw new Error(`logs failed: ${live.error.message}`);
+    await expect(streamText(live.value)).resolves.toBe('cloning repo\nrunning OpenCode\n');
+
+    await finishJob(h.k8s, NS, spawned.value.jobName ?? '', 'failed');
+    await h.manager.reconcile();
+
+    const stored = await h.manager.logs(spawned.value.id);
+    if (!stored.ok) throw new Error(`logs failed: ${stored.error.message}`);
+    await expect(streamText(stored.value)).resolves.toContain('OOMKilled');
+  });
+
+  it('reports an unknown run as not-found', async () => {
+    const h = await harness();
+
+    const result = await h.manager.logs('run-missing');
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.kind).toBe('not-found');
   });
 });
 

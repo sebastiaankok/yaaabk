@@ -29,9 +29,9 @@ async function signedIn(): Promise<{ context: TestContext; session: string }> {
 async function projectWithIssue(
   context: TestContext,
   session: string,
-  options: { githubNumber?: number | null } = {},
+  options: { githubNumber?: number | null; name?: string } = {},
 ): Promise<{ projectId: string; issueId: string }> {
-  const created = await context.projects.create(PROJECT);
+  const created = await context.projects.create({ ...PROJECT, name: options.name ?? PROJECT.name });
   if (!created.ok) throw new Error('create failed');
   const projectId = created.value.id;
 
@@ -127,6 +127,90 @@ describe('POST /api/projects/:id/issues/:issueId/spawn', () => {
     await expect(res.json()).resolves.toMatchObject({
       runs: [expect.objectContaining({ issueId, attemptNumber: 1 })],
     });
+  });
+});
+
+describe('GET /api/projects/:id/agent-runs/:runId/logs', () => {
+  /** The report token and Job details a spawned run's Pod was given. */
+  async function spawnedRun(
+    context: TestContext,
+    session: string,
+    projectId: string,
+    issueId: string,
+  ): Promise<{ runId: string; token: string }> {
+    const res = await request(
+      context,
+      `/api/projects/${projectId}/issues/${issueId}/spawn`,
+      { method: 'POST', body: JSON.stringify({}) },
+      session,
+    );
+    expect(res.status).toBe(202);
+    const run = (await res.json()) as { id: string };
+
+    const namespace = context.projectStore.get(projectId)?.namespace ?? '';
+    const job = await context.k8s.objectApi.read({
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: `agent-${issueId}-attempt-1`, namespace },
+    });
+    const containers = (
+      job.spec as {
+        template: { spec: { containers: Array<{ env?: Array<{ name: string; value: string }> }> } };
+      }
+    ).template.spec.containers;
+    const token = containers[0]?.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    if (token === undefined) throw new Error('the Job was not given a report token');
+    return { runId: run.id, token };
+  }
+
+  it('rejects an unauthenticated request', async () => {
+    const { context, session } = await signedIn();
+    const { projectId, issueId } = await projectWithIssue(context, session);
+    const { runId } = await spawnedRun(context, session, projectId, issueId);
+
+    const res = await request(context, `/api/projects/${projectId}/agent-runs/${runId}/logs`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('streams the log a run has so far and ends the stream', async () => {
+    const { context, session } = await signedIn();
+    const { projectId, issueId } = await projectWithIssue(context, session);
+    const { runId, token } = await spawnedRun(context, session, projectId, issueId);
+    await request(context, `/api/agent-runs/${runId}/report`, {
+      method: 'POST',
+      body: JSON.stringify({ token, logs: '[yaaabk] cloning repo\n' }),
+    });
+
+    const res = await request(
+      context,
+      `/api/projects/${projectId}/agent-runs/${runId}/logs`,
+      {},
+      session,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const body = await res.text();
+    expect(body).toContain('event: log');
+    expect(body).toContain('cloning repo');
+    expect(body).toContain('event: end');
+  });
+
+  it('reports a run from another project as not-found', async () => {
+    const { context, session } = await signedIn();
+    const first = await projectWithIssue(context, session);
+    const second = await projectWithIssue(context, session, { name: 'other-app' });
+    const { runId } = await spawnedRun(context, session, first.projectId, first.issueId);
+
+    const res = await request(
+      context,
+      `/api/projects/${second.projectId}/agent-runs/${runId}/logs`,
+      {},
+      session,
+    );
+
+    expect(res.status).toBe(404);
   });
 });
 

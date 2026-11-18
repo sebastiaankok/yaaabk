@@ -513,6 +513,70 @@ export function listProjectRuns(projectId: string): Promise<AgentRun[]> {
 }
 
 /**
+ * Streams a run's output while it is still running.
+ *
+ * `GET /api/projects/:id/agent-runs/:runId/logs` responds with SSE `log`
+ * frames carrying arbitrary chunks, then `end` when the container exits.
+ * Resolves when the stream ends; rejects on an `error` frame or on a non-stream
+ * response. Pass an abort signal to stop watching.
+ */
+export async function streamAgentRunLogs(
+  projectId: string,
+  runId: string,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/logs`,
+    {
+      headers: { accept: 'text/event-stream' },
+      credentials: 'include',
+      ...(signal === undefined ? {} : { signal }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new ApiError(
+      response.status,
+      body.error ?? 'unknown',
+      body.message ?? 'Could not read the agent log',
+    );
+  }
+  if (!(response.headers.get('content-type') ?? '').includes('text/event-stream')) {
+    throw new ApiError(response.status, 'unknown', 'Unexpected response to the agent log stream');
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let separator = buffer.indexOf('\n\n');
+    while (separator !== -1) {
+      const frame = buffer.slice(0, separator);
+      buffer = buffer.slice(separator + 2);
+      separator = buffer.indexOf('\n\n');
+
+      const event = /^event: (.*)$/m.exec(frame)?.[1] ?? '';
+      const data = /^data: (.*)$/m.exec(frame)?.[1] ?? '{}';
+      if (event === 'log') {
+        onChunk((JSON.parse(data) as { chunk?: string }).chunk ?? '');
+      } else if (event === 'error') {
+        const payload = JSON.parse(data) as { message?: string };
+        throw new ApiError(
+          response.status,
+          'unknown',
+          payload.message ?? 'Agent log stream failed',
+        );
+      }
+    }
+  }
+}
+
+/**
  * Schedules an agent attempt for an issue. An OpenRouter key is optional; the
  * backend provisions a per-attempt Secret from it when given.
  */

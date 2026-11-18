@@ -68,9 +68,13 @@ describe('deploy/rbac.yaml', () => {
     expect(rules.find((r) => r.resources.includes('secrets'))?.verbs).toEqual(
       expect.arrayContaining(['create', 'get', 'list', 'watch', 'patch', 'delete']),
     );
+    // Anything else here is over-granting: Pod reads exist only so the Manager
+    // can explain an attempt the kubelet killed before it could report.
+    expect(rules.find((r) => r.resources.includes('pods/log'))?.verbs).toEqual(['get', 'list']);
+    expect(rules.find((r) => r.resources.includes('pods'))?.verbs).toEqual(['get', 'list']);
     // Nothing else: the backend must hold no other rights via this ClusterRole.
     const resources = [...new Set(rules.flatMap((r) => r.resources))].sort();
-    expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'secrets']);
+    expect(resources).toEqual(['jobs', 'persistentvolumeclaims', 'pods', 'pods/log', 'secrets']);
   });
 
   it('grants the backend a narrow ClusterRole for Namespace lifecycle (create/get/list/delete)', () => {

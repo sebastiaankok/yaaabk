@@ -130,6 +130,11 @@ rules:
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [create, get, list, watch, delete]
+  # Reading a finished attempt's Pod log is how a run killed before it could
+  # report (OOMKilled, evicted) still shows the Developer why it failed.
+  - apiGroups: ['']
+    resources: [pods, pods/log]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

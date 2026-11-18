@@ -107,6 +107,8 @@ describe('pods', () => {
         podIP: null,
         ready: false,
         waitingReason: 'ErrImagePull: manifest unknown',
+        terminationReason: null,
+        exitCode: null,
       },
     });
   });
