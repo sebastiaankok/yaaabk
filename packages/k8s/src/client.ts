@@ -317,6 +317,9 @@ function networkPolicyManifest(
 /** Builds the Job manifest for a single agent attempt. */
 function jobManifest(namespace: string, name: string, spec: JobSpec): K8sObject {
   const container: Record<string, unknown> = { name: 'agent', image: spec.image };
+  if (spec.imagePullPolicy !== undefined) {
+    container.imagePullPolicy = spec.imagePullPolicy;
+  }
   if (spec.command !== undefined) {
     container.command = spec.command;
   }

@@ -106,6 +106,12 @@ export interface JobVolumeMount {
 /** Specification for a per-issue agent Job. */
 export interface JobSpec {
   image: string;
+  /**
+   * How the kubelet resolves `image`. Defaults to Kubernetes' own rule, which
+   * reuses a cached tag; an agent Job pins `Always` so a re-pushed release tag
+   * is actually picked up.
+   */
+  imagePullPolicy?: 'Always' | 'IfNotPresent' | 'Never';
   command?: string[];
   args?: string[];
   env?: Record<string, string>;

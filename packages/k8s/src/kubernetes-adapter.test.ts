@@ -36,7 +36,7 @@ async function streamText(stream: ReadableStream<Uint8Array>): Promise<string> {
 
 /** A log client that can refuse the first request the way the kubelet does. */
 function scriptedLogReader(
-  script: Array<'no-content' | { write: string }>,
+  script: Array<'no-content' | 'creating' | { write: string }>,
   onAttempt?: () => void,
 ): ContainerLogReader {
   return {
@@ -45,6 +45,16 @@ function scriptedLogReader(
       const step = script.shift();
       if (step === 'no-content') {
         throw Object.assign(new Error('Error occurred in log request'), { code: 204 });
+      }
+      if (step === 'creating') {
+        // The shape @kubernetes/client-node throws for a 400 while the
+        // container is still being created.
+        throw Object.assign(
+          new Error(
+            'HTTP-Code: 400\nMessage: container "agent" in pod "agent-1" is waiting to start: ContainerCreating\nBody: undefined',
+          ),
+          { code: 400 },
+        );
       }
       if (step === undefined) throw new Error('unexpected extra log request');
       const sink = stream as PassThrough;
@@ -63,6 +73,23 @@ describe('createKubernetesObjectApi logs', () => {
       kubeConfig: testKubeConfig(),
       logRetryMs: 0,
       logReader: scriptedLogReader(['no-content', { write: 'starting\n' }], () => {
+        attempts += 1;
+      }),
+    });
+
+    const stream = await api.logs(POD, { follow: true, container: 'agent' });
+
+    await expect(streamText(stream)).resolves.toBe('starting\n');
+    expect(attempts).toBe(2);
+  });
+
+  it('waits out a 400 until the container has been created', async () => {
+    let attempts = 0;
+    const api = createKubernetesObjectApi({
+      connection: { mode: 'kubeconfig' },
+      kubeConfig: testKubeConfig(),
+      logRetryMs: 0,
+      logReader: scriptedLogReader(['creating', { write: 'starting\n' }], () => {
         attempts += 1;
       }),
     });

@@ -143,6 +143,8 @@ async function readyIssue(
 }
 
 interface JobContainer {
+  image?: string;
+  imagePullPolicy?: string;
   env?: Array<{ name: string; value: string }>;
   envFrom?: Array<{ secretRef: { name: string } }>;
   volumeMounts?: Array<{ name: string; mountPath: string }>;
@@ -221,6 +223,9 @@ describe('spawn', () => {
     expect(container.envFrom).toEqual([]);
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
     expect(container.volumeMounts).toEqual([{ name: 'work', mountPath: '/work' }]);
+    // A re-pushed release tag must reach the attempt: the node otherwise keeps
+    // the image it first pulled under that tag.
+    expect(container.imagePullPolicy).toBe('Always');
     expect(spec.template.spec.volumes).toEqual([
       { name: 'work', persistentVolumeClaim: { claimName: 'agent-work-issue-1-1' } },
     ]);
@@ -673,6 +678,31 @@ describe('logs', () => {
       'Pod agent-issue-1-attempt-1-abcde terminated: OOMKilled (exit code 137)',
     );
     expect(run?.logs).toContain('running OpenCode');
+  });
+
+  it('keeps the logs a run reported when the Pod also has output', async () => {
+    const h = await harness({
+      seed: [oomPod()],
+      logs: { [`${NS}/${POD}`]: 'cloning repo\n' },
+    });
+    const issue = await readyIssue(h.issues);
+    const spawned = await h.manager.spawn('project-1', issue.id);
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { container } = await readJobContainer(h.k8s, NS, spawned.value.jobName ?? '');
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+    if (token === undefined) throw new Error('run token missing');
+    const reported = await h.manager.report(spawned.value.id, token, {
+      logs: 'Error: Model unavailable: openrouter/chosen',
+    });
+    if (!reported.ok) throw new Error(`report failed: ${reported.error.message}`);
+
+    await finishJob(h.k8s, NS, spawned.value.jobName ?? '', 'failed');
+    await h.manager.reconcile();
+
+    const runs = await h.manager.runs('project-1', issue.id);
+    if (!runs.ok) throw new Error('runs failed');
+    expect(runs.value[0]?.logs).toBe('Error: Model unavailable: openrouter/chosen');
   });
 
   it('streams a running attempt’s Pod output and returns a finished run’s stored log', async () => {
