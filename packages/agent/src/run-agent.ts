@@ -1,3 +1,4 @@
+import { parseRepoUrl } from './adapters';
 import type { AgentConfig } from './config';
 import { AUTOMERGE_LABEL, defaultBranch, type AgentDependencies, type AgentOutcome } from './ports';
 import {
@@ -9,6 +10,21 @@ import {
 
 const DEFAULT_DIRECTORY = '/work/repo';
 const DEPLOYED_SHA_LABEL = 'yaaabk.io/deployed-sha';
+
+/** Container name the template's Deployment declares. */
+const DEPLOY_CONTAINER_NAME = 'app';
+
+/**
+ * The image CI publishes for a merged commit.
+ *
+ * The template's CI tags the image with `${{ github.sha }}` under
+ * `ghcr.io/${{ github.repository }}`, so the deploy can derive the exact
+ * reference from the repository URL and the merged commit.
+ */
+export function containerImage(repoUrl: string, commitSha: string): string {
+  const { owner, repo } = parseRepoUrl(repoUrl);
+  return `ghcr.io/${owner.toLowerCase()}/${repo.toLowerCase()}:${commitSha}`;
+}
 
 /**
  * Writes a progress line to the Job's stdout.
@@ -243,9 +259,30 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
     await deps.git.checkoutCommit(directory, commitSha);
     logs.push(`Checked out ${commitSha}`);
 
-    progress(`deploying ${commitSha} to ${namespace}`);
+    const image = containerImage(config.repoUrl, commitSha);
+    progress(`deploying ${commitSha} to ${namespace} (${image})`);
+
+    // CI builds the image after the merge and the deploy Job starts as soon
+    // as the pull request is merged, so the tag is often a few seconds behind.
+    // Waiting here keeps that race from surfacing as an ImagePullBackOff.
+    if (deps.registry !== undefined) {
+      progress(`waiting for ${image} to be published`);
+      await deps.registry.waitForImage({ image });
+      logs.push(`Found ${image}`);
+    }
+
     await deps.kubectl.applyServerSide({ directory, namespace, path: deployPath });
     logs.push(`Applied ${deployPath} with server-side apply`);
+
+    // The manifest is authored at scaffold time and names a stable image, so
+    // pin the Deployment to the exact image this merged commit built.
+    await deps.kubectl.setImage({
+      namespace,
+      deploymentName,
+      containerName: DEPLOY_CONTAINER_NAME,
+      image,
+    });
+    logs.push(`Set deployment/${deploymentName} to ${image}`);
 
     // From here until the health check passes, a failure means the new
     // revision is live but broken, so the previous one must be restored.

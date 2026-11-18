@@ -14,6 +14,18 @@ COPY . .
 RUN bun run --filter '@yaaabk/agent' build
 RUN bun run --filter '@yaaabk/grill-mcp' build
 
+# Warm Bun's package cache with the Svelte/Bun template's dependencies. Every
+# attempt clones a fresh repository and runs `bun install`, so the packages it
+# needs are on disk instead of fetched from the registry on each Job. The
+# stage deliberately targets the runtime platform: platform-specific packages
+# such as Vite's native binaries must match the cluster, not the builder.
+FROM oven/bun:1.3-alpine AS project-cache
+WORKDIR /cache
+COPY templates/svelte-bun/package.json templates/svelte-bun/bun.lock ./
+COPY templates/svelte-bun/server/package.json server/package.json
+COPY templates/svelte-bun/web/package.json web/package.json
+RUN BUN_INSTALL_CACHE_DIR=/bun-cache bun install --frozen-lockfile
+
 FROM oven/bun:1.3-alpine AS runtime
 # Pin the terminal and agent runtime. Sessions and Agent Jobs share this image,
 # so there is one OpenCode version to upgrade and verify. The versions live in
@@ -61,7 +73,12 @@ COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.j
 # kubectl does not discover the mounted ServiceAccount by itself; this points it
 # at the in-cluster API and lets the projected token authenticate every call.
 COPY --from=build /app/packages/agent/kubeconfig.yaml ./kubeconfig.yaml
-RUN mkdir -p /work && chown bun:bun /work
+# The template's dependency cache. `bun install --prefer-offline` in the
+# attempt's clone resolves from here and only reaches the network for a
+# dependency the scaffold does not already use.
+COPY --from=project-cache /bun-cache /home/bun/.bun/install/cache
+RUN mkdir -p /work && chown -R bun:bun /work /home/bun/.bun
+ENV BUN_INSTALL_CACHE_DIR=/home/bun/.bun/install/cache
 ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
 ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 ENV KUBECONFIG=/app/kubeconfig.yaml

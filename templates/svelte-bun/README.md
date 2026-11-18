@@ -9,11 +9,11 @@ An application scaffolded by [YAAABK](https://github.com) from the
 
 ## Layout
 
-| Path      | What it is                                                       |
-| --------- | ---------------------------------------------------------------- |
-| `web/`    | SvelteKit + Tailwind single-page app                             |
-| `server/` | Bun + Hono API that also serves `web/build`                      |
-| `deploy/` | Kubernetes manifests applied by the YAAABK deploy Job            |
+| Path      | What it is                                            |
+| --------- | ----------------------------------------------------- |
+| `web/`    | SvelteKit + Tailwind single-page app                  |
+| `server/` | Bun + Hono API that also serves `web/build`           |
+| `deploy/` | Kubernetes manifests applied by the YAAABK deploy Job |
 
 ## Developing locally
 
@@ -25,10 +25,12 @@ bun run dev   # API on :{{port}}, web dev server on :5173
 ## Checks
 
 ```sh
-bun run typecheck
-bun test
+bun run check   # lint, typecheck and tests
 bun run build
 ```
+
+`bun.lock` is committed, so CI and the YAAABK agent install with
+`bun install --frozen-lockfile`.
 
 ## Deploying
 

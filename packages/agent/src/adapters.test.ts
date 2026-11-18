@@ -1,10 +1,17 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BoundedOutput,
+  checksForScripts,
+  createChecks,
   createGitHub,
   createOpenCode,
   createOpenRouterMeter,
+  createRegistry,
   createReporter,
+  parseImage,
 } from './adapters';
 import type { AgentConfig } from './config';
 
@@ -381,5 +388,151 @@ describe('createGitHub openPullRequest', () => {
     expect(calls[1]?.url).toContain('/pulls?state=open&head=acme%3Aagent%2Fissue-42');
     // The label is still applied, so automerge is set on a reused pull request.
     expect(calls[2]?.url).toContain('/issues/5/labels');
+  });
+});
+
+describe('checksForScripts', () => {
+  it('prefers a project-defined check script', () => {
+    expect(checksForScripts({ check: 'bun run lint && bun test', lint: 'x', test: 'y' })).toEqual([
+      { script: 'run', args: ['check'] },
+    ]);
+  });
+
+  it('falls back to lint, typecheck and test', () => {
+    expect(checksForScripts({ lint: 'x', typecheck: 'y', test: 'z' })).toEqual([
+      { script: 'run', args: ['lint'] },
+      { script: 'run', args: ['typecheck'] },
+      { script: 'run', args: ['test'] },
+    ]);
+  });
+
+  it('uses test:unit when a project has no test script', () => {
+    expect(checksForScripts({ 'test:unit': 'bun test' })).toEqual([
+      { script: 'run', args: ['test:unit'] },
+    ]);
+  });
+});
+
+describe('createChecks', () => {
+  it('installs from the lockfile and runs the project check script', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'yaaabk-checks-'));
+    try {
+      await writeFile(
+        join(directory, 'package.json'),
+        JSON.stringify({ scripts: { check: 'bun run lint && bun test' } }),
+      );
+      const calls: string[] = [];
+      const checks = createChecks({
+        now: () => 0,
+        run: async (_directory, script, args) => {
+          calls.push(`${script} ${args.join(' ')}`);
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      });
+
+      const result = await checks.run(directory);
+
+      expect(result.passed).toBe(true);
+      expect(calls).toEqual(['install --frozen-lockfile --prefer-offline', 'run check']);
+      expect(result.output).toContain('bun install --frozen-lockfile');
+      expect(result.output).toContain('bun run check');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('installs once more without the frozen lockfile when it is stale', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'yaaabk-checks-'));
+    try {
+      await writeFile(join(directory, 'package.json'), JSON.stringify({ scripts: { test: 'x' } }));
+      const calls: string[] = [];
+      const checks = createChecks({
+        now: () => 0,
+        run: async (_directory, script, args) => {
+          calls.push(`${script} ${args.join(' ')}`);
+          if (calls.length === 1) {
+            return {
+              exitCode: 1,
+              stdout: '',
+              stderr: 'error: lockfile had changes, but lockfile is frozen',
+            };
+          }
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      });
+
+      const result = await checks.run(directory);
+
+      expect(result.passed).toBe(true);
+      expect(calls).toEqual([
+        'install --frozen-lockfile --prefer-offline',
+        'install --prefer-offline',
+        'run test',
+      ]);
+      expect(result.output).toContain('installing without --frozen-lockfile');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('parseImage', () => {
+  it('splits a tagged image reference', () => {
+    expect(parseImage('ghcr.io/acme/todo-app:abc123')).toEqual({
+      registry: 'ghcr.io',
+      repository: 'acme/todo-app',
+      tag: 'abc123',
+    });
+  });
+
+  it('defaults a missing tag to latest', () => {
+    expect(parseImage('ghcr.io/acme/todo-app')).toEqual({
+      registry: 'ghcr.io',
+      repository: 'acme/todo-app',
+      tag: 'latest',
+    });
+  });
+});
+
+describe('createRegistry', () => {
+  it('waits until the image tag resolves', async () => {
+    const requests: string[] = [];
+    let manifests = 0;
+    const fetchStub = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      requests.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.includes('/token')) {
+        return new Response(JSON.stringify({ token: 'pull-token' }), { status: 200 });
+      }
+      manifests += 1;
+      return new Response('', { status: manifests === 1 ? 404 : 200 });
+    }) as unknown as typeof fetch;
+    const sleeps: number[] = [];
+    const registry = createRegistry({
+      fetch: fetchStub,
+      pollMs: 25,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    await registry.waitForImage({ image: 'ghcr.io/acme/todo-app:abc123' });
+
+    expect(manifests).toBe(2);
+    expect(sleeps).toEqual([25]);
+    expect(requests[0]).toContain('scope=repository%3Aacme%2Ftodo-app%3Apull');
+    expect(requests[1]).toContain('HEAD https://ghcr.io/v2/acme/todo-app/manifests/abc123');
+  });
+
+  it('rejects with the image name when the tag never appears', async () => {
+    const registry = createRegistry({
+      fetch: (async () => new Response('', { status: 404 })) as unknown as typeof fetch,
+      pollMs: 0,
+      sleep: async () => {},
+    });
+
+    await expect(
+      registry.waitForImage({ image: 'ghcr.io/acme/todo-app:missing', timeoutMs: 0 }),
+    ).rejects.toThrow('Image ghcr.io/acme/todo-app:missing was not published');
   });
 });

@@ -1,0 +1,9 @@
+bun.lock
+node_modules
+**/node_modules
+build
+**/build
+.svelte-kit
+**/.svelte-kit
+dist
+**/dist

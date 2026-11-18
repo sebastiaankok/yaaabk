@@ -14,7 +14,8 @@
     "test": "bun run --filter '*' --if-present test:unit",
     "typecheck": "bun run --filter '*' --if-present typecheck",
     "lint": "prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
     "prettier": "^3.10.1",

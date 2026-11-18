@@ -1,5 +1,6 @@
 /// <reference types="bun" />
 import { withReviewVerdict } from '@yaaabk/shared';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentConfig } from './config';
 import type {
@@ -11,18 +12,23 @@ import type {
   GitHub,
   Kubectl,
   OpenCode,
+  Registry,
   Reporter,
   ReviewVerdict,
   SpendMeter,
 } from './ports';
 import { REVIEW_VERDICT_PATH } from './prompt';
 
-/** Splits an `https://github.com/<owner>/<repo>` URL into its parts. */
+/** Splits an HTTPS or SCP-like git remote into its owner and repository. */
 export function parseRepoUrl(repoUrl: string): { owner: string; repo: string } {
-  const path = repoUrl
+  const cleaned = repoUrl
+    .trim()
     .replace(/\.git$/, '')
-    .replace(/\/$/, '')
+    .replace(/\/$/, '');
+  const scpLike = cleaned.match(/^[^@]+@[^:]+:(.+)$/);
+  const path = (scpLike?.[1] ?? cleaned)
     .split('/')
+    .filter((part) => part !== '')
     .slice(-2);
   const [owner, repo] = path;
   if (owner === undefined || repo === undefined) {
@@ -100,6 +106,14 @@ export function createKubectl(): Kubectl {
       await expectSuccess(
         'kubectl apply',
         Bun.$`kubectl apply --server-side --namespace ${namespace} -f ${manifestPath}`
+          .quiet()
+          .nothrow(),
+      );
+    },
+    async setImage({ namespace, deploymentName, containerName, image }) {
+      await expectSuccess(
+        'kubectl set image',
+        Bun.$`kubectl set image deployment/${deploymentName} ${`${containerName}=${image}`} --namespace ${namespace}`
           .quiet()
           .nothrow(),
       );
@@ -403,23 +417,119 @@ export function createOpenCode(
   };
 }
 
-/** The real checks adapter: install, then the project's pre-commit hooks. */
-export function createChecks(): Checks {
-  const steps: ReadonlyArray<readonly [string, readonly string[]]> = [
-    ['install', ['--frozen-lockfile']],
-    ['run', ['--if-present', 'lint']],
-    ['run', ['--if-present', 'typecheck']],
-    ['run', ['--if-present', 'test:unit']],
-  ];
+/** One `bun <script> <args>` command the project checks run. */
+export interface ChecksCommand {
+  script: string;
+  args: readonly string[];
+}
+
+/** Runs one command, injectable so the checks can be tested without Bun. */
+export type ChecksRunner = (
+  directory: string,
+  script: string,
+  args: readonly string[],
+) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+
+export interface ChecksOptions {
+  run?: ChecksRunner;
+  /** Clock used for the timing lines. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
+const defaultChecksRunner: ChecksRunner = async (directory, script, args) => {
+  const result = await Bun.$`bun ${script} ${args}`.cwd(directory).nothrow().quiet();
+  return {
+    exitCode: result.exitCode ?? 1,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
+};
+
+/** Reads the scripts a project declares, or an empty record. */
+async function projectScripts(directory: string): Promise<Record<string, string>> {
+  try {
+    const parsed = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as {
+      scripts?: unknown;
+    };
+    if (parsed.scripts === null || typeof parsed.scripts !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(parsed.scripts as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The commands a project's checks run.
+ *
+ * A project that declares `check` owns the definition of its checks; the
+ * template defines one so lint, typecheck and tests cannot drift apart. Older
+ * projects fall back to the individual scripts, including `test:unit` when
+ * that is the only test script they expose.
+ */
+export function checksForScripts(scripts: Record<string, string>): ChecksCommand[] {
+  if (scripts['check'] !== undefined) return [{ script: 'run', args: ['check'] }];
+
+  const commands: ChecksCommand[] = [];
+  if (scripts['lint'] !== undefined) commands.push({ script: 'run', args: ['lint'] });
+  if (scripts['typecheck'] !== undefined) commands.push({ script: 'run', args: ['typecheck'] });
+  if (scripts['test'] !== undefined) commands.push({ script: 'run', args: ['test'] });
+  else if (scripts['test:unit'] !== undefined) {
+    commands.push({ script: 'run', args: ['test:unit'] });
+  }
+  return commands;
+}
+
+/** Whether a failed install is the frozen lockfile being out of date. */
+function isLockfileFailure(output: string): boolean {
+  return /frozen|lockfile/i.test(output);
+}
+
+/** The real checks adapter: install, then the project's own checks. */
+export function createChecks(options: ChecksOptions = {}): Checks {
+  const run = options.run ?? defaultChecksRunner;
+  const now = options.now ?? Date.now;
+
   return {
     async run(directory) {
       const output: string[] = [];
-      for (const [script, args] of steps) {
-        const result = await Bun.$`bun ${script} ${args}`.cwd(directory).nothrow().quiet();
-        output.push(result.stdout.toString(), result.stderr.toString());
-        if (result.exitCode !== 0) {
-          return { passed: false, output: output.join('\n') };
-        }
+      const installStarted = now();
+      let install = await run(directory, 'install', ['--frozen-lockfile', '--prefer-offline']);
+      output.push(
+        `[yaaabk] bun install --frozen-lockfile (${((now() - installStarted) / 1000).toFixed(1)}s)`,
+        install.stdout,
+        install.stderr,
+      );
+
+      if (install.exitCode !== 0 && isLockfileFailure(`${install.stdout}\n${install.stderr}`)) {
+        // The template ships a lockfile, but an agent adding a dependency (or
+        // an older project without one) still has to be able to run its
+        // checks. Updating the lockfile here is committed with the change.
+        output.push('[yaaabk] lockfile is missing or stale; installing without --frozen-lockfile');
+        const retryStarted = now();
+        install = await run(directory, 'install', ['--prefer-offline']);
+        output.push(
+          `[yaaabk] bun install (${((now() - retryStarted) / 1000).toFixed(1)}s)`,
+          install.stdout,
+          install.stderr,
+        );
+      }
+      if (install.exitCode !== 0) return { passed: false, output: output.join('\n') };
+
+      const commands = checksForScripts(await projectScripts(directory));
+      for (const command of commands) {
+        const started = now();
+        const result = await run(directory, command.script, command.args);
+        const seconds = ((now() - started) / 1000).toFixed(1);
+        output.push(
+          `[yaaabk] bun ${command.script} ${command.args.join(' ')} (${seconds}s)`,
+          result.stdout,
+          result.stderr,
+        );
+        if (result.exitCode !== 0) return { passed: false, output: output.join('\n') };
       }
       return { passed: true, output: output.join('\n') };
     },
@@ -592,11 +702,98 @@ export function createOpenRouterMeter(
   };
 }
 
+/** Manifest media types a registry may serve for a tagged image. */
+const MANIFEST_ACCEPT = [
+  'application/vnd.oci.image.index.v1+json',
+  'application/vnd.docker.distribution.manifest.list.v2+json',
+  'application/vnd.oci.image.manifest.v1+json',
+  'application/vnd.docker.distribution.manifest.v2+json',
+].join(', ');
+
+/** The registry, repository and tag of a container image reference. */
+export function parseImage(image: string): { registry: string; repository: string; tag: string } {
+  const slash = image.indexOf('/');
+  if (slash === -1) throw new Error(`Cannot parse image reference: ${image}`);
+  const registry = image.slice(0, slash);
+  const rest = image.slice(slash + 1);
+  const at = rest.indexOf('@');
+  if (at !== -1) {
+    return { registry, repository: rest.slice(0, at), tag: rest.slice(at + 1) };
+  }
+  const colon = rest.lastIndexOf(':');
+  if (colon === -1) return { registry, repository: rest, tag: 'latest' };
+  return { registry, repository: rest.slice(0, colon), tag: rest.slice(colon + 1) };
+}
+
+export interface RegistryOptions {
+  fetch?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  pollMs?: number;
+}
+
+/**
+ * Waits for a tag to appear in the registry.
+ *
+ * The token request is best-effort: public GHCR packages serve manifests
+ * anonymously, while a private package simply keeps returning an auth error
+ * until the deploy times out with a message naming the image.
+ */
+export function createRegistry(options: RegistryOptions = {}): Registry {
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const pollMs = options.pollMs ?? 5_000;
+
+  async function pullToken(registry: string, repository: string): Promise<string | undefined> {
+    const endpoint = `https://${registry}/token?service=${encodeURIComponent(registry)}&scope=${encodeURIComponent(`repository:${repository}:pull`)}`;
+    const response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(10_000) }).catch(
+      () => undefined,
+    );
+    if (response?.ok !== true) return undefined;
+    const body = (await response.json().catch(() => undefined)) as
+      { token?: unknown; access_token?: unknown } | undefined;
+    if (typeof body?.token === 'string') return body.token;
+    if (typeof body?.access_token === 'string') return body.access_token;
+    return undefined;
+  }
+
+  return {
+    async waitForImage({ image, timeoutMs = 5 * 60_000 }) {
+      const { registry, repository, tag } = parseImage(image);
+      const deadline = Date.now() + timeoutMs;
+      let lastStatus: number | undefined;
+
+      for (;;) {
+        const token = await pullToken(registry, repository);
+        const response = await fetchImpl(`https://${registry}/v2/${repository}/manifests/${tag}`, {
+          method: 'HEAD',
+          headers: {
+            accept: MANIFEST_ACCEPT,
+            ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+          },
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => undefined);
+
+        if (response?.ok === true) return;
+        lastStatus = response?.status;
+
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `Image ${image} was not published within ${Math.round(timeoutMs / 1000)}s${lastStatus === undefined ? '' : ` (last status ${lastStatus})`}`,
+          );
+        }
+        await sleep(pollMs);
+      }
+    },
+  };
+}
+
 /** Assembles the real dependencies the Job runs with. */
 export function createDependencies(config: AgentConfig): AgentDependencies {
   return {
     git: createGit(),
     kubectl: createKubectl(),
+    registry: createRegistry(),
     openCode: createOpenCode(config),
     checks: createChecks(),
     github: createGitHub(config),
