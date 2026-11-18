@@ -3,5 +3,6 @@ export * from './generated-issue';
 export * from './namespace';
 export * from './product';
 export * from './project';
+export * from './review-verdict';
 export * from './runtime';
 export * from './skill-level';

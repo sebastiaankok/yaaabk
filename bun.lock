@@ -160,6 +160,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@yaaabk/issues": "workspace:*",
+        "@yaaabk/shared": "workspace:*",
         "jose": "^6.1.0",
       },
       "devDependencies": {

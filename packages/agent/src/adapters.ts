@@ -1,4 +1,5 @@
 /// <reference types="bun" />
+import { withReviewVerdict } from '@yaaabk/shared';
 import { join } from 'node:path';
 import type { AgentConfig } from './config';
 import type {
@@ -386,7 +387,8 @@ export function createChecks(): Checks {
 }
 
 /** The real GitHub adapter: read the Issue, open the pull request. */
-export function createGitHub(config: AgentConfig): GitHub {
+export function createGitHub(config: AgentConfig, options: { fetch?: typeof fetch } = {}): GitHub {
+  const doFetch = options.fetch ?? globalThis.fetch;
   const { owner, repo } = parseRepoUrl(config.repoUrl);
   const base = `https://api.github.com/repos/${owner}/${repo}`;
   const headers = {
@@ -397,7 +399,7 @@ export function createGitHub(config: AgentConfig): GitHub {
 
   return {
     async fetchIssue(issueNumber): Promise<AgentIssue> {
-      const response = await fetch(`${base}/issues/${issueNumber}`, { headers });
+      const response = await doFetch(`${base}/issues/${issueNumber}`, { headers });
       if (!response.ok) {
         throw new Error(`Failed to fetch issue #${issueNumber}: ${response.status}`);
       }
@@ -409,7 +411,7 @@ export function createGitHub(config: AgentConfig): GitHub {
       return { number: issue.number, title: issue.title, body: issue.body ?? '' };
     },
     async openPullRequest({ branch, title, body, labels }): Promise<AgentPullRequest> {
-      const response = await fetch(`${base}/pulls`, {
+      const response = await doFetch(`${base}/pulls`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ head: branch, base: 'main', title, body }),
@@ -419,7 +421,7 @@ export function createGitHub(config: AgentConfig): GitHub {
       }
       const pull = (await response.json()) as { number: number; html_url: string };
       if (labels.length > 0) {
-        await fetch(`${base}/issues/${pull.number}/labels`, {
+        await doFetch(`${base}/issues/${pull.number}/labels`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ labels }),
@@ -428,16 +430,26 @@ export function createGitHub(config: AgentConfig): GitHub {
       return { number: pull.number, url: pull.html_url };
     },
     async createReview({ pullNumber, event, body }): Promise<void> {
-      const response = await fetch(`${base}/pulls/${pullNumber}/reviews`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          event: event === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES',
-          body,
-        }),
-      });
-      if (!response.ok) {
+      const post = (reviewEvent: string, reviewBody: string) =>
+        doFetch(`${base}/pulls/${pullNumber}/reviews`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ event: reviewEvent, body: reviewBody }),
+        });
+
+      const response = await post(event === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES', body);
+      if (response.ok) return;
+      if (response.status !== 422) {
         throw new Error(`Failed to post review on #${pullNumber}: ${response.status}`);
+      }
+
+      // The Agent's token authored the pull request, and GitHub refuses an
+      // approval or change request from the author ("Can not approve your own
+      // pull request"). A comment review is allowed, so carry the verdict in a
+      // marker the CI tracker reads instead.
+      const fallback = await post('COMMENT', withReviewVerdict(event, body));
+      if (!fallback.ok) {
+        throw new Error(`Failed to post review on #${pullNumber}: ${fallback.status}`);
       }
     },
   };
