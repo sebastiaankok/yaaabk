@@ -19,5 +19,4 @@ spec:
             value: /
       backendRefs:
         - name: {{projectName}}
-          port:
-            number: 80
+          port: 80
