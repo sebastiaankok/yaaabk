@@ -206,7 +206,37 @@ function podReady(object: K8sObject): boolean {
   );
 }
 
+/** The parts of a container status the client reads. */
+interface ContainerStatus {
+  state?: {
+    waiting?: { reason?: string; message?: string };
+    terminated?: { reason?: string; exitCode?: number };
+  };
+  lastState?: { terminated?: { reason?: string; exitCode?: number } };
+}
+
+/** Why the first container terminated, and with what exit code. */
+function podTermination(object: K8sObject): { reason: string | null; exitCode: number | null } {
+  const status = object.status as
+    | {
+        initContainerStatuses?: ContainerStatus[];
+        containerStatuses?: ContainerStatus[];
+      }
+    | undefined;
+  const statuses = [...(status?.initContainerStatuses ?? []), ...(status?.containerStatuses ?? [])];
+  for (const container of statuses) {
+    const terminated = container.state?.terminated ?? container.lastState?.terminated;
+    if (terminated === undefined) continue;
+    return {
+      reason: terminated.reason?.trim() || null,
+      exitCode: typeof terminated.exitCode === 'number' ? terminated.exitCode : null,
+    };
+  }
+  return { reason: null, exitCode: null };
+}
+
 function toPodInfo(object: K8sObject): PodInfo {
+  const termination = podTermination(object);
   return {
     name: object.metadata.name,
     namespace: object.metadata.namespace,
@@ -215,6 +245,8 @@ function toPodInfo(object: K8sObject): PodInfo {
     podIP: stringField(object, ['status', 'podIP']) ?? null,
     ready: podReady(object),
     waitingReason: podWaitingReason(object),
+    terminationReason: termination.reason,
+    exitCode: termination.exitCode,
   };
 }
 
@@ -693,6 +725,8 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
               podIP: null,
               ready: false,
               waitingReason: null,
+              terminationReason: null,
+              exitCode: null,
             } satisfies PodInfo;
           }
           return toPodInfo(await objectApi().create(podManifest(namespace, name, spec)));
@@ -708,6 +742,8 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
               podIP: null,
               ready: false,
               waitingReason: null,
+              terminationReason: null,
+              exitCode: null,
             } satisfies PodInfo;
           }
           return toPodInfo(await objectApi().read({ ...KINDS.pod, metadata: { name, namespace } }));
@@ -722,6 +758,24 @@ export function createK8sClient(options: K8sClientOptions = {}): K8sClient {
             labels,
           });
           return objects.map(toPodInfo);
+        }),
+      logs: (namespace, name, options = {}) =>
+        guard('pods.logs', { namespace, name, follow: options.follow ?? false }, async () => {
+          if (dryRun) {
+            return new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            });
+          }
+          return objectApi().logs(
+            { ...KINDS.pod, metadata: { name, namespace } },
+            {
+              follow: options.follow ?? false,
+              ...(options.tailLines === undefined ? {} : { tailLines: options.tailLines }),
+              ...(options.container === undefined ? {} : { container: options.container }),
+            },
+          );
         }),
       delete: (namespace, name) =>
         guard('pods.delete', { namespace, name }, async () => {

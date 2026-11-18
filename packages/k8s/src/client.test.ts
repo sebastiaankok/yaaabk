@@ -18,6 +18,7 @@ function forbiddenObjectApi(): ObjectApi {
     patch: forbidden,
     delete: forbidden,
     watch: forbidden,
+    logs: forbidden,
   };
 }
 
@@ -693,5 +694,74 @@ describe('persistent volume claims', () => {
       value: undefined,
     });
     expect((await client.pvcs.get('project-a', 'agent-workspace')).ok).toBe(false);
+  });
+});
+
+/** Reads a byte stream to text. */
+async function streamText(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
+describe('pods', () => {
+  /** A failed Pod whose kubelet killed its container for using too much memory. */
+  const oomPod: K8sObject = {
+    apiVersion: 'v1',
+    kind: 'Pod',
+    metadata: {
+      name: 'agent-1',
+      namespace: 'project-a',
+      labels: { 'job-name': 'agent-1' },
+    },
+    status: {
+      phase: 'Failed',
+      containerStatuses: [{ state: { terminated: { reason: 'OOMKilled', exitCode: 137 } } }],
+    },
+  };
+
+  it('reports why a Pod terminated, so a silent failure has a cause', async () => {
+    const client = createK8sClient({
+      objectApi: createInMemoryObjectApi([oomPod]),
+      logger: silentLogger,
+    });
+
+    const result = await client.pods.get('project-a', 'agent-1');
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { terminationReason: 'OOMKilled', exitCode: 137 },
+    });
+  });
+
+  it('streams a Pod container log', async () => {
+    const client = createK8sClient({
+      objectApi: createInMemoryObjectApi([oomPod], {
+        logs: { 'project-a/agent-1': 'cloning repo\nrunning OpenCode\n' },
+      }),
+      logger: silentLogger,
+    });
+
+    const result = await client.pods.logs('project-a', 'agent-1', { tailLines: 50 });
+
+    if (!result.ok) throw new Error(`logs failed: ${result.error.message}`);
+    await expect(streamText(result.value)).resolves.toBe('cloning repo\nrunning OpenCode\n');
+  });
+
+  it('maps a missing Pod to not-found rather than an empty log', async () => {
+    const client = createK8sClient({
+      objectApi: createInMemoryObjectApi(),
+      logger: silentLogger,
+    });
+
+    const result = await client.pods.logs('project-a', 'gone');
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.kind).toBe('not-found');
   });
 });

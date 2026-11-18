@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { AgentRun } from '@yaaabk/agents';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Project } from '@yaaabk/projects';
@@ -14,6 +14,7 @@
     listModels,
     listProjectRuns,
     spawnAgent,
+    streamAgentRunLogs,
     updateIssue,
     type ModelCatalogueView,
   } from '#lib/api.js';
@@ -306,6 +307,84 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  /** The newest attempt for the open issue that is still in flight. */
+  const activeRun = $derived(selectedRuns.filter((run) => run.status === 'running').at(-1) ?? null);
+
+  /** Output received for the run being watched, appended as it arrives. */
+  let liveRunId = $state<string | null>(null);
+  let liveLog = $state('');
+  let liveError = $state<string | null>(null);
+
+  // Plain locals, outside the reactive graph: an effect that both reads and
+  // writes this would tear the subscription down on its own re-run.
+  let watchedRunId: string | null = null;
+  let watchController: AbortController | null = null;
+
+  /** Subscribes to a running attempt's log and starts or stops cleanly. */
+  function watchRun(run: AgentRun | null): void {
+    watchController?.abort();
+    watchController = null;
+    watchedRunId = run?.id ?? null;
+    liveRunId = run?.id ?? null;
+    liveLog = '';
+    liveError = null;
+    const project = projectId;
+    if (run === null || project === undefined) return;
+
+    const controller = new AbortController();
+    watchController = controller;
+    const refresh = () => {
+      void listProjectRuns(project)
+        .then((next) => {
+          runs = next;
+        })
+        .catch(() => undefined);
+    };
+    void streamAgentRunLogs(
+      project,
+      run.id,
+      (chunk) => {
+        if (watchedRunId === run.id) liveLog += chunk;
+      },
+      controller.signal,
+    )
+      .catch((cause) => {
+        if (!controller.signal.aborted) liveError = describe(cause);
+      })
+      .finally(() => {
+        // After an abort (issue switched, panel closed) the list is refreshed
+        // by whoever caused it; a stale fetch here would race that.
+        if (!controller.signal.aborted) refresh();
+      });
+  }
+
+  // Follow the running attempt for whichever issue is open; switching issues or
+  // closing the panel aborts the stream instead of holding a Job's log open.
+  $effect(() => {
+    const run = activeRun;
+    if ((run?.id ?? null) !== watchedRunId) watchRun(run);
+  });
+
+  onDestroy(() => {
+    watchController?.abort();
+  });
+
+  // Poll while any attempt is in flight so its status — and the stored log a
+  // finished attempt leaves behind — show up without a manual refresh.
+  $effect(() => {
+    const id = projectId;
+    if (id === undefined) return;
+    if (!runs.some((run) => run.status === 'queued' || run.status === 'running')) return;
+    const timer = setInterval(() => {
+      void listProjectRuns(id)
+        .then((next) => {
+          runs = next;
+        })
+        .catch(() => undefined);
+    }, 5_000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -645,6 +724,19 @@
                         <pre
                           class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
                       </details>
+                    {/if}
+                    {#if liveRunId === run.id}
+                      <div class="w-full">
+                        <p class="text-xs text-neutral-500">Live output</p>
+                        <pre
+                          class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
+                          data-testid="live-agent-log">{liveLog === ''
+                            ? 'Waiting for output…'
+                            : liveLog}</pre>
+                        {#if liveError !== null}
+                          <p class="mt-1 text-xs text-red-700" role="alert">{liveError}</p>
+                        {/if}
+                      </div>
                     {/if}
                   </li>
                 {/each}

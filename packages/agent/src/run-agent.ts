@@ -10,6 +10,16 @@ import {
 const DEFAULT_DIRECTORY = '/work/repo';
 const DEPLOYED_SHA_LABEL = 'yaaabk.io/deployed-sha';
 
+/**
+ * Writes a progress line to the Job's stdout.
+ *
+ * The UI streams those logs live, so each phase is visible while the attempt
+ * runs instead of only when it reports back.
+ */
+function progress(message: string): void {
+  process.stdout.write(`[yaaabk] ${message}\n`);
+}
+
 /** Converts a USD amount to whole cents, rounding to the nearest cent. */
 function centsFromUsd(usd: number): number {
   return Math.round(usd * 100);
@@ -86,6 +96,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
   const issue = await deps.github.fetchIssue(config.issueNumber);
   const logs: string[] = [];
 
+  progress(`issue #${issue.number}: cloning ${config.repoUrl}`);
   await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
   if (fix) {
     await deps.git.checkoutBranch(directory, branch);
@@ -93,6 +104,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     await deps.git.createBranch(directory, branch);
   }
 
+  progress(`branch ${branch}: running OpenCode (${config.model ?? 'default model'})`);
   const implemented = await measureSpend(deps.spend, () =>
     deps.openCode.implement({
       directory,
@@ -102,6 +114,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
   const { result, costCents } = implemented;
   logs.push(result.output);
   if (result.exitCode !== 0) {
+    progress(`OpenCode failed with exit code ${result.exitCode}; reporting`);
     await deps.reporter.report({
       prUrl: null,
       logs: logs.join('\n'),
@@ -115,9 +128,11 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     };
   }
 
+  progress('OpenCode finished; running the project checks');
   const checks = await deps.checks.run(directory);
   logs.push(checks.output);
   if (!checks.passed) {
+    progress('checks failed; reporting');
     await deps.reporter.report({
       prUrl: null,
       logs: logs.join('\n'),
@@ -126,6 +141,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     return { ok: false, reason: 'checks-failed', output: checks.output, branch };
   }
 
+  progress('checks passed; committing and pushing');
   await deps.git.commitAll(directory, `${pullRequestTitle(issue)} (#${issue.number})`);
   await deps.git.push(directory, branch, { force: fix });
   const pullRequest = await deps.github.openPullRequest({
@@ -134,6 +150,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     body: pullRequestBody(issue),
     labels: [AUTOMERGE_LABEL],
   });
+  progress(`opened pull request ${pullRequest.url}`);
 
   await deps.reporter.report({
     prUrl: pullRequest.url,
@@ -160,6 +177,7 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
   await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
   await deps.git.checkoutBranch(directory, branch);
 
+  progress(`reviewing pull request #${pullNumber} (${config.model ?? 'default model'})`);
   const diff = await deps.git.diff(directory);
   const reviewed = await measureSpend(deps.spend, () =>
     deps.openCode.review({
@@ -221,6 +239,7 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
     await deps.git.checkoutCommit(directory, commitSha);
     logs.push(`Checked out ${commitSha}`);
 
+    progress(`deploying ${commitSha} to ${namespace}`);
     await deps.kubectl.applyServerSide({ directory, namespace, path: deployPath });
     logs.push(`Applied ${deployPath} with server-side apply`);
 

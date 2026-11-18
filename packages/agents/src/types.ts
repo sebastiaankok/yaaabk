@@ -197,6 +197,14 @@ export interface AgentReport {
   deployOutcome?: 'success' | 'failed';
 }
 
+/** How much output to stream from a run, and whether to wait for more. */
+export interface AgentLogOptions {
+  /** Keep the stream open while the Job runs. Defaults to `true`. */
+  follow?: boolean;
+  /** Newest N lines to start from. Defaults to the Job's recent output. */
+  tailLines?: number;
+}
+
 /** The kinds of failure an Agent Manager command can report. */
 export type AgentErrorKind =
   'invalid-input' | 'not-found' | 'issue-not-synced' | 'kubernetes' | 'unauthorized' | 'unknown';
@@ -244,6 +252,14 @@ export interface AgentManager {
    * Job was given.
    */
   report(runId: string, token: string, report: AgentReport): Promise<AgentsResult<AgentRun>>;
+  /**
+   * Streams a run's output for the UI.
+   *
+   * A finished run yields its stored log; a running one yields its Pod's
+   * output live and closes when the container exits. The stream carries text
+   * as UTF-8 bytes, so callers can append it verbatim.
+   */
+  logs(runId: string, options?: AgentLogOptions): Promise<AgentsResult<ReadableStream<Uint8Array>>>;
 }
 
 /**

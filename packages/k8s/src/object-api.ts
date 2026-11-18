@@ -35,12 +35,27 @@ export interface ListOptions {
   labels?: Record<string, string>;
 }
 
+/** How much of a container's output to read, and whether to keep following it. */
+export interface LogOptions {
+  /** Keep the connection open and emit output as it is written. */
+  follow?: boolean;
+  /** Newest N lines to start from; omit for the whole log. */
+  tailLines?: number;
+  /** Container to read from; omit for a single-container Pod. */
+  container?: string;
+}
+
 export interface ObjectApi {
   create(spec: K8sObject): Promise<K8sObject>;
   read(ref: K8sObjectRef): Promise<K8sObject>;
   list(apiVersion: string, kind: string, options?: ListOptions): Promise<K8sObject[]>;
   patch(spec: K8sObject): Promise<K8sObject>;
   delete(ref: K8sObjectRef): Promise<void>;
+  /**
+   * Streams a Pod container's log. Closes when the container ends when
+   * `follow` is set, so a caller can treat stream end as "no more output".
+   */
+  logs(ref: K8sObjectRef, options?: LogOptions): Promise<ReadableStream<Uint8Array>>;
   /**
    * Subscribes to updates for a single object. Resolves to an unsubscribe
    * function. The adapter may deliver a synthetic initial event.

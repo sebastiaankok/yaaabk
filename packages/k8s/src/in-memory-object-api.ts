@@ -1,6 +1,14 @@
 import { apiError } from './errors';
 import type { K8sObject, K8sObjectRef, ListOptions, ObjectApi } from './object-api';
 
+export interface InMemoryObjectApiOptions {
+  /**
+   * Scripted container output, keyed by `namespace/name`, so tests can assert
+   * what a caller does with Pod logs. A Pod without an entry logs nothing.
+   */
+  logs?: Record<string, string>;
+}
+
 /** Deep-copies a plain object so callers cannot mutate the store. */
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -35,7 +43,10 @@ function merge(existing: K8sObject, patch: K8sObject): K8sObject {
  * namespace and labels. Failures carry an HTTP status code so the client maps
  * them to the same typed errors as a real cluster.
  */
-export function createInMemoryObjectApi(seed: K8sObject[] = []): ObjectApi {
+export function createInMemoryObjectApi(
+  seed: K8sObject[] = [],
+  options: InMemoryObjectApiOptions = {},
+): ObjectApi {
   const store = new Map<string, K8sObject>();
   const watchers = new Map<string, Set<(object: K8sObject) => void>>();
   for (const object of seed) {
@@ -96,6 +107,22 @@ export function createInMemoryObjectApi(seed: K8sObject[] = []): ObjectApi {
         throw apiError(404, `${ref.kind} ${ref.metadata.name} not found`);
       }
       store.delete(key);
+    },
+
+    async logs(ref) {
+      if (!store.has(keyOf(ref))) {
+        throw apiError(404, `${ref.kind} ${ref.metadata.name} not found`);
+      }
+      const key = `${ref.metadata.namespace ?? ''}/${ref.metadata.name}`;
+      const text = options.logs?.[key] ?? '';
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (text !== '') {
+            controller.enqueue(new TextEncoder().encode(text));
+          }
+          controller.close();
+        },
+      });
     },
 
     async watch(ref, onEvent) {

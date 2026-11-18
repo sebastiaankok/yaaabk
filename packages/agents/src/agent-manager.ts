@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { GitHubIssues } from '@yaaabk/github';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
-import type { K8sClient, JobSpec } from '@yaaabk/k8s';
+import type { K8sClient, JobSpec, PodInfo } from '@yaaabk/k8s';
 import {
   DEPLOY_SOURCE_PATH,
   PROJECT_AGENT_SERVICE_ACCOUNT,
@@ -32,6 +32,7 @@ import {
 import { agentsError, consoleLogger, toAgentsError, type AgentsLogger } from './errors';
 import type {
   AgentGithubTokenResolver,
+  AgentLogOptions,
   AgentManager,
   AgentReport,
   AgentRun,
@@ -121,6 +122,50 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/** The label Kubernetes puts on every Pod a Job creates. */
+const JOB_POD_LABEL = 'job-name';
+
+/** Cap on captured failure output, so a chatty run cannot fill the store. */
+const MAX_FAILURE_LOG_CHARS = 200_000;
+
+/** How long a reconcile pass waits for a dead Pod's log before moving on. */
+const FAILURE_LOG_READ_TIMEOUT_MS = 5_000;
+
+/** A stream that yields `text` once and closes. */
+function textStream(text: string): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (text !== '') {
+        controller.enqueue(new TextEncoder().encode(text));
+      }
+      controller.close();
+    },
+  });
+}
+
+/** Reads a byte stream to text, keeping only the last `limit` characters. */
+async function readStreamText(stream: ReadableStream<Uint8Array>, limit: number): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  // A dead Job's log endpoint can hang open; stop reading and keep what arrived.
+  const timer = setTimeout(() => {
+    void reader.cancel().catch(() => undefined);
+  }, FAILURE_LOG_READ_TIMEOUT_MS);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (text.length > limit) text = text.slice(-limit);
+    }
+    return text + decoder.decode();
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
 /** Strips the report-token hash, leaving what callers may see. */
 function toPublicRun(run: StoredAgentRun): AgentRun {
   return {
@@ -197,6 +242,40 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     if (configured === undefined) return undefined;
     const token = typeof configured === 'function' ? await configured(kind) : configured;
     return token === '' ? undefined : token;
+  }
+
+  /** The Pod a run's Job created, once the scheduler has placed it. */
+  async function jobPod(namespace: string, jobName: string): Promise<PodInfo | undefined> {
+    const pods = await k8s.pods.list(namespace, { [JOB_POD_LABEL]: jobName });
+    if (!pods.ok) return undefined;
+    // A Job runs one Pod at a time, so the newest is the only candidate.
+    return pods.value.at(-1);
+  }
+
+  /**
+   * Captures why a run's Pod stopped and what it printed last.
+   *
+   * A Pod killed by the kubelet — notably an `OOMKilled` one — never reaches
+   * its own error handling, so it reports nothing. Without this the run is
+   * marked failed with an empty log and no clue; the kubelet still has the
+   * container's output and termination reason, so read those here.
+   */
+  async function failureLogs(namespace: string, run: StoredAgentRun): Promise<string | undefined> {
+    if (run.jobName === null) return undefined;
+    const pod = await jobPod(namespace, run.jobName);
+    if (pod === undefined) return undefined;
+
+    const parts: string[] = [];
+    if (pod.terminationReason !== null) {
+      const exit = pod.exitCode === null ? '' : ` (exit code ${pod.exitCode})`;
+      parts.push(`Pod ${pod.name} terminated: ${pod.terminationReason}${exit}`);
+    }
+    const stream = await k8s.pods.logs(namespace, pod.name, { tailLines: 400 });
+    if (stream.ok) {
+      const output = await readStreamText(stream.value, MAX_FAILURE_LOG_CHARS);
+      if (output.trim() !== '') parts.push(output.trimEnd());
+    }
+    return parts.length === 0 ? undefined : parts.join('\n\n');
   }
 
   /**
@@ -402,7 +481,11 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         labels,
         resources: {
           requests: { cpu: '500m', memory: '512Mi' },
-          limits: { cpu: '1', memory: '1Gi' },
+          // OpenCode's server keeps a session's state in memory and grew past
+          // 1Gi a few minutes into a healthy run, so the kubelet OOM-killed it
+          // with nothing reported. 2Gi/2 CPUs leave headroom for a full
+          // attempt, including the project's own test and typecheck runs.
+          limits: { cpu: '2', memory: '2Gi' },
         },
         podSecurityContext: AGENT_POD_SECURITY_CONTEXT,
         containerSecurityContext: AGENT_CONTAINER_SECURITY_CONTEXT,
@@ -437,7 +520,26 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   /** Marks a run terminal and decides whether to retry or escalate. */
   async function failRun(run: StoredAgentRun, summary: ReconcileSummary): Promise<void> {
     const finishedAt = now().toISOString();
-    store.update({ ...run, status: 'failed', finishedAt });
+
+    // Capture the dead Pod's output before recording the failure: a run killed
+    // by the kubelet (OOMKilled, evicted) never reports, and this is the only
+    // clue the Developer gets.
+    let logs = run.logs;
+    const project = projects.get(run.projectId);
+    if (project !== undefined) {
+      try {
+        const captured = await failureLogs(project.namespace, run);
+        if (captured !== undefined) logs = captured;
+      } catch (error) {
+        logger.error('agents failure log capture failed', {
+          runId: run.id,
+          jobName: run.jobName,
+          error: String(error),
+        });
+      }
+    }
+
+    store.update({ ...run, status: 'failed', finishedAt, logs });
     summary.failed += 1;
 
     if (run.kind === 'deploy') {
@@ -707,6 +809,36 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         }
 
         return toPublicRun(updated);
+      });
+    },
+
+    logs(runId, logOptions: AgentLogOptions = {}) {
+      return guard('logs', { runId }, async () => {
+        const run = store.get(runId);
+        if (run === undefined) {
+          throw agentsError('not-found', `No agent run with id "${runId}"`);
+        }
+        // A finished run has no Pod left to follow; its stored log is the record.
+        if (run.status !== 'running' || run.jobName === null) {
+          return textStream(run.logs ?? '');
+        }
+        const project = projects.get(run.projectId);
+        if (project === undefined) {
+          throw agentsError('not-found', `No project with id "${run.projectId}"`);
+        }
+        const pod = await jobPod(project.namespace, run.jobName);
+        if (pod === undefined) {
+          // The Job exists but the scheduler has not placed its Pod yet.
+          return textStream(run.logs ?? '');
+        }
+        const result = await k8s.pods.logs(project.namespace, pod.name, {
+          follow: logOptions.follow ?? true,
+          tailLines: logOptions.tailLines ?? 500,
+        });
+        if (!result.ok) {
+          throw agentsError('kubernetes', `pods.logs failed: ${result.error.message}`);
+        }
+        return result.value;
       });
     },
   };
