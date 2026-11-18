@@ -1,3 +1,4 @@
+import { reviewVerdictFromBody } from '@yaaabk/shared';
 import { githubError, kindForStatus, messageOf, toGitHubError } from './errors';
 import {
   summarizeCheckRuns,
@@ -56,7 +57,10 @@ const REVIEW_EVENTS: Readonly<Record<string, GitHubReviewEvent>> = {
 function toReview(raw: RawReview, fallback: GitHubReviewEvent): GitHubReview {
   return {
     id: raw.id,
-    event: REVIEW_EVENTS[raw.state] ?? fallback,
+    // A review on the Agent's own pull request cannot APPROVE or
+    // REQUEST_CHANGES (GitHub answers 422), so it is posted as a COMMENT with
+    // the verdict in the body; read that before falling back.
+    event: REVIEW_EVENTS[raw.state] ?? reviewVerdictFromBody(raw.body ?? '') ?? fallback,
     body: raw.body ?? '',
     submittedAt: raw.submitted_at,
     commitId: raw.commit_id ?? null,

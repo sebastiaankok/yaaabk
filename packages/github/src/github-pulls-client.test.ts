@@ -240,6 +240,25 @@ describe('listReviews', () => {
     });
   });
 
+  it('reads a verdict a comment review carries for a self-authored pull request', async () => {
+    const { pulls } = client(() => [
+      {
+        id: 13,
+        body: '<!-- yaaabk-verdict: request-changes -->\n\nFix the /api fallback.',
+        state: 'COMMENTED',
+        submitted_at: '2026-01-03T00:00:00Z',
+        commit_id: 'sha-7',
+      },
+    ]);
+
+    const result = await pulls.listReviews('acme/todo-app', 7);
+
+    expect(result.ok && result.value[0]).toMatchObject({
+      event: 'request-changes',
+      body: '<!-- yaaabk-verdict: request-changes -->\n\nFix the /api fallback.',
+    });
+  });
+
   it('returns an empty list when the pull request has no reviews', async () => {
     const { pulls } = client(() => []);
 

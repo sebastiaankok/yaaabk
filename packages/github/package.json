@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@yaaabk/issues": "workspace:*",
+    "@yaaabk/shared": "workspace:*",
     "jose": "^6.1.0"
   },
   "devDependencies": {

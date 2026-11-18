@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BoundedOutput, createOpenCode, createOpenRouterMeter, createReporter } from './adapters';
+import {
+  BoundedOutput,
+  createGitHub,
+  createOpenCode,
+  createOpenRouterMeter,
+  createReporter,
+} from './adapters';
 import type { AgentConfig } from './config';
 
 const CONFIG: AgentConfig = {
@@ -313,5 +319,32 @@ describe('BoundedOutput', () => {
     output.append(encoder.encode('abcdefgh'));
 
     expect(output.text()).toBe('efgh');
+  });
+});
+
+describe('createGitHub createReview', () => {
+  it('carries the verdict in a comment review when GitHub refuses a self-review', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const responses = [
+      new Response(
+        JSON.stringify({
+          message: 'Unprocessable Entity',
+          errors: ['Review Can not request changes on your own pull request'],
+        }),
+        { status: 422 },
+      ),
+      new Response(JSON.stringify({ id: 1 }), { status: 201 }),
+    ];
+    const fetchStub = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return responses.shift()!;
+    }) as unknown as typeof fetch;
+
+    const github = createGitHub(CONFIG, { fetch: fetchStub });
+    await github.createReview({ pullNumber: 5, event: 'request-changes', body: 'Fix the API.' });
+
+    expect(bodies.map((body) => body['event'])).toEqual(['REQUEST_CHANGES', 'COMMENT']);
+    expect(bodies[1]?.['body']).toContain('yaaabk-verdict: request-changes');
+    expect(bodies[1]?.['body']).toContain('Fix the API.');
   });
 });
