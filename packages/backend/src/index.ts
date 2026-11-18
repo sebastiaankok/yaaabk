@@ -342,8 +342,9 @@ const resolveGithubTokenForScaffold = async (): Promise<string | undefined> => {
 
 /**
  * The permission each kind of agent Job needs. Implement-issue runs push code,
- * open pull requests and manage Issues; a review run only reads code and posts
- * a review, so a leaked review token cannot push or merge.
+ * open pull requests and manage Issues; a review run only reads code and the
+ * Issue it judges, and posts a review, so a leaked review token cannot push or
+ * merge.
  */
 const AGENT_TOKEN_PERMISSIONS: Record<AgentTokenScope, InstallationTokenPermissions> = {
   'implement-issue': {
@@ -356,6 +357,10 @@ const AGENT_TOKEN_PERMISSIONS: Record<AgentTokenScope, InstallationTokenPermissi
   review: {
     contents: 'read',
     pull_requests: 'write',
+    // A review starts by fetching the Issue to judge the change against; with
+    // only `pull_requests` the fetch fails with 403 and every review dies
+    // before cloning.
+    issues: 'read',
   },
   deploy: {
     contents: 'read',
