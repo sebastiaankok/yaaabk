@@ -103,9 +103,13 @@ export function createKubectl(): Kubectl {
   return {
     async applyServerSide({ directory, namespace, path }) {
       const manifestPath = join(directory, path);
+      // `setImage` below patches the image as the `kubectl-set` field manager.
+      // Without `--force-conflicts`, the next deploy's server-side apply
+      // (manager `kubectl`) is rejected for trying to take that field back, so
+      // only the first deploy of a Project would ever succeed.
       await expectSuccess(
         'kubectl apply',
-        Bun.$`kubectl apply --server-side --namespace ${namespace} -f ${manifestPath}`
+        Bun.$`kubectl apply --server-side --force-conflicts --namespace ${namespace} -f ${manifestPath}`
           .quiet()
           .nothrow(),
       );
