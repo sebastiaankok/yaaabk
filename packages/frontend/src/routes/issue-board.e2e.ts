@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { IssueGraph } from '@yaaabk/issues';
 
 const PROJECT = {
@@ -85,6 +85,19 @@ const FAILED = issue({
   summary: 'Deploy the project to Kubernetes.',
   createdAt: '2026-01-04T00:00:00.000Z',
 });
+
+const RUNNING = {
+  id: 'r-live',
+  issueId: 'i1',
+  attemptNumber: 2,
+  status: 'running',
+  prUrl: null,
+  costCents: 0,
+  model: null,
+  logs: null,
+  startedAt: '2026-01-01T00:10:00.000Z',
+  finishedAt: null,
+};
 
 const GRAPH: IssueGraph = {
   nodes: [
@@ -177,6 +190,76 @@ async function mockBoard(page: Page): Promise<Mocks> {
 /** The board card for an issue title, matched by the start of its accessible name. */
 function card(page: Page, title: string) {
   return page.getByRole('button', { name: new RegExp(`^${title} `) });
+}
+
+/**
+ * Replaces the agent-log endpoint with an event stream the test feeds one chunk
+ * at a time, so it can append output while the drawer stays open.
+ */
+async function mockLiveAgentLog(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    const encoder = new TextEncoder();
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const agentLog = {
+      push(chunk: string) {
+        const frame = `event: log\ndata: ${JSON.stringify({ chunk })}\n\n`;
+        for (const controller of controllers) controller.enqueue(encoder.encode(frame));
+      },
+    };
+    (window as unknown as { __agentLog: typeof agentLog }).__agentLog = agentLog;
+
+    window.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const url = new URL(raw, window.location.href);
+      if (!/^\/api\/projects\/[^/]+\/agent-runs\/[^/]+\/logs$/.test(url.pathname)) {
+        return originalFetch(input, init);
+      }
+      let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+      const stream = new ReadableStream<Uint8Array>({
+        start(next) {
+          controller = next;
+          controllers.push(next);
+        },
+      });
+      init?.signal?.addEventListener('abort', () => {
+        if (controller === null) return;
+        const index = controllers.indexOf(controller);
+        if (index !== -1) controllers.splice(index, 1);
+        try {
+          controller.close();
+        } catch {
+          // The stream already finished; there is nothing left to close.
+        }
+      });
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      );
+    }) as typeof fetch;
+  });
+}
+
+/** Appends a chunk to every open live agent log. */
+async function pushAgentLog(page: Page, chunk: string): Promise<void> {
+  await page.evaluate((text) => {
+    (window as unknown as { __agentLog: { push(chunk: string): void } }).__agentLog.push(text);
+  }, chunk);
+}
+
+/** Numbered lines, enough of them to overflow the live output panel. */
+function numberedLines(from: number, to: number): string {
+  return Array.from({ length: to - from + 1 }, (_, index) => `line ${from + index}`).join('\n');
+}
+
+/** Whether a scroll box is showing its last pixel. */
+async function isAtBottom(scroller: Locator): Promise<boolean> {
+  return scroller.evaluate((element) => {
+    const box = element as HTMLElement;
+    return box.scrollHeight - box.scrollTop - box.clientHeight <= 1;
+  });
 }
 
 test('groups issues into their lanes with labels and waves', async ({ page }) => {
@@ -572,4 +655,122 @@ test('edits and deletes the open issue', async ({ page }) => {
 
   await expect(panel).toBeHidden();
   await expect(card(page, 'Schema v2')).toBeHidden();
+});
+
+test('follows live agent output while the reader is at the bottom', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.runs = [...state.runs, RUNNING];
+  await mockLiveAgentLog(page);
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  const live = panel.getByTestId('live-agent-log');
+  await expect(live).toBeVisible();
+
+  await pushAgentLog(page, numberedLines(1, 80));
+
+  await expect(live).toContainText('line 80');
+  await expect.poll(() => isAtBottom(live)).toBe(true);
+});
+
+test('pauses following when the reader scrolls up and resumes at the bottom', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.runs = [...state.runs, RUNNING];
+  await mockLiveAgentLog(page);
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  const live = panel.getByTestId('live-agent-log');
+  const jump = panel.getByRole('button', { name: 'Jump to latest' });
+
+  await pushAgentLog(page, numberedLines(1, 80));
+  await expect(live).toContainText('line 80');
+  await expect(jump).toHaveCount(0);
+
+  await live.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(jump).toBeVisible();
+  await expect.poll(() => isAtBottom(live)).toBe(false);
+
+  await pushAgentLog(page, `\n${numberedLines(81, 160)}`);
+  await expect(live).toContainText('line 160');
+  await expect.poll(() => isAtBottom(live)).toBe(false);
+
+  // Reaching the bottom by hand is enough to start following again.
+  await live.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(jump).toHaveCount(0);
+
+  await pushAgentLog(page, `\n${numberedLines(161, 240)}`);
+  await expect(live).toContainText('line 240');
+  await expect.poll(() => isAtBottom(live)).toBe(true);
+  await expect(jump).toHaveCount(0);
+
+  // Scrolling up pauses again; the button returns to the newest line.
+  await live.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(jump).toBeVisible();
+  await pushAgentLog(page, `\n${numberedLines(241, 320)}`);
+  await expect(live).toContainText('line 320');
+  await expect.poll(() => isAtBottom(live)).toBe(false);
+
+  await jump.click();
+  await expect.poll(() => isAtBottom(live)).toBe(true);
+  await expect(jump).toHaveCount(0);
+});
+
+test('starts following when the drawer opens and leaves stored logs at the top', async ({
+  page,
+}) => {
+  const state = await mockBoard(page);
+  state.runs = [
+    { ...state.runs[0], logs: numberedLines(1, 80) },
+    RUNNING,
+    { ...RUNNING, id: 'r-auth', issueId: 'i3', attemptNumber: 1 },
+  ];
+  await mockLiveAgentLog(page);
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  const live = panel.getByTestId('live-agent-log');
+  await pushAgentLog(page, numberedLines(1, 80));
+  await expect(live).toContainText('line 80');
+  await expect.poll(() => isAtBottom(live)).toBe(true);
+
+  // The stored Logs disclosure stays a plain scroll box that opens at the top.
+  await panel.getByText('Logs').click();
+  const stored = panel.locator('details pre');
+  await expect(stored).toBeVisible();
+  expect(await stored.evaluate((element) => element.scrollTop)).toBe(0);
+
+  // Pause, close, reopen: the drawer starts following again from the newest line.
+  await live.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(panel.getByRole('button', { name: 'Jump to latest' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Close details' }).click();
+  await card(page, 'Schema').click();
+
+  const reopened = page.getByRole('dialog', { name: 'Schema' });
+  const reopenedLive = reopened.getByTestId('live-agent-log');
+  await expect(reopened.getByRole('button', { name: 'Jump to latest' })).toHaveCount(0);
+
+  await pushAgentLog(page, `\n${numberedLines(81, 160)}`);
+  await expect(reopenedLive).toContainText('line 160');
+  await expect.poll(() => isAtBottom(reopenedLive)).toBe(true);
+
+  // Opening the stored log after the new output still shows its first line.
+  await reopened.getByText('Logs').click();
+  const reopenedStored = reopened.locator('details pre');
+  await expect(reopenedStored).toBeVisible();
+  expect(await reopenedStored.evaluate((element) => element.scrollTop)).toBe(0);
 });

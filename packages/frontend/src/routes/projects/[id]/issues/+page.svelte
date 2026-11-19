@@ -23,6 +23,7 @@
     type ModelCatalogueView,
   } from '#lib/api.js';
   import Markdown from '#lib/markdown.svelte';
+  import { isAtBottom } from '#lib/scroll.js';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
   import { SUMMARY_MAX_LENGTH, summaryForIssue, validateSummary } from '#lib/summary.js';
   import {
@@ -435,6 +436,10 @@
   let liveRunId = $state<string | null>(null);
   let liveLog = $state('');
   let liveError = $state<string | null>(null);
+  /** The live output box, scrolled only while the Developer is following it. */
+  let liveLogEl = $state<HTMLElement | null>(null);
+  /** Whether new output scrolls into view; paused while the reader is scrolled up. */
+  let following = $state(true);
 
   // Plain locals, outside the reactive graph: an effect that both reads and
   // writes this would tear the subscription down on its own re-run.
@@ -452,6 +457,9 @@
     liveRunId = run?.id ?? null;
     liveLog = '';
     liveError = null;
+    // Opening the drawer, or moving to another run, starts at the newest line
+    // rather than inheriting a pause from the output that was on screen before.
+    following = true;
     const project = projectId;
     if (run === null || project === undefined) return;
 
@@ -503,6 +511,29 @@
     const run = activeRun;
     if ((run?.id ?? null) !== watchedRunId) watchRun(run);
   });
+
+  // Scroll the newest line into view after Svelte has written the chunk, but
+  // only while the Developer is following. Output that arrives while they are
+  // reading back through the log leaves their place alone.
+  $effect(() => {
+    const element = liveLogEl;
+    void liveLog;
+    if (element === null || !following || liveRunId === null) return;
+    element.scrollTop = element.scrollHeight;
+  });
+
+  /** Pauses following as soon as the reader leaves the bottom. */
+  function handleLiveLogScroll(): void {
+    if (liveLogEl === null) return;
+    following = isAtBottom(liveLogEl);
+  }
+
+  /** Returns to the newest output and resumes following it. */
+  function jumpToLatest(): void {
+    if (liveLogEl === null) return;
+    liveLogEl.scrollTop = liveLogEl.scrollHeight;
+    following = true;
+  }
 
   onDestroy(() => {
     watchController?.abort();
@@ -942,8 +973,21 @@
                     {/if}
                     {#if liveRunId === run.id}
                       <div class="w-full">
-                        <p class="text-xs text-neutral-500">Live output</p>
+                        <div class="flex items-center justify-between gap-2">
+                          <p class="text-xs text-neutral-500">Live output</p>
+                          {#if !following}
+                            <button
+                              type="button"
+                              onclick={jumpToLatest}
+                              class="rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                            >
+                              Jump to latest
+                            </button>
+                          {/if}
+                        </div>
                         <pre
+                          bind:this={liveLogEl}
+                          onscroll={handleLiveLogScroll}
                           class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
                           data-testid="live-agent-log">{liveLog === ''
                             ? 'Waiting for output…'
