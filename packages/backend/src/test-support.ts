@@ -44,7 +44,16 @@ import {
   type AgentManager,
 } from '@yaaabk/agents';
 import { createCiTracker, silentLogger as ciLogger, type CiTracker } from '@yaaabk/ci-tracker';
-import type { ModelCatalogue, SessionModel } from '@yaaabk/cost-control';
+import {
+  createCostControlModule,
+  createFakeOpenRouterApi,
+  createInMemoryBudgetStore,
+  silentLogger as budgetLogger,
+  type CostControlModule,
+  type FakeOpenRouterApi,
+  type ModelCatalogue,
+  type SessionModel,
+} from '@yaaabk/cost-control';
 import {
   createFakeGitHubVerifier,
   createFakeOpenRouterCreditsReader,
@@ -141,6 +150,8 @@ export interface TestContext {
   models: FakeModelCatalogue;
   agents: AgentManager;
   ciTracker: CiTracker;
+  issueBudgets: CostControlModule;
+  budgetApi: FakeOpenRouterApi;
   pulls: FakeGitHubPulls;
   settings: SettingsModule;
   openRouterCredits: ReturnType<typeof createFakeOpenRouterCreditsReader> & OpenRouterCreditsReader;
@@ -276,6 +287,13 @@ export function createTestContext(
     githubVerifier: createFakeGitHubVerifier(),
   });
   const models = createFakeModelCatalogue();
+  const budgetApi = createFakeOpenRouterApi();
+  const issueBudgets = createCostControlModule({
+    api: budgetApi,
+    store: createInMemoryBudgetStore(),
+    now: () => new Date(clock.ms),
+    logger: budgetLogger,
+  });
   const ciTracker = createCiTracker({
     projects: projectStore,
     issues,
@@ -304,6 +322,7 @@ export function createTestContext(
       ciTracker,
       settings,
       models,
+      issueBudgets,
       defaultModel: TEST_DEFAULT_MODEL,
       authRoutesOptions,
     }),
@@ -319,6 +338,8 @@ export function createTestContext(
     models,
     agents,
     ciTracker,
+    issueBudgets,
+    budgetApi,
     pulls,
     settings,
     openRouterCredits,

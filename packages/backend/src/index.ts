@@ -614,6 +614,7 @@ const app = createApp({
   ciTracker,
   settings,
   models: modelCatalogue,
+  issueBudgets,
   defaultModel,
   webOrigin: process.env.YAAABK_WEB_ORIGIN,
   authRoutesOptions: { secureCookies: process.env.NODE_ENV === 'production' },

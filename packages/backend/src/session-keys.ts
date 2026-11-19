@@ -61,9 +61,29 @@ export interface IssuedOpenRouterKey {
   createdAt: string;
 }
 
+/**
+ * Why a key could not be minted. The caller uses this to decide whether the
+ * Issue needs a human (its budget cannot cover a reply) or whether the problem
+ * is a credential or provider failure.
+ */
+export type OpenRouterKeyFailureReason =
+  'missing-credential' | 'reply-reservation' | 'account-credits' | 'other';
+
 /** Either a freshly minted key or an actionable reason it could not be made. */
 export type OpenRouterKeyResult =
-  { ok: true; value: IssuedOpenRouterKey } | { ok: false; message: string };
+  | { ok: true; value: IssuedOpenRouterKey }
+  | {
+      ok: false;
+      message: string;
+      /** Machine-readable cause, when the issuer can classify it. */
+      reason?: OpenRouterKeyFailureReason;
+      /** The model whose reply reservation was priced, for a budget refusal. */
+      model?: string;
+      /** Worst-case reply cost in USD that the budget could not cover. */
+      requiredUsd?: number;
+      /** The budget in USD that was checked, for a budget refusal. */
+      budgetUsd?: number;
+    };
 
 /** Mints and revokes budgeted OpenRouter keys from the platform credential. */
 export interface OpenRouterKeyIssuer {
@@ -162,7 +182,7 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
       const { managementKey, budgetCents } = await resolveCredentials();
       if (managementKey === undefined) {
         logger.error('openrouter key mint failed: no management credential', { subject });
-        return { ok: false, message: MISSING_CREDENTIAL_MESSAGE };
+        return { ok: false, message: MISSING_CREDENTIAL_MESSAGE, reason: 'missing-credential' };
       }
       const cents = budgetOverride ?? budgetCents;
       const api = buildApi(managementKey);
@@ -180,6 +200,10 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
           return {
             ok: false,
             message: `The ${usdLabel(budgetUsd)} budget is below the ${usdLabel(requirement.requiredUsd)} ${requirement.model} can reserve for one reply. Raise the budget or choose a cheaper model.`,
+            reason: 'reply-reservation',
+            model: requirement.model,
+            requiredUsd: requirement.requiredUsd,
+            budgetUsd,
           };
         }
         try {
@@ -192,6 +216,9 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
             return {
               ok: false,
               message: `The OpenRouter account has ${usdLabel(credits.remainingUsd)} in credits left, but ${requirement.model} can reserve up to ${usdLabel(requirement.requiredUsd)} for one reply. Add credits at https://openrouter.ai/settings/credits or choose a free model.`,
+              reason: 'account-credits',
+              model: requirement.model,
+              requiredUsd: requirement.requiredUsd,
             };
           }
         } catch (error) {
@@ -224,6 +251,7 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
         return {
           ok: false,
           message: `Could not create the OpenRouter key: ${messageOf(error)}`,
+          reason: 'other',
         };
       }
     },

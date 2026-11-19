@@ -8,7 +8,7 @@ import {
 } from './errors';
 import { mintKey, revokeKey, usdFromCents } from './keys';
 import type { OpenRouterApi, OpenRouterKey } from './openrouter-api';
-import type { BudgetRecord, CostControlModule, CostControlResult } from './types';
+import type { BudgetRecord, BudgetSummary, CostControlModule, CostControlResult } from './types';
 
 export interface CostControlModuleOptions {
   /**
@@ -144,6 +144,44 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
         store.save(next);
         return next;
       });
+    },
+    summary: (issueId, requestedBudgetCents) => {
+      const trimmed = issueId?.trim() ?? '';
+      return guard(
+        'summary',
+        { issueId: trimmed, budgetCents: requestedBudgetCents },
+        async (): Promise<BudgetSummary> => {
+          if (trimmed === '') {
+            throw costControlError('invalid-input', 'An issue id is required');
+          }
+          const budgetCents = budgetOrThrow(requestedBudgetCents);
+          const record = store.get(trimmed);
+          if (record === undefined) {
+            return {
+              issueId: trimmed,
+              budgetCents,
+              spentCents: 0,
+              remainingCents: budgetCents,
+              keyOpen: false,
+              exhausted: false,
+            };
+          }
+
+          const info = await api.getKey(record.keyHash);
+          const spentCents = record.spentCents + centsFromUsd(info.usageUsd);
+          const remainingCents = Math.max(0, budgetCents - spentCents);
+          const expiresAt = info.expiresAt ?? record.expiresAt;
+          const expired = expiresAt <= now().toISOString();
+          return {
+            issueId: trimmed,
+            budgetCents,
+            spentCents,
+            remainingCents,
+            keyOpen: true,
+            exhausted: info.disabled || expired || remainingCents <= 0,
+          };
+        },
+      );
     },
     status: (issueId) => {
       const trimmed = issueId?.trim() ?? '';

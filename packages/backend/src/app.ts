@@ -1,7 +1,7 @@
 import type { AgentManager } from '@yaaabk/agents';
 import type { AuthModule } from '@yaaabk/auth';
 import type { CiTracker } from '@yaaabk/ci-tracker';
-import type { ModelCatalogue } from '@yaaabk/cost-control';
+import type { CostControlModule, ModelCatalogue } from '@yaaabk/cost-control';
 import type { IssueSyncModule } from '@yaaabk/github';
 import type { GrillSessionsModule } from '@yaaabk/grill-me';
 import type { IssuesModule } from '@yaaabk/issues';
@@ -58,6 +58,11 @@ export interface AppOptions {
   settings: SettingsModule;
   /** The live OpenRouter model catalogue the Plan page offers. */
   models: ModelCatalogue;
+  /**
+   * Per-Issue budgets, when the deployment has them configured. Tests may omit
+   * it; the Issue detail then simply has no budget summary endpoint.
+   */
+  issueBudgets?: CostControlModule;
   /** Model used when neither the request nor the Project chooses one. */
   defaultModel: string;
   /** Forwarded to {@link authRoutes}. */
@@ -91,7 +96,16 @@ export function createApp(options: AppOptions): Hono {
   app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects, options.models));
   app.route('/', planRoutes(options.projects, options.plans));
-  app.route('/', issueRoutes(options.issues, options.projects, options.plans, options.models));
+  app.route(
+    '/',
+    issueRoutes(
+      options.issues,
+      options.projects,
+      options.plans,
+      options.models,
+      options.issueBudgets,
+    ),
+  );
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', statsRoutes(options.issues, options.agents, options.projects));

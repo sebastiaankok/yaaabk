@@ -480,6 +480,28 @@ describe('spawn', () => {
     expect(advanced.ok && advanced.value.attemptCount).toBe(0);
   });
 
+  it('reports a budget refusal as such, with the amounts the Developer must change', async () => {
+    const { manager, issues, k8s } = await harness({
+      mintOpenrouterKey: async () => ({
+        ok: false,
+        reason: 'reply-reservation',
+        message:
+          '$0.10 remains of Issue issue-1’s $2.00 budget after $1.90 spent, but the model can reserve up to $0.96 for one reply.',
+      }),
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('budget-exhausted');
+    expect(result.error.message).toContain('$0.10 remains');
+    expect(result.error.message).toContain('$1.90 spent');
+    const jobs = await k8s.jobs.list(NS);
+    expect(jobs.ok && jobs.value).toEqual([]);
+  });
+
   it('provisions a per-attempt GitHub token Secret in the agent namespace', async () => {
     const { manager, issues, k8s } = await harness({ githubToken: 'ghs_fresh_installation_token' });
     const issue = await readyIssue(issues);
@@ -697,6 +719,39 @@ describe('autoDispatch', () => {
     expect(second.ok && second.value.scheduled).toBe(0);
     expect(mints).toBe(1);
   });
+
+  it('labels an Issue needs-human once when its budget cannot cover another reply', async () => {
+    let mints = 0;
+    const { manager, issues } = await harness({
+      mintOpenrouterKey: async () => {
+        mints += 1;
+        return {
+          ok: false,
+          reason: 'reply-reservation',
+          message:
+            '$0.10 remains of Issue issue-1’s $2.00 budget after $1.90 spent, but the model can reserve up to $0.96 for one reply. Raise the Issue’s budget to at least $2.86 or choose a cheaper model.',
+        };
+      },
+    });
+    const issue = await readyIssue(issues);
+
+    const first = await manager.autoDispatch();
+    const second = await manager.autoDispatch();
+
+    expect(first.ok && first.value.scheduled).toBe(0);
+    expect(second.ok && second.value.scheduled).toBe(0);
+    // The refusal is not retried on every pass: the label takes it out of the
+    // dispatchable set, and the attempt counter is left alone.
+    expect(mints).toBe(1);
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({
+      label: 'needs-human',
+      status: 'open',
+      attemptCount: 0,
+    });
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value).toHaveLength(0);
+  });
 });
 
 describe('reconcile', () => {
@@ -762,6 +817,35 @@ describe('reconcile', () => {
       name: 'REVIEW_FEEDBACK',
       value: 'Return JSON 404 for /api/* paths.',
     });
+  });
+
+  it('escalates a failed attempt whose retry cannot be afforded, instead of retrying forever', async () => {
+    let mints = 0;
+    const { manager, issues, k8s } = await harness({
+      mintOpenrouterKey: async (_issue, attempt) => {
+        mints += 1;
+        if (attempt === 1) return { ok: true, key: 'sk-first', hash: 'hash-first' };
+        return {
+          ok: false,
+          reason: 'reply-reservation',
+          message:
+            '$0.10 remains of Issue issue-1’s $1.00 budget after $0.90 spent. Raise the Issue’s budget or choose a cheaper model.',
+        };
+      },
+    });
+    const issue = await readyIssue(issues);
+    const first = await manager.spawn('project-1', issue.id);
+    if (!first.ok) throw new Error('spawn failed');
+
+    await finishJob(k8s, NS, first.value.jobName!, 'failed');
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value).toMatchObject({ failed: 1, escalated: 1, dispatched: 0 });
+    expect(mints).toBe(2);
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ label: 'needs-human', status: 'open' });
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value).toHaveLength(1);
   });
 
   it('retries a failed attempt, then escalates once the attempts are exhausted', async () => {

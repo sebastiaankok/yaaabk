@@ -183,6 +183,45 @@ describe('GET /api/projects/:id/issues/graph', () => {
   });
 });
 
+describe('GET /api/projects/:id/issues/:issueId/budget', () => {
+  it('reports the whole budget as remaining before the first attempt', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId, { budget_cents: 80 });
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}/budget`);
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      issueId: id,
+      budgetCents: 80,
+      spentCents: 0,
+      remainingCents: 80,
+      keyOpen: false,
+      exhausted: false,
+    });
+  });
+
+  it('counts earlier attempts and the open key usage against the budget', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId, { budget_cents: 200 });
+    const opened = await context.issueBudgets.open(id, { budgetCents: 200 });
+    if (!opened.ok) throw new Error('open failed');
+    context.budgetApi.setUsage(opened.value.keyHash, 1.2);
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}/budget`);
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      budgetCents: 200,
+      spentCents: 120,
+      remainingCents: 80,
+      keyOpen: true,
+    });
+  });
+});
+
 describe('GET /api/projects/:id/issues/:issueId', () => {
   it('returns the issue', async () => {
     const { context, session } = await signedIn();
@@ -236,6 +275,45 @@ describe('PATCH /api/projects/:id/issues/:issueId', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it('raises the open key cap when the Issue budget is raised', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId, { budget_cents: 100 });
+    const opened = await context.issueBudgets.open(id, { budgetCents: 100 });
+    if (!opened.ok) throw new Error('open failed');
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ budget_cents: 300 }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ budgetCents: 300 });
+    // The key already exists, so the raise must reach OpenRouter as well as the
+    // local Issue; otherwise the next attempt would still be capped at $1.
+    expect(context.budgetApi.lastUpdate).toEqual({
+      hash: opened.value.keyHash,
+      input: { limitUsd: 3 },
+    });
+    const summary = await context.issueBudgets.summary(id, 300);
+    expect(summary.ok && summary.value.remainingCents).toBe(300);
+  });
+
+  it('updates the Issue budget without a key without calling OpenRouter', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId);
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ budget_cents: 250 }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ budgetCents: 250 });
+    expect(context.budgetApi.calls).toEqual([]);
   });
 
   it('sets and clears the agent model override', async () => {

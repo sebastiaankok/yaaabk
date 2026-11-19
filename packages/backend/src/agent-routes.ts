@@ -6,9 +6,9 @@ import { asString, body, fail, projectOrResponse } from './http';
 
 /**
  * Agent failures map to the HTTP status the caller should act on: a malformed
- * request is a client error, an Issue without a GitHub number is a conflict, a
- * missing project or issue is a 404, and a cluster or credential failure is a
- * bad gateway.
+ * request is a client error, an Issue without a GitHub number or an unaffordable
+ * budget is a conflict the Developer must resolve, a missing project or issue
+ * is a 404, and a cluster or credential failure is a bad gateway.
  */
 const STATUS_BY_KIND: Record<AgentError['kind'], ContentfulStatusCode> = {
   'invalid-input': 400,
@@ -16,6 +16,7 @@ const STATUS_BY_KIND: Record<AgentError['kind'], ContentfulStatusCode> = {
   'issue-not-synced': 409,
   kubernetes: 502,
   unauthorized: 401,
+  'budget-exhausted': 402,
   unknown: 500,
 };
 

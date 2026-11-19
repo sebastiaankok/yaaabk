@@ -104,6 +104,7 @@ describe('Agent OpenRouter key minter', () => {
 
     expect(third.ok).toBe(false);
     if (third.ok) return;
+    expect(third.reason).toBe('budget-exhausted');
     expect(third.message).toContain('nothing for another attempt');
     expect(api.created).toHaveLength(2);
   });
@@ -123,9 +124,35 @@ describe('Agent OpenRouter key minter', () => {
 
     expect(second.ok).toBe(false);
     if (second.ok) return;
-    expect(second.message).toContain('$0.80 budget');
+    expect(second.reason).toBe('reply-reservation');
+    expect(second.remainingCents).toBe(80);
+    expect(second.spentCents).toBe(120);
+    // The Developer is told every amount involved and what to change.
+    expect(second.message).toContain('$0.80 remains');
+    expect(second.message).toContain('$2.00 budget');
+    expect(second.message).toContain('$1.20 spent');
     expect(second.message).toContain('$0.96');
+    expect(second.message).toContain('Raise the Issue’s budget');
+    expect(second.message).toContain('cheaper model');
     expect(api.created).toHaveLength(1);
+  });
+
+  it('draws a raised budget for the next attempt without resetting prior spend', async () => {
+    const { api, mint } = setup();
+    const first = await mint(issue({ budgetCents: 100 }), 1, 'openrouter/free');
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    api.setUsage(first.hash, 0.6);
+
+    const second = await mint(
+      issue({ budgetCents: 250, openrouterKeyHash: first.hash, attemptCount: 1 }),
+      2,
+      'openrouter/free',
+    );
+
+    expect(second.ok).toBe(true);
+    // The raise adds to the remainder; the $0.60 already spent stays spent.
+    expect(api.lastCreate?.limitUsd).toBe(1.9);
   });
 
   it('refuses a later attempt when the prior spend cannot be read', async () => {

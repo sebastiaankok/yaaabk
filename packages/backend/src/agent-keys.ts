@@ -10,6 +10,11 @@ export interface AgentOpenrouterKeyMinterOptions {
   keys: AgentKeyIssuer;
 }
 
+/** Formats cents as a dollar amount for an actionable refusal message. */
+function usd(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 /**
  * Builds the Agent Manager's `mintOpenrouterKey`.
  *
@@ -28,11 +33,22 @@ export function createAgentOpenrouterKeyMinter(
       priorKeyHash: issue.openrouterKeyHash,
     });
     if (!budget.ok) {
-      return { ok: false, message: budget.error.message };
+      return {
+        ok: false,
+        message: budget.error.message,
+        reason:
+          budget.error.kind === 'budget-exhausted'
+            ? 'budget-exhausted'
+            : budget.error.kind === 'spend-unreadable'
+              ? 'spend-unreadable'
+              : 'other',
+      };
     }
 
     // The issuer refuses a key whose remainder cannot cover one reply from the
-    // selected model, so an exhausted budget never reaches OpenRouter.
+    // selected model, so an exhausted budget never reaches OpenRouter. The
+    // refusal is rewritten with the Issue's cumulative context: the amount
+    // already spent, what is left and the cap needed to cover one reply.
     const minted = await options.keys.mint(
       issue.id,
       budget.value.remainingCents,
@@ -40,7 +56,33 @@ export function createAgentOpenrouterKeyMinter(
       model,
     );
     if (!minted.ok) {
-      return { ok: false, message: minted.message };
+      if (minted.reason === 'reply-reservation' && minted.requiredUsd !== undefined) {
+        const requiredCents = Math.round(minted.requiredUsd * 100);
+        const neededCents = budget.value.spentCents + requiredCents;
+        return {
+          ok: false,
+          message: `${usd(budget.value.remainingCents)} remains of Issue ${issue.id}’s ${usd(issue.budgetCents)} budget after ${usd(budget.value.spentCents)} spent, but ${model} can reserve up to ${usd(requiredCents)} for one reply. Raise the Issue’s budget to at least ${usd(neededCents)} or choose a cheaper model.`,
+          reason: 'reply-reservation',
+          spentCents: budget.value.spentCents,
+          remainingCents: budget.value.remainingCents,
+        };
+      }
+      return {
+        ok: false,
+        message: minted.message,
+        reason:
+          minted.reason === 'account-credits'
+            ? 'account-credits'
+            : minted.reason === 'missing-credential'
+              ? 'missing-credential'
+              : 'other',
+        ...(budget.value.spentCents === 0
+          ? {}
+          : {
+              spentCents: budget.value.spentCents,
+              remainingCents: budget.value.remainingCents,
+            }),
+      };
     }
 
     const recorded = await options.budgets.recordAttempt(issue.id, {
@@ -55,6 +97,7 @@ export function createAgentOpenrouterKeyMinter(
       return {
         ok: false,
         message: `The OpenRouter key was created but its Issue budget could not be recorded, so the attempt was not started: ${recorded.error.message}`,
+        reason: 'other',
       };
     }
 
