@@ -11,6 +11,7 @@ const STATUS: SessionStatus = {
 
 interface RecordedReport {
   prd?: string;
+  summary?: string;
   issues?: GeneratedIssueReport[];
 }
 
@@ -109,19 +110,38 @@ describe('reporting tools', () => {
   it('stores a Plan and confirms it is only a draft', async () => {
     const { server, reports } = setup();
 
-    const response = await server.handle(call(3, 'report_prd', { prd: '# Plan' }));
+    const response = await server.handle(
+      call(3, 'report_prd', { prd: '# Plan', summary: 'Plan for saving bookmarks.' }),
+    );
 
     const result = response?.result as TextResult;
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain('Plan draft stored');
     expect(result.content[0]?.text).not.toContain('PRD');
-    expect(reports).toEqual([{ prd: '# Plan' }]);
+    expect(reports).toEqual([{ prd: '# Plan', summary: 'Plan for saving bookmarks.' }]);
+  });
+
+  it('rejects a Plan without a valid summary', async () => {
+    const { server, reports } = setup();
+
+    const missing = await server.handle(call(4, 'report_prd', { prd: '# Plan' }));
+    const empty = await server.handle(call(5, 'report_prd', { prd: '# Plan', summary: '   ' }));
+    const tooLong = await server.handle(
+      call(6, 'report_prd', { prd: '# Plan', summary: 'x'.repeat(201) }),
+    );
+
+    for (const response of [missing, empty, tooLong]) {
+      const result = response?.result as TextResult;
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('summary');
+    }
+    expect(reports).toEqual([]);
   });
 
   it('rejects a malformed PRD without calling the backend', async () => {
     const { server, reports } = setup();
 
-    const response = await server.handle(call(4, 'report_prd', { prd: '   ' }));
+    const response = await server.handle(call(7, 'report_prd', { prd: '   ', summary: 'A plan.' }));
 
     const result = response?.result as TextResult;
     expect(result.isError).toBe(true);
@@ -132,8 +152,15 @@ describe('reporting tools', () => {
     const { server, reports } = setup();
 
     const response = await server.handle(
-      call(5, 'report_issues', {
-        issues: [{ title: ' Save a bookmark ', labels: ['ready'], depends_on: [] }],
+      call(8, 'report_issues', {
+        issues: [
+          {
+            title: ' Save a bookmark ',
+            summary: '  Save   a link for later. ',
+            labels: ['ready'],
+            depends_on: [],
+          },
+        ],
       }),
     );
 
@@ -141,16 +168,39 @@ describe('reporting tools', () => {
     expect(result.isError).toBeUndefined();
     expect(reports).toEqual([
       {
-        issues: [{ title: 'Save a bookmark', body: '', labels: ['ready'], depends_on: [] }],
+        issues: [
+          {
+            title: 'Save a bookmark',
+            body: '',
+            summary: 'Save a link for later.',
+            labels: ['ready'],
+            depends_on: [],
+          },
+        ],
       },
     ]);
+  });
+
+  it('rejects an issue without a summary', async () => {
+    const { server, reports } = setup();
+
+    const response = await server.handle(
+      call(9, 'report_issues', { issues: [{ title: 'Save a bookmark' }] }),
+    );
+
+    const result = response?.result as TextResult;
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('summary');
+    expect(reports).toEqual([]);
   });
 
   it('rejects a malformed issue list without calling the backend', async () => {
     const { server, reports } = setup();
 
     const response = await server.handle(
-      call(6, 'report_issues', { issues: [{ body: 'no title' }] }),
+      call(10, 'report_issues', {
+        issues: [{ body: 'no title', summary: 'A summary.' }],
+      }),
     );
 
     const result = response?.result as TextResult;
@@ -162,7 +212,7 @@ describe('reporting tools', () => {
   it('reports the session status', async () => {
     const { server } = setup();
 
-    const response = await server.handle(call(7, 'session_status', {}));
+    const response = await server.handle(call(11, 'session_status', {}));
 
     const result = response?.result as TextResult;
     expect(result.content[0]?.text).toContain('0 issues');
@@ -176,7 +226,7 @@ describe('reporting tools', () => {
     });
 
     const response = await server.handle(
-      call(8, 'report_issues', { issues: [{ title: 'Save a bookmark' }] }),
+      call(12, 'report_issues', { issues: [{ title: 'Save a bookmark', summary: 'A summary.' }] }),
     );
 
     const result = response?.result as TextResult;
@@ -187,8 +237,8 @@ describe('reporting tools', () => {
   it('rejects an unknown tool and an unknown method', async () => {
     const { server } = setup();
 
-    const tool = await server.handle(call(9, 'delete_everything', {}));
-    const method = await server.handle({ jsonrpc: '2.0', id: 10, method: 'nope' });
+    const tool = await server.handle(call(13, 'delete_everything', {}));
+    const method = await server.handle({ jsonrpc: '2.0', id: 14, method: 'nope' });
 
     expect(tool?.error?.code).toBe(-32602);
     expect(method?.error?.code).toBe(-32601);

@@ -24,6 +24,7 @@
   } from '#lib/api.js';
   import Markdown from '#lib/markdown.svelte';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
+  import { SUMMARY_MAX_LENGTH, summaryForIssue, validateSummary } from '#lib/summary.js';
   import {
     BOARD_COLUMNS,
     BOARD_COLUMN_LABELS,
@@ -62,6 +63,7 @@
   let editing = $state(false);
   let draftTitle = $state('');
   let draftBody = $state('');
+  let draftSummary = $state('');
   let draftBudget = $state('');
   let confirmingDelete = $state(false);
   /** The current Issue's budget summary, as Cost Control computes it. */
@@ -263,12 +265,18 @@
     actionError = null;
     draftTitle = issue.title;
     draftBody = issue.body;
+    draftSummary = summaryForIssue(issue);
     draftBudget = (issue.budgetCents / 100).toFixed(2);
   }
 
   /** Saves the edited title, body and budget, then reloads the graph (titles moved). */
   async function saveEdit(): Promise<void> {
     if (projectId === undefined || selected === null || busy) return;
+    const summary = validateSummary(draftSummary);
+    if ('error' in summary) {
+      actionError = summary.error;
+      return;
+    }
     const budgetReason = validateBudgetDollars(draftBudget);
     if (budgetReason !== undefined) {
       actionError = budgetReason;
@@ -286,6 +294,7 @@
       const updated = await updateIssue(projectId, selected.id, {
         title: draftTitle.trim(),
         body: draftBody,
+        summary: summary.value,
         budgetCents,
       });
       issues = issues.map((issue) => (issue.id === updated.id ? updated : issue));
@@ -564,7 +573,7 @@
           type="search"
           aria-label="Search issues"
           bind:value={searchText}
-          placeholder="Search titles and bodies"
+          placeholder="Search titles, summaries and bodies"
           class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
         />
       </label>
@@ -684,6 +693,9 @@
                         >
                           {item.issue.label}
                         </span>
+                      </span>
+                      <span class="mt-1 line-clamp-2 block text-xs text-neutral-600">
+                        {summaryForIssue(item.issue)}
                       </span>
                       <span class="mt-1 block text-xs text-neutral-500">
                         {item.wave === null ? 'Unordered' : `Wave ${item.wave}`} ·
@@ -836,6 +848,19 @@
                 />
               </label>
               <label class="flex flex-col gap-1 text-xs text-neutral-500">
+                Summary
+                <textarea
+                  aria-label="Issue summary"
+                  rows="2"
+                  maxlength={SUMMARY_MAX_LENGTH}
+                  bind:value={draftSummary}
+                  class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+                ></textarea>
+                <span class="text-neutral-400">
+                  One or two plain sentences, at most {SUMMARY_MAX_LENGTH} characters.
+                </span>
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-neutral-500">
                 Body
                 <textarea
                   aria-label="Issue body"
@@ -945,7 +970,7 @@
               <button
                 type="button"
                 onclick={() => void saveEdit()}
-                disabled={busy || draftTitle.trim() === ''}
+                disabled={busy || draftTitle.trim() === '' || draftSummary.trim() === ''}
                 class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
               >
                 Save

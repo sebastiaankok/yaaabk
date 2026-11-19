@@ -57,6 +57,41 @@ describe('create', () => {
     expect(store.get('project-1', 'plan-1')).toEqual(result.value);
   });
 
+  it('stores the summary the caller supplied', async () => {
+    const { store, plans } = setup();
+
+    const plan = await create(plans, {
+      contentMarkdown: '# Plan\n\nFull detail.',
+      summary: '  Save   and find bookmarks  ',
+    });
+
+    expect(plan.summary).toBe('Save and find bookmarks');
+    expect(store.get('project-1', 'plan-1')?.summary).toBe('Save and find bookmarks');
+  });
+
+  it('derives a fallback summary from the Markdown when none is supplied', async () => {
+    const { plans } = setup();
+
+    const plan = await create(plans, {
+      contentMarkdown: '## Problem Statement\n\nDevelopers lose their bookmarks.',
+    });
+
+    expect(plan.summary).toBe('Developers lose their bookmarks.');
+  });
+
+  it.each([
+    ['an empty summary', { summary: '   ' }],
+    ['an over-long summary', { summary: 'x'.repeat(201) }],
+  ])('rejects %s', async (_label, overrides) => {
+    const { plans } = setup();
+
+    const result = await plans.create({ ...INPUT, ...overrides } as never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
+  });
+
   it('creates a new version and deactivates the previous one', async () => {
     const { store, plans } = setup({ ids: ['plan-1', 'plan-2'] });
 

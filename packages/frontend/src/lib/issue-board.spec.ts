@@ -17,6 +17,7 @@ function issue(overrides: Partial<Issue> & { title: string }): Issue {
     githubNumber: null,
     githubSyncedAt: null,
     body: '',
+    summary: null,
     status: 'open',
     label: 'ready',
     dependsOn: [],
@@ -185,7 +186,7 @@ describe('boardItems filtering', () => {
     expect(unordered.map((item) => item.issue.title)).toEqual(['Loop']);
   });
 
-  it('filters by a case-insensitive substring of the title or body', () => {
+  it('filters by a case-insensitive substring of the title, summary or body', () => {
     expect(
       boardItems(issues, g, { filters: { text: 'schema' } }).map((i) => i.issue.title),
     ).toEqual(['Schema']);
@@ -193,6 +194,28 @@ describe('boardItems filtering', () => {
       boardItems(issues, g, { filters: { text: 'endpoints' } }).map((i) => i.issue.title),
     ).toEqual(['Api']);
     expect(boardItems(issues, g, { filters: { text: 'nothing' } })).toEqual([]);
+  });
+
+  it('matches summary text, including a derived fallback for an older row', () => {
+    const withSummaries = [
+      issue({ title: 'Schema', summary: 'Create the bookmark tables.' }),
+      issue({ title: 'Fallback', summary: null, body: 'Build a searchable list.' }),
+    ];
+    const graphWithSummaries = graph([
+      { id: 'schema', wave: 0 },
+      { id: 'fallback', wave: 1 },
+    ]);
+
+    expect(
+      boardItems(withSummaries, graphWithSummaries, { filters: { text: 'bookmark tables' } }).map(
+        (item) => item.issue.title,
+      ),
+    ).toEqual(['Schema']);
+    expect(
+      boardItems(withSummaries, graphWithSummaries, { filters: { text: 'searchable' } }).map(
+        (item) => item.issue.title,
+      ),
+    ).toEqual(['Fallback']);
   });
 });
 

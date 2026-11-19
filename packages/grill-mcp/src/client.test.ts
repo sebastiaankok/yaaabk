@@ -24,7 +24,7 @@ describe('createReportClient', () => {
       fetch: fetchMock,
     });
 
-    const status = await client.report({ prd: '# Plan (PRD)' });
+    const status = await client.report({ prd: '# Plan (PRD)', summary: 'A plan.' });
 
     expect(status.draft.hasPrd).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -35,7 +35,7 @@ describe('createReportClient', () => {
           authorization: 'Bearer secret-token',
           'content-type': 'application/json',
         }),
-        body: JSON.stringify({ prd: '# Plan (PRD)' }),
+        body: JSON.stringify({ prd: '# Plan (PRD)', summary: 'A plan.' }),
       }),
     );
   });

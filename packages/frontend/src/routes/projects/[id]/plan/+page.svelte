@@ -22,6 +22,7 @@
   } from '#lib/api.js';
   import Markdown from '#lib/markdown.svelte';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
+  import { summaryForPlan } from '#lib/summary.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
 
@@ -292,7 +293,11 @@
           <h2 id="active-plan-heading" class="text-sm font-semibold">Plan</h2>
           <span class="text-xs text-neutral-500">v{activePlan.version} · {activePlan.source}</span>
         </div>
-        <Markdown markdown={activePlan.contentMarkdown} />
+        <p class="text-sm text-neutral-700">{summaryForPlan(activePlan)}</p>
+        <details class="mt-2">
+          <summary class="cursor-pointer text-sm text-neutral-600">Show full plan</summary>
+          <div class="mt-2"><Markdown markdown={activePlan.contentMarkdown} /></div>
+        </details>
       </section>
 
       {#if planIssues.length > 0}

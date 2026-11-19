@@ -10,6 +10,7 @@ function issue(overrides: Partial<Issue> & { title: string }): Issue {
     githubNumber: null,
     githubSyncedAt: null,
     body: '',
+    summary: null,
     status: 'open',
     label: 'refinement-needed',
     dependsOn: [],

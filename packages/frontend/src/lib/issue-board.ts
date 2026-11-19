@@ -1,4 +1,5 @@
 import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
+import { summaryForIssue } from './summary';
 
 /** The kanban lanes an Issue can sit in on the board. */
 export type BoardColumn = 'ready' | 'blocked' | 'in_progress' | 'closed' | 'failed';
@@ -112,7 +113,8 @@ function matchesFilters(item: BoardItem, filters: BoardFilters): boolean {
   if (filters.text !== undefined) {
     const needle = filters.text.trim().toLowerCase();
     if (needle !== '') {
-      const haystack = `${item.issue.title}\n${item.issue.body}`.toLowerCase();
+      const haystack =
+        `${item.issue.title}\n${summaryForIssue(item.issue)}\n${item.issue.body}`.toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
   }

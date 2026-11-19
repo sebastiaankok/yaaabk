@@ -454,7 +454,7 @@ describe('POST /api/grill-sessions/:sessionId/report', () => {
     const without = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prd: '# PRD' }),
+      body: JSON.stringify({ prd: '# PRD', summary: 'A plan.' }),
     });
     const wrong = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
       method: 'POST',
@@ -462,7 +462,7 @@ describe('POST /api/grill-sessions/:sessionId/report', () => {
         'content-type': 'application/json',
         ...bearer('not-the-token'),
       },
-      body: JSON.stringify({ prd: '# PRD' }),
+      body: JSON.stringify({ prd: '# PRD', summary: 'A plan.' }),
     });
 
     expect(without.status).toBe(401);
@@ -478,7 +478,7 @@ describe('POST /api/grill-sessions/:sessionId/report', () => {
     const reported = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...bearer(token) },
-      body: JSON.stringify({ prd: '# PRD' }),
+      body: JSON.stringify({ prd: '# PRD', summary: 'A plan.' }),
     });
 
     expect(reported.status).toBe(200);
@@ -500,7 +500,9 @@ describe('POST /api/grill-sessions/:sessionId/report', () => {
     const res = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...bearer(token) },
-      body: JSON.stringify({ issues: [{ title: 'Save a bookmark' }] }),
+      body: JSON.stringify({
+        issues: [{ title: 'Save a bookmark', summary: 'Save a link for later.' }],
+      }),
     });
 
     expect(res.status).toBe(400);
@@ -549,10 +551,12 @@ describe('POST /api/projects/:id/grill/:sessionId/finish', () => {
     const started = await startSession(context, session, projectId);
     await report(context, started.id, {
       prd: '# Plan (PRD)',
+      summary: 'Save a bookmark for later.',
       issues: [
         {
           title: 'Save a bookmark',
           body: 'Persist a bookmark.',
+          summary: 'Save a bookmark for later.',
           labels: ['ready'],
           depends_on: [],
         },
@@ -589,7 +593,7 @@ describe('POST /api/projects/:id/grill/:sessionId/finish', () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
     const started = await startSession(context, session, projectId);
-    await report(context, started.id, { prd: '# Only a PRD' });
+    await report(context, started.id, { prd: '# Only a PRD', summary: 'A plan.' });
 
     const conflict = await request(
       context,
@@ -654,7 +658,7 @@ describe('POST /api/projects/:id/grill/:sessionId/finish', () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
     const started = await startSession(context, session, projectId);
-    await report(context, started.id, { prd: '# A PRD' });
+    await report(context, started.id, { prd: '# A PRD', summary: 'A plan.' });
 
     const cancelled = await request(
       context,
@@ -781,7 +785,7 @@ describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
     const reported = await context.app.request(`/api/grill-sessions/${started.id}/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ prd: '# Drafted before the drop' }),
+      body: JSON.stringify({ prd: '# Drafted before the drop', summary: 'A plan.' }),
     });
     expect(reported.status).toBe(200);
 
@@ -820,7 +824,14 @@ describe('GET /api/projects/:id/grill/:sessionId/terminal', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        issues: [{ title: 'Survive the reconnect', body: 'Keep going.', labels: ['ready'] }],
+        issues: [
+          {
+            title: 'Survive the reconnect',
+            body: 'Keep going.',
+            summary: 'Keep working after a reconnect.',
+            labels: ['ready'],
+          },
+        ],
       }),
     });
     expect(issues.status).toBe(200);

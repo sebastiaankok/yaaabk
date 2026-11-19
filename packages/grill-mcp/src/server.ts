@@ -1,4 +1,4 @@
-import { normaliseGeneratedIssues } from '@yaaabk/shared';
+import { normaliseGeneratedIssues, normaliseSummary } from '@yaaabk/shared';
 import { ReportClientError, type ReportClient, type SessionStatus } from './client';
 
 /** One JSON-RPC response the server writes back. */
@@ -28,8 +28,14 @@ const TOOLS: readonly ToolDefinition[] = [
           type: 'string',
           description: 'The complete Plan as Markdown, following the YAAABK Plan template.',
         },
+        summary: {
+          type: 'string',
+          maxLength: 200,
+          description:
+            'One or two plain-English sentences with no Markdown that say what the Plan delivers.',
+        },
       },
-      required: ['prd'],
+      required: ['prd', 'summary'],
       additionalProperties: false,
     },
   },
@@ -48,6 +54,12 @@ const TOOLS: readonly ToolDefinition[] = [
             properties: {
               title: { type: 'string', description: 'Short, unique, imperative title.' },
               body: { type: 'string', description: 'What to build, as Markdown.' },
+              summary: {
+                type: 'string',
+                maxLength: 200,
+                description:
+                  'One or two plain-English sentences with no Markdown that say what the Issue delivers.',
+              },
               labels: {
                 type: 'array',
                 items: {
@@ -61,7 +73,7 @@ const TOOLS: readonly ToolDefinition[] = [
                 description: 'Titles of Issues that must be implemented first.',
               },
             },
-            required: ['title'],
+            required: ['title', 'summary'],
           },
         },
       },
@@ -136,8 +148,15 @@ export function createReportingServer(options: ReportingServerOptions): Reportin
       if (typeof prd !== 'string' || prd.trim() === '') {
         return respond(null, textResult('report_prd needs a non-empty `prd` string.', true));
       }
+      const summary = normaliseSummary(input?.['summary']);
+      if (!summary.ok) {
+        return respond(
+          null,
+          textResult(`report_prd needs a valid \`summary\`: ${summary.message}.`, true),
+        );
+      }
       try {
-        const status = await client.report({ prd: prd.trim() });
+        const status = await client.report({ prd: prd.trim(), summary: summary.value });
         const next =
           status.draft.issueCount === 0
             ? ' Now report the Issues with report_issues.'

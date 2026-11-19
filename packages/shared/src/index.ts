@@ -6,3 +6,4 @@ export * from './project';
 export * from './review-verdict';
 export * from './runtime';
 export * from './skill-level';
+export * from './summary';

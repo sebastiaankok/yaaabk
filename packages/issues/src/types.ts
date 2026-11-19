@@ -51,6 +51,8 @@ export interface Issue {
   githubSyncedAt: string | null;
   title: string;
   body: string;
+  /** A one- or two-sentence plain-text summary; null only for rows from before summaries. */
+  summary: string | null;
   status: IssueStatus;
   label: IssueLabel;
   /**
@@ -83,6 +85,11 @@ export interface NewIssue {
   planId?: string | null;
   title: string;
   body?: string;
+  /**
+   * A plain-text summary. Omit or pass null to derive a fallback from the body
+   * or title; a supplied summary must be non-empty and at most 200 characters.
+   */
+  summary?: string | null;
   label?: IssueLabel;
   dependsOn?: string[];
   budgetCents?: number;
@@ -95,6 +102,7 @@ export interface NewIssue {
 export interface GeneratedIssueInput {
   title: string;
   body: string;
+  summary: string;
   labels: string[];
   depends_on: string[];
 }
@@ -103,6 +111,7 @@ export interface GeneratedIssueInput {
 export interface IssuePatch {
   title?: string;
   body?: string;
+  summary?: string;
   status?: IssueStatus;
   label?: IssueLabel;
   dependsOn?: string[];

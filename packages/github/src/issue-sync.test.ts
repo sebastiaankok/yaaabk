@@ -51,12 +51,14 @@ async function seed(issues: IssuesModule): Promise<void> {
     projectId: 'p1',
     title: 'Schema',
     body: 'Define the tables.',
+    summary: 'Create the bookmark tables.',
     budgetCents: 40,
   });
   await issues.create({
     projectId: 'p1',
     title: 'Add login',
     body: 'Build the form.',
+    summary: 'Let a Developer sign in.',
     dependsOn: ['Schema'],
     budgetCents: 75,
   });
@@ -74,6 +76,10 @@ describe('issue sync push', () => {
     const remote = github.issues('acme/todo-app');
     expect(remote.map((issue) => issue.title)).toEqual(['Schema', 'Add login']);
     expect(remote.every((issue) => issue.labels.includes('ready'))).toBe(true);
+    // Summaries are YAAABK-only UI data and never become part of a GitHub body.
+    expect(remote[0]?.body).toContain('Define the tables.');
+    expect(remote[0]?.body).not.toContain('Create the bookmark tables.');
+    expect(remote[1]?.body).not.toContain('Let a Developer sign in.');
 
     const pushed = await list(issues);
     const login = pushed.find((issue) => issue.title === 'Add login');

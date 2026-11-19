@@ -21,6 +21,7 @@ const PLAN = {
   projectId: 'p1',
   version: 1,
   contentMarkdown: '# Plan',
+  summary: 'A plan for saving bookmarks.',
   skillLevel: 'expert',
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -50,6 +51,7 @@ const ISSUE = {
   githubSyncedAt: null,
   title: 'Save a bookmark',
   body: 'Persist a bookmark.',
+  summary: 'Save a bookmark for later.',
   status: 'open',
   label: 'ready',
   dependsOn: [],
@@ -217,7 +219,7 @@ test('shows the project and its active plan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1, name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();
 });
 
@@ -247,6 +249,9 @@ test('renders the Plan Markdown with typography and sanitizes it', async ({ page
   await page.goto('/projects/p1/plan');
 
   const plan = page.locator('section[aria-labelledby="active-plan-heading"]');
+  await expect(plan.getByText('A plan for saving bookmarks.')).toBeVisible();
+  await expect(plan.getByRole('heading', { level: 2, name: 'Goals' })).toBeHidden();
+  await plan.getByText('Show full plan').click();
   await expect(plan.getByRole('heading', { level: 2, name: 'Goals' })).toBeVisible();
   await expect(plan.getByRole('listitem')).toHaveCount(2);
   await expect(plan.getByRole('table')).toBeVisible();

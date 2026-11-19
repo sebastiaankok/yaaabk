@@ -12,6 +12,7 @@ export interface StoreTestApi {
   it(name: string, fn: () => void): void;
   expect(actual: unknown): {
     toBe(expected: unknown): void;
+    toBeNull(): void;
     toEqual(expected: unknown): void;
     toBeUndefined(): void;
     toHaveLength(length: number): void;
@@ -29,6 +30,7 @@ export function issueRecord(overrides: Partial<Issue> = {}): Issue {
     githubSyncedAt: null,
     title: 'Add login',
     body: '',
+    summary: null,
     status: 'open',
     label: 'ready',
     dependsOn: [],
@@ -65,6 +67,15 @@ export function issueStoreContract(api: StoreTestApi, createStore: () => IssueSt
       store.create(issueRecord());
 
       expect(store.get('project-1', 'issue-1')).toEqual(issueRecord());
+    });
+
+    it('stores an issue summary, including when it is absent', () => {
+      const store = createStore();
+      store.create(issueRecord({ id: 'issue-1', title: 'One', summary: 'Add a login form.' }));
+      store.create(issueRecord({ id: 'issue-2', title: 'Two', summary: null }));
+
+      expect(store.get('project-1', 'issue-1')?.summary).toBe('Add a login form.');
+      expect(store.get('project-1', 'issue-2')?.summary).toBeNull();
     });
 
     it('does not return an issue from another project', () => {

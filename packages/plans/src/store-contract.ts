@@ -12,6 +12,7 @@ export interface StoreTestApi {
   it(name: string, fn: () => void): void;
   expect(actual: unknown): {
     toBe(expected: unknown): void;
+    toBeNull(): void;
     toEqual(expected: unknown): void;
     toBeUndefined(): void;
     toHaveLength(length: number): void;
@@ -26,6 +27,7 @@ export function planRecord(overrides: Partial<Plan> = {}): Plan {
     projectId: 'project-1',
     version: 1,
     contentMarkdown: '# Plan',
+    summary: null,
     skillLevel: 'expert',
     source: 'grill-me',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -57,6 +59,15 @@ export function planStoreContract(api: StoreTestApi, createStore: () => PlanStor
       store.create(planRecord());
 
       expect(store.get('project-1', 'plan-1')).toEqual(planRecord());
+    });
+
+    it('stores a plan summary, including when it is absent', () => {
+      const store = createStore();
+      store.create(planRecord({ id: 'plan-1', version: 1, summary: 'Bookmark saving' }));
+      store.create(planRecord({ id: 'plan-2', version: 2, summary: null }));
+
+      expect(store.get('project-1', 'plan-1')?.summary).toBe('Bookmark saving');
+      expect(store.get('project-1', 'plan-2')?.summary).toBeNull();
     });
 
     it('does not return a plan from another project', () => {

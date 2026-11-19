@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { deriveSummary, normaliseSummary } from '@yaaabk/shared';
 import { consoleLogger, issuesError, toIssuesError, type IssuesLogger } from './errors';
 import { buildIssueGraph } from './graph';
 import {
@@ -61,6 +62,10 @@ function invalidReason(input: NewIssue): string | undefined {
   if (typeof input.title !== 'string' || input.title.trim() === '') {
     return 'An issue title is required';
   }
+  if (input.summary !== undefined && input.summary !== null) {
+    const summary = normaliseSummary(input.summary);
+    if (!summary.ok) return summary.message;
+  }
   if (input.label !== undefined && !isIssueLabel(input.label)) {
     return `"${String(input.label)}" is not a valid issue label`;
   }
@@ -90,6 +95,10 @@ function patchReason(patch: IssuePatch): string | undefined {
   }
   if (patch.body !== undefined && typeof patch.body !== 'string') {
     return 'The issue body must be text';
+  }
+  if (patch.summary !== undefined) {
+    const summary = normaliseSummary(patch.summary);
+    if (!summary.ok) return summary.message;
   }
   if (patch.status !== undefined && !isIssueStatus(patch.status)) {
     return `"${String(patch.status)}" is not a valid issue status`;
@@ -143,6 +152,18 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
   const defaultBudgetCents = options.defaultBudgetCents ?? DEFAULT_BUDGET_CENTS;
   const defaultMaxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
 
+  /** Resolves a valid summary, deriving a fallback when none was supplied. */
+  function summaryOf(input: { title: string; body?: string; summary?: string | null }): string {
+    if (input.summary !== undefined && input.summary !== null) {
+      const summary = normaliseSummary(input.summary);
+      if (!summary.ok) {
+        throw issuesError('invalid-input', summary.message);
+      }
+      return summary.value;
+    }
+    return deriveSummary(input.body ?? '') || deriveSummary(input.title);
+  }
+
   function materialise(input: NewIssue, id: string): Issue {
     return {
       id,
@@ -152,6 +173,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
       githubSyncedAt: null,
       title: input.title.trim(),
       body: input.body ?? '',
+      summary: summaryOf(input),
       status: 'open',
       label: input.label ?? 'ready',
       dependsOn: [...(input.dependsOn ?? [])],
@@ -218,6 +240,9 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
           if (typeof item.title !== 'string' || item.title.trim() === '') {
             throw issuesError('invalid-input', `Generated issue at index ${index} has no title`);
           }
+          if (typeof item.summary !== 'string' || item.summary.trim() === '') {
+            throw issuesError('invalid-input', `Generated issue at index ${index} has no summary`);
+          }
         }
 
         // Drop the Plan's previous drafts so repeated emissions replace rather
@@ -235,6 +260,7 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
               planId,
               title: item.title,
               body: item.body,
+              summary: item.summary,
               label: coerceLabel(item.labels),
               dependsOn: item.depends_on,
             },
@@ -265,6 +291,9 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
           ...existing,
           ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
           ...(patch.body === undefined ? {} : { body: patch.body }),
+          ...(patch.summary === undefined
+            ? {}
+            : { summary: summaryOf({ ...existing, summary: patch.summary }) }),
           ...(patch.status === undefined ? {} : { status: patch.status }),
           ...(patch.label === undefined ? {} : { label: patch.label }),
           ...(patch.dependsOn === undefined ? {} : { dependsOn: [...patch.dependsOn] }),

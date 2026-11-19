@@ -88,6 +88,41 @@ describe('POST /api/projects/:id/plans', () => {
     });
   });
 
+  it('stores a supplied summary and derives one when absent', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const supplied = await request(context, session, `/api/projects/${projectId}/plans`, {
+      method: 'POST',
+      body: JSON.stringify({ content_markdown: '# Plan', summary: '  Save   bookmarks. ' }),
+    });
+    const derived = await request(context, session, `/api/projects/${projectId}/plans`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content_markdown: '# Plan\n\nDevelopers lose their links.',
+      }),
+    });
+
+    expect(supplied.status).toBe(201);
+    await expect(supplied.json()).resolves.toMatchObject({ summary: 'Save bookmarks.' });
+    expect(derived.status).toBe(201);
+    await expect(derived.json()).resolves.toMatchObject({
+      summary: 'Developers lose their links.',
+    });
+  });
+
+  it('rejects an over-long summary with 400', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const res = await request(context, session, `/api/projects/${projectId}/plans`, {
+      method: 'POST',
+      body: JSON.stringify({ content_markdown: '# Plan', summary: 'x'.repeat(201) }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
   it('defaults the skill level to the project', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);

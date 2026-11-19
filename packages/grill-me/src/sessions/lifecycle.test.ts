@@ -19,7 +19,15 @@ const INPUT: StartGrillSessionInput = {
 };
 
 const PRD = '# Todo app\n\nA plan.';
-const ISSUES = [{ title: 'Add a todo', body: 'Persist it.', labels: ['ready'], depends_on: [] }];
+const ISSUES = [
+  {
+    title: 'Add a todo',
+    body: 'Persist it.',
+    summary: 'Add a todo and persist it.',
+    labels: ['ready'],
+    depends_on: [],
+  },
+];
 
 interface Setup {
   store: GrillSessionStore;
@@ -99,7 +107,7 @@ describe('reaping idle sessions', () => {
     expect(ended.value.error).toContain('30 minutes without terminal activity');
     // The key and the report token are revoked with the session.
     expect(keys.revoked).toEqual(['hash-session-1']);
-    const late = await sessions.report(id, token, { prd: PRD });
+    const late = await sessions.report(id, token, { prd: PRD, summary: 'A plan.' });
     expect(late.ok).toBe(false);
     if (!late.ok) expect(late.error.kind).toBe('unauthorized');
   });
@@ -144,7 +152,7 @@ describe('reaping idle sessions', () => {
   it('does not end an already finished session again', async () => {
     const { sessions, runtime, keys, clock, start } = setup();
     const { id, token } = await start();
-    await sessions.report(id, token, { prd: PRD, issues: ISSUES });
+    await sessions.report(id, token, { prd: PRD, summary: 'A plan.', issues: ISSUES });
     const finished = await sessions.finish('p1', id);
     expect(finished.ok).toBe(true);
     runtime.stopped.length = 0;
@@ -173,7 +181,7 @@ describe('restart reconciliation', () => {
     expect(runtime.stopped).toEqual([]);
     const active = await restarted.getActive('p1');
     expect(active.ok && active.value?.id).toBe(id);
-    const reported = await restarted.report(id, token, { prd: PRD });
+    const reported = await restarted.report(id, token, { prd: PRD, summary: 'A plan.' });
     expect(reported.ok).toBe(true);
     const persisted = store.get(id);
     expect(persisted?.status).toBe('active');
@@ -197,7 +205,7 @@ describe('restart reconciliation', () => {
     expect(ended.value.endReason).toBe('failed');
     expect(ended.value.error).toContain('runtime is missing');
     expect(keys.revoked).toEqual(['hash-session-1']);
-    const late = await restarted.report(id, token, { prd: PRD });
+    const late = await restarted.report(id, token, { prd: PRD, summary: 'A plan.' });
     expect(late.ok).toBe(false);
   });
 
@@ -251,7 +259,7 @@ describe('restart reconciliation', () => {
       runtime: null,
       reportTokenHash: 'hash',
       openRouterKeyHash: 'hash-session-crashed',
-      draft: { prd: null, issues: null },
+      draft: { prd: null, summary: null, issues: null },
       publishedPlan: null,
       publishedIssues: [],
     };
@@ -285,7 +293,7 @@ describe('restart reconciliation', () => {
       // A crash during cleanup left both credential hashes behind.
       reportTokenHash: 'leftover-token-hash',
       openRouterKeyHash: 'hash-session-ended',
-      draft: { prd: null, issues: null },
+      draft: { prd: null, summary: null, issues: null },
       publishedPlan: null,
       publishedIssues: [],
     };

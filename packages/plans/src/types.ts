@@ -24,6 +24,8 @@ export interface Plan {
   version: number;
   /** The plan document as Markdown. */
   contentMarkdown: string;
+  /** A one- or two-sentence plain-text summary; null only for rows from before summaries. */
+  summary: string | null;
   /** The skill level in force when the plan was produced. */
   skillLevel: SkillLevel;
   source: PlanSource;
@@ -36,6 +38,11 @@ export interface Plan {
 export interface NewPlan {
   projectId: string;
   contentMarkdown: string;
+  /**
+   * A plain-text summary. Omit or pass null to derive a fallback from the
+   * Markdown; a supplied summary must be non-empty and at most 200 characters.
+   */
+  summary?: string | null;
   skillLevel: SkillLevel;
   source: PlanSource;
 }

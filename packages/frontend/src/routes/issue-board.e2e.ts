@@ -33,6 +33,7 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
     githubNumber: null,
     githubSyncedAt: null,
     body: '',
+    summary: null,
     status: 'open',
     label: 'ready',
     dependsOn: [],
@@ -47,12 +48,25 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-const READY = issue({ id: 'i1', title: 'Schema', label: 'ready', body: 'Create the tables' });
-const BLOCKED = issue({ id: 'i2', title: 'Api', label: 'blocked', dependsOn: ['Schema'] });
+const READY = issue({
+  id: 'i1',
+  title: 'Schema',
+  label: 'ready',
+  body: 'Create the tables',
+  summary: 'Create the bookmark tables.',
+});
+const BLOCKED = issue({
+  id: 'i2',
+  title: 'Api',
+  label: 'blocked',
+  dependsOn: ['Schema'],
+  summary: 'Expose the bookmark endpoints.',
+});
 const ACTIVE = issue({
   id: 'i3',
   title: 'Auth',
   status: 'in_progress',
+  summary: 'Add sign-in and session handling.',
   attemptCount: 1,
   createdAt: '2026-01-02T00:00:00.000Z',
 });
@@ -60,6 +74,7 @@ const CLOSED = issue({
   id: 'i4',
   title: 'Scaffold',
   status: 'closed',
+  summary: 'Create the project skeleton.',
   createdAt: '2026-01-03T00:00:00.000Z',
 });
 const FAILED = issue({
@@ -67,6 +82,7 @@ const FAILED = issue({
   title: 'Deploy',
   status: 'failed',
   label: 'needs-human',
+  summary: 'Deploy the project to Kubernetes.',
   createdAt: '2026-01-04T00:00:00.000Z',
 });
 
@@ -177,9 +193,24 @@ test('groups issues into their lanes with labels and waves', async ({ page }) =>
   await expect(ready.getByText('Schema')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Blocked' }).getByText('Api')).toBeVisible();
   await expect(page.getByRole('region', { name: 'In Progress' }).getByText('Auth')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Failed' }).getByText('Deploy')).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Failed' }).getByText('Deploy', { exact: true }),
+  ).toBeVisible();
   await expect(ready.getByText('Wave 0')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Failed' }).getByText('Wave 2')).toBeVisible();
+});
+
+test('previews the issue summary on the card and the full body in the drawer', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues');
+
+  const schema = card(page, 'Schema');
+  await expect(schema.getByText('Create the bookmark tables.')).toBeVisible();
+  await schema.click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByText('Create the tables')).toBeVisible();
 });
 
 test('hides closed issues until the history is asked for', async ({ page }) => {
@@ -245,6 +276,10 @@ test('filters the cards by text, label, lane and wave', async ({ page }) => {
 
   await page.getByLabel('Search issues').fill('auth');
   await expect(card(page, 'Auth')).toBeVisible();
+  await expect(card(page, 'Schema')).toBeHidden();
+
+  await page.getByLabel('Search issues').fill('bookmark endpoints');
+  await expect(card(page, 'Api')).toBeVisible();
   await expect(card(page, 'Schema')).toBeHidden();
 
   await page.getByLabel('Search issues').fill('');
@@ -368,7 +403,14 @@ test('shows the budget, spend, remainder and raises the budget', async ({ page }
 
   await expect
     .poll(() => patches)
-    .toEqual([{ title: 'Schema', body: 'Create the tables', budgetCents: 200 }]);
+    .toEqual([
+      {
+        title: 'Schema',
+        body: 'Create the tables',
+        summary: 'Create the bookmark tables.',
+        budgetCents: 200,
+      },
+    ]);
   await expect(panel.getByText('$2.00', { exact: true })).toBeVisible();
   await expect(panel.getByText('$1.80', { exact: true })).toBeVisible();
 });
@@ -492,8 +534,10 @@ test('saves and clears the issue agent model override', async ({ page }) => {
 
 test('edits and deletes the open issue', async ({ page }) => {
   const state = await mockBoard(page);
+  const patches: Record<string, unknown>[] = [];
   await page.route('**/api/projects/p1/issues/i1', (route) => {
     if (route.request().method() === 'PATCH') {
+      patches.push(route.request().postDataJSON() as Record<string, unknown>);
       state.issues = state.issues.map((item) =>
         item.id === 'i1' ? { ...item, title: 'Schema v2' } : item,
       );
@@ -512,11 +556,16 @@ test('edits and deletes the open issue', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Edit' }).click();
   await page.getByLabel('Issue title').fill('Schema v2');
+  await page.getByLabel('Issue summary').fill('Create the bookmark tables and indexes.');
   await page.getByRole('button', { name: 'Save' }).click();
 
   const panel = page.getByRole('dialog', { name: 'Schema v2' });
   await expect(panel).toBeVisible();
   await expect(card(page, 'Schema v2')).toBeVisible();
+  expect(patches[0]).toMatchObject({
+    title: 'Schema v2',
+    summary: 'Create the bookmark tables and indexes.',
+  });
 
   await panel.getByRole('button', { name: 'Delete' }).click();
   await panel.getByRole('button', { name: 'Confirm delete' }).click();

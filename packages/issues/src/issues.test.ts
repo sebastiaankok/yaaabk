@@ -47,6 +47,7 @@ describe('create', () => {
       githubNumber: null,
       title: 'Add login',
       body: '',
+      summary: 'Add login',
       status: 'open',
       label: 'ready',
       dependsOn: [],
@@ -85,6 +86,45 @@ describe('create', () => {
       maxAttempts: 5,
       agentModel: 'openrouter/openai/gpt-5',
     });
+  });
+
+  it('stores a supplied summary and normalises its whitespace', async () => {
+    const { store, issues } = setup();
+
+    const issue = await create(issues, { body: 'Details', summary: '  Add   a login form  ' });
+
+    expect(issue.summary).toBe('Add a login form');
+    expect(store.get('project-1', 'issue-1')?.summary).toBe('Add a login form');
+  });
+
+  it('derives a fallback summary from the body, then the title', async () => {
+    const { issues } = setup({ ids: ['issue-1', 'issue-2'] });
+
+    const fromBody = await create(issues, {
+      title: 'Login',
+      body: '## Form\n\nLet a Developer sign in.',
+    });
+    const fromTitle = await create(issues, { title: 'Sign out', body: '' });
+
+    expect(fromBody.summary).toBe('Let a Developer sign in.');
+    expect(fromTitle.summary).toBe('Sign out');
+  });
+
+  it.each([
+    ['an empty summary', { summary: '   ' }],
+    ['an over-long summary', { summary: 'x'.repeat(201) }],
+  ])('rejects %s', async (_label, overrides) => {
+    const { issues } = setup();
+
+    const result = await issues.create({
+      projectId: 'project-1',
+      title: 'Add login',
+      ...overrides,
+    } as never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
   });
 
   it('uses the configured default budget', async () => {
@@ -298,8 +338,20 @@ describe('remove', () => {
 
 describe('replaceForPlan', () => {
   const GENERATED = [
-    { title: 'Schema', body: 'Tables', labels: ['ready'], depends_on: [] },
-    { title: 'Api', body: 'Endpoints', labels: ['refinement-needed'], depends_on: ['Schema'] },
+    {
+      title: 'Schema',
+      body: 'Tables',
+      summary: 'Create the tables.',
+      labels: ['ready'],
+      depends_on: [],
+    },
+    {
+      title: 'Api',
+      body: 'Endpoints',
+      summary: 'Expose the endpoints.',
+      labels: ['refinement-needed'],
+      depends_on: ['Schema'],
+    },
   ];
 
   it('records one issue per generated entry, linked to the plan', async () => {
@@ -314,6 +366,7 @@ describe('replaceForPlan', () => {
         id: 'issue-1',
         title: 'Schema',
         body: 'Tables',
+        summary: 'Create the tables.',
         label: 'ready',
         planId: 'plan-1',
         dependsOn: [],
@@ -322,6 +375,7 @@ describe('replaceForPlan', () => {
         id: 'issue-2',
         title: 'Api',
         body: 'Endpoints',
+        summary: 'Expose the endpoints.',
         label: 'refinement-needed',
         planId: 'plan-1',
         dependsOn: ['Schema'],
@@ -334,7 +388,7 @@ describe('replaceForPlan', () => {
     const { issues } = setup();
 
     const result = await issues.replaceForPlan('project-1', 'plan-1', [
-      { title: 'Schema', body: '', labels: ['urgent'], depends_on: [] },
+      { title: 'Schema', body: '', summary: 'A summary.', labels: ['urgent'], depends_on: [] },
     ]);
 
     expect(result.ok).toBe(true);
@@ -347,7 +401,7 @@ describe('replaceForPlan', () => {
 
     await issues.replaceForPlan('project-1', 'plan-1', GENERATED);
     const second = await issues.replaceForPlan('project-1', 'plan-1', [
-      { title: 'Schema v2', body: '', labels: ['ready'], depends_on: [] },
+      { title: 'Schema v2', body: '', summary: 'A summary.', labels: ['ready'], depends_on: [] },
     ]);
 
     expect(second.ok).toBe(true);
@@ -363,7 +417,7 @@ describe('replaceForPlan', () => {
 
     await issues.replaceForPlan('project-1', 'plan-1', GENERATED);
     await issues.replaceForPlan('project-1', 'plan-2', [
-      { title: 'Other', body: '', labels: ['ready'], depends_on: [] },
+      { title: 'Other', body: '', summary: 'A summary.', labels: ['ready'], depends_on: [] },
     ]);
 
     const listed = await issues.list('project-1');
@@ -376,7 +430,7 @@ describe('replaceForPlan', () => {
     const { issues } = setup();
 
     const result = await issues.replaceForPlan('project-1', 'plan-1', [
-      { title: '  ', body: '', labels: [], depends_on: [] },
+      { title: '  ', body: '', summary: 'A summary.', labels: [], depends_on: [] },
     ]);
 
     expect(result.ok).toBe(false);
@@ -389,8 +443,8 @@ describe('graph', () => {
   it('returns the dependency graph for the project', async () => {
     const { issues } = setup({ ids: ['issue-1', 'issue-2'] });
     await issues.replaceForPlan('project-1', 'plan-1', [
-      { title: 'Schema', body: '', labels: ['ready'], depends_on: [] },
-      { title: 'Api', body: '', labels: ['ready'], depends_on: ['Schema'] },
+      { title: 'Schema', body: '', summary: 'A summary.', labels: ['ready'], depends_on: [] },
+      { title: 'Api', body: '', summary: 'A summary.', labels: ['ready'], depends_on: ['Schema'] },
     ]);
 
     const result = await issues.graph('project-1');
