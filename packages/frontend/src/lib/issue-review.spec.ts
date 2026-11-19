@@ -94,6 +94,33 @@ describe('reviewItems', () => {
 
     expect(items[0]?.missing).toEqual(['Ghost']);
   });
+
+  it('hides closed issues unless asked for them', () => {
+    const done = issue({ title: 'Done', status: 'closed' });
+    const schema = issue({ title: 'Schema' });
+    const g = graph([
+      { id: 'done', title: 'Done', wave: 0 },
+      { id: 'schema', title: 'Schema', wave: 0 },
+    ]);
+
+    expect(reviewItems([done, schema], g).map((item) => item.issue.title)).toEqual(['Schema']);
+    expect(
+      reviewItems([done, schema], g, { includeClosed: true }).map((item) => item.issue.title),
+    ).toEqual(['Done', 'Schema']);
+  });
+
+  it('narrows to one plan', () => {
+    const current = issue({ title: 'Current', planId: 'plan-2' });
+    const previous = issue({ title: 'Previous', planId: 'plan-1' });
+    const g = graph([
+      { id: 'current', title: 'Current', wave: 0 },
+      { id: 'previous', title: 'Previous', wave: 0 },
+    ]);
+
+    expect(
+      reviewItems([current, previous], g, { planId: 'plan-2' }).map((item) => item.issue.title),
+    ).toEqual(['Current']);
+  });
 });
 
 describe('groupByWave', () => {

@@ -4,10 +4,12 @@
   import { onMount, onDestroy } from 'svelte';
   import type { AgentRun } from '@yaaabk/agents';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
+  import type { Plan } from '@yaaabk/plans';
   import type { Project } from '@yaaabk/projects';
   import {
     ApiError,
     deleteIssue,
+    getActivePlan,
     getIssueGraph,
     getProject,
     listIssues,
@@ -36,6 +38,7 @@
   const projectId = $derived(page.params.id);
 
   let project = $state<Project | null>(null);
+  let plan = $state<Plan | null>(null);
   let issues = $state<Issue[]>([]);
   let graph = $state<IssueGraph | null>(null);
   let runs = $state<AgentRun[]>([]);
@@ -48,6 +51,10 @@
   let laneFilter = $state('');
   let waveFilter = $state('');
   let sort = $state<BoardSort>('wave');
+  /** Whether the closed lane is shown; history is off by default. */
+  let showClosed = $state(false);
+  /** Whether earlier Plans are shown; the board follows the active Plan. */
+  let showEarlierPlans = $state(false);
   let selectedId = $state<string | null>(null);
   let editing = $state(false);
   let draftTitle = $state('');
@@ -86,6 +93,15 @@
 
   const hasUnordered = $derived((graph?.nodes ?? []).some((node) => node.wave === null));
 
+  /** The closed lane only exists while history is on screen. */
+  const includeClosed = $derived(showClosed || laneFilter === 'closed');
+
+  /** The lanes the board draws. */
+  const columns = $derived(BOARD_COLUMNS.filter((column) => column !== 'closed' || includeClosed));
+
+  /** The Plan the board follows; `undefined` means every Plan. */
+  const scopedPlanId = $derived(showEarlierPlans || plan === null ? undefined : plan.id);
+
   const items = $derived<BoardItem[]>(
     graph === null
       ? []
@@ -97,8 +113,21 @@
             wave: waveFilter === '' ? undefined : waveFilter === 'null' ? null : Number(waveFilter),
           },
           sort,
+          includeClosed,
+          ...(scopedPlanId === undefined ? {} : { planId: scopedPlanId }),
         }),
   );
+
+  /**
+   * Open Issues from earlier Plans. The board follows the active Plan but the
+   * Agent Manager still works the whole Project, so hiding these silently would
+   * hide work that is actually moving.
+   */
+  const earlierWork = $derived.by(() => {
+    const active = plan;
+    if (active === null || showEarlierPlans) return [];
+    return issues.filter((issue) => issue.status !== 'closed' && issue.planId !== active.id);
+  });
 
   const spend = $derived(spendByIssue(runs));
 
@@ -291,13 +320,20 @@
     let cancelled = false;
     loading = true;
     error = null;
-    Promise.all([getProject(id), listIssues(id), getIssueGraph(id), listProjectRuns(id)])
-      .then(([nextProject, nextIssues, nextGraph, nextRuns]) => {
+    Promise.all([
+      getProject(id),
+      listIssues(id),
+      getIssueGraph(id),
+      listProjectRuns(id),
+      getActivePlan(id),
+    ])
+      .then(([nextProject, nextIssues, nextGraph, nextRuns, nextPlan]) => {
         if (cancelled) return;
         project = nextProject;
         issues = nextIssues;
         graph = nextGraph;
         runs = nextRuns;
+        plan = nextPlan;
       })
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -434,8 +470,9 @@
     <header class="space-y-2">
       <h1 class="text-2xl font-bold tracking-tight">Issue board</h1>
       <p class="text-neutral-600">
-        Every issue for <span class="font-medium">{project.name}</span>, grouped by lane and ordered
-        by wave.
+        The work for <span class="font-medium">{project.name}</span>, grouped by lane and ordered by
+        wave.{#if plan !== null && !showEarlierPlans}
+          Showing <span class="font-medium">Plan v{plan.version}</span>.{/if}
       </p>
     </header>
 
@@ -443,8 +480,16 @@
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
     {/if}
 
+    {#if earlierWork.length > 0}
+      <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+        {earlierWork.length} open
+        {earlierWork.length === 1 ? 'issue belongs' : 'issues belong'} to an earlier Plan and
+        {earlierWork.length === 1 ? 'is' : 'are'} still being worked.
+      </p>
+    {/if}
+
     <section
-      class="grid gap-3 rounded-lg border border-neutral-200 p-3 sm:grid-cols-2 xl:grid-cols-5"
+      class="grid gap-3 rounded-lg border border-neutral-200 p-3 sm:grid-cols-2 xl:grid-cols-4"
       aria-label="Filters"
     >
       <label class="flex flex-col gap-1 text-xs text-neutral-500">
@@ -515,6 +560,21 @@
           <option value="title">Title</option>
         </select>
       </label>
+
+      <label class="flex items-center gap-2 pb-1 text-xs text-neutral-600">
+        <input type="checkbox" aria-label="Show closed issues" bind:checked={showClosed} />
+        Show closed
+      </label>
+
+      <label class="flex items-center gap-2 pb-1 text-xs text-neutral-600">
+        <input
+          type="checkbox"
+          aria-label="Show earlier plans"
+          bind:checked={showEarlierPlans}
+          disabled={plan === null}
+        />
+        Show earlier plans
+      </label>
     </section>
 
     <div
@@ -523,8 +583,10 @@
       bind:clientWidth={boardWidth}
       bind:clientHeight={boardHeight}
     >
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {#each BOARD_COLUMNS as column (column)}
+      <div
+        class="grid gap-4 md:grid-cols-2 {columns.length > 4 ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}"
+      >
+        {#each columns as column (column)}
           {@const columnList = columnItems(column)}
           <section
             class="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3"

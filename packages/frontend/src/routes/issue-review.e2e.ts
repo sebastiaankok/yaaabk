@@ -120,6 +120,40 @@ test('shows the plan, issues grouped by wave, and their labels', async ({ page }
   await expect(page.getByText('Depends on: Schema')).toBeVisible();
 });
 
+test('shows only the active plan\u2019s open issues', async ({ page }) => {
+  const state = await mockReview(page);
+  state.issues = [
+    ...state.issues,
+    issue({ id: 'i3', title: 'Finished', status: 'closed', planId: 'v1' }),
+    issue({ id: 'i4', title: 'Legacy', planId: 'v0', createdAt: '2026-01-03T00:00:00.000Z' }),
+  ];
+  state.graph = {
+    nodes: [
+      ...state.graph.nodes,
+      { id: 'i3', title: 'Finished', dependsOn: [], missing: [], wave: 0 },
+      { id: 'i4', title: 'Legacy', dependsOn: [], missing: [], wave: 0 },
+    ],
+    cycles: [],
+  };
+
+  await page.goto('/projects/p1/issues/review');
+
+  await expect(page.getByText('Schema', { exact: true })).toBeVisible();
+  await expect(page.getByText('Finished', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Legacy', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Issues (2)' })).toBeVisible();
+});
+
+test('points at a new session once every issue in the plan is closed', async ({ page }) => {
+  const state = await mockReview(page);
+  state.issues = state.issues.map((item) => ({ ...item, status: 'closed' }));
+
+  await page.goto('/projects/p1/issues/review');
+
+  await expect(page.getByText('Every issue in Plan v1 is closed.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve & Create' })).toHaveCount(0);
+});
+
 test('warns about circular dependencies', async ({ page }) => {
   const state = await mockReview(page);
   state.graph = {

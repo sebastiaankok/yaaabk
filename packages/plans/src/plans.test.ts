@@ -160,3 +160,18 @@ describe('activate', () => {
     expect(result.error.kind).toBe('not-found');
   });
 });
+
+describe('removeForProject', () => {
+  it('drops every version of one project\u2019s plans', async () => {
+    const { store, plans } = setup({ ids: ['plan-1', 'plan-2', 'plan-3'] });
+    await create(plans);
+    await create(plans, { contentMarkdown: '# Plan v2' });
+    await create(plans, { projectId: 'project-2' });
+
+    const result = await plans.removeForProject('project-1');
+
+    expect(result.ok).toBe(true);
+    expect(store.list('project-1')).toEqual([]);
+    expect(store.list('project-2')).toHaveLength(1);
+  });
+});

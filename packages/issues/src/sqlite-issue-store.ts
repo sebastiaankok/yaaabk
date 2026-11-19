@@ -234,5 +234,9 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
         .prepare('DELETE FROM issues WHERE project_id = ? AND id = ?')
         .run(projectId, issueId);
     },
+
+    deleteForProject(projectId) {
+      database.prepare('DELETE FROM issues WHERE project_id = ?').run(projectId);
+    },
   };
 }

@@ -81,6 +81,17 @@ const GRAPH: IssueGraph = {
   cycles: [],
 };
 
+const PLAN = {
+  id: 'v1',
+  projectId: 'p1',
+  version: 1,
+  contentMarkdown: '# Plan',
+  skillLevel: 'expert',
+  source: 'grill-me',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  isActive: true,
+};
+
 interface Mocks {
   issues: Record<string, unknown>[];
   graph: IssueGraph;
@@ -120,6 +131,7 @@ async function mockBoard(page: Page): Promise<Mocks> {
   await page.route('**/api/projects/p1/issues/graph', (route) =>
     route.fulfill({ json: state.graph }),
   );
+  await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
   await page.route('**/api/projects/p1/agent-runs', (route) =>
     route.fulfill({ json: { runs: state.runs } }),
   );
@@ -140,17 +152,59 @@ test('groups issues into their lanes with labels and waves', async ({ page }) =>
   await expect(page.getByRole('heading', { name: 'Ready' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Blocked' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'In Progress' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Closed' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Failed' })).toBeVisible();
 
   const ready = page.getByRole('region', { name: 'Ready' });
   await expect(ready.getByText('Schema')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Blocked' }).getByText('Api')).toBeVisible();
   await expect(page.getByRole('region', { name: 'In Progress' }).getByText('Auth')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Closed' }).getByText('Scaffold')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Failed' }).getByText('Deploy')).toBeVisible();
   await expect(ready.getByText('Wave 0')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Failed' }).getByText('Wave 2')).toBeVisible();
+});
+
+test('hides closed issues until the history is asked for', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues');
+
+  await expect(page.getByRole('heading', { name: 'Closed' })).toHaveCount(0);
+  await expect(card(page, 'Scaffold')).toHaveCount(0);
+
+  await page.getByLabel('Show closed issues').check();
+
+  await expect(page.getByRole('heading', { name: 'Closed' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Closed' }).getByText('Scaffold')).toBeVisible();
+});
+
+test('follows the active plan until earlier plans are shown', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.issues = [
+    ...state.issues,
+    issue({
+      id: 'i6',
+      title: 'Legacy',
+      planId: 'v0',
+      createdAt: '2026-01-05T00:00:00.000Z',
+    }),
+  ];
+  state.graph = {
+    nodes: [
+      ...state.graph.nodes,
+      { id: 'i6', title: 'Legacy', dependsOn: [], missing: [], wave: 0 },
+    ],
+    cycles: [],
+  };
+
+  await page.goto('/projects/p1/issues');
+
+  await expect(card(page, 'Legacy')).toHaveCount(0);
+  await expect(page.getByText('1 open issue belongs to an earlier Plan')).toBeVisible();
+
+  await page.getByLabel('Show earlier plans').check();
+
+  await expect(card(page, 'Legacy')).toBeVisible();
+  await expect(page.getByText('1 open issue belongs to an earlier Plan')).toHaveCount(0);
 });
 
 test('draws dependency arrows between cards', async ({ page }) => {

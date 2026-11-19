@@ -58,6 +58,13 @@
 
   const statusLabel = $derived(terminalStatusLabel(terminalStatus));
 
+  /** The active Plan's Issues; earlier Plans' work belongs to their own review. */
+  const planIssues = $derived.by(() => {
+    const active = activePlan;
+    if (active === null) return [];
+    return issues.filter((issue) => issue.planId === active.id);
+  });
+
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
   }
@@ -293,7 +300,7 @@
         </div>
       </section>
 
-      {#if issues.length > 0}
+      {#if planIssues.length > 0}
         <section
           class="rounded-lg border border-neutral-200 p-4"
           aria-labelledby="plan-issues-heading"
@@ -301,15 +308,15 @@
           <div class="mb-2 flex items-center justify-between gap-2">
             <h2 id="plan-issues-heading" class="text-sm font-semibold">Issues</h2>
             <span class="text-xs text-neutral-500"
-              >{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span
+              >{planIssues.length} {planIssues.length === 1 ? 'issue' : 'issues'}</span
             >
           </div>
           <ul class="flex flex-col gap-1 text-sm">
-            {#each issues as issue (issue.id)}
+            {#each planIssues as issue (issue.id)}
               <li class="flex items-center justify-between gap-2">
                 <span>{issue.title}</span>
                 <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600"
-                  >{issue.label}</span
+                  >{issue.status === 'closed' ? 'closed' : issue.label}</span
                 >
               </li>
             {/each}

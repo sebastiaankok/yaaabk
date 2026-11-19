@@ -288,10 +288,18 @@ export function createIssuesModule(options: IssuesModuleOptions): IssuesModule {
       });
     },
 
-    approve(projectId) {
-      return guard('approve', { projectId }, async () => {
+    removeForProject(projectId) {
+      return guard('removeForProject', { projectId }, async () => {
+        store.deleteForProject(projectId);
+      });
+    },
+
+    approve(projectId, planId) {
+      return guard('approve', { projectId, planId }, async () => {
         const approved = store
           .list(projectId)
+          .filter((issue) => issue.status === 'open')
+          .filter((issue) => planId === undefined || issue.planId === planId)
           .map((issue) => ({ ...issue, label: 'ready' as const }));
         for (const issue of approved) {
           store.update(issue);

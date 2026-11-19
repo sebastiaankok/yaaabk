@@ -119,6 +119,40 @@ describe('boardItems', () => {
   });
 });
 
+describe('boardItems scope', () => {
+  const issues = [
+    issue({ title: 'Schema', planId: 'plan-1' }),
+    issue({ title: 'Done', planId: 'plan-1', status: 'closed' }),
+    issue({ title: 'Older', planId: 'plan-0', createdAt: '2026-01-02T00:00:00.000Z' }),
+    issue({ title: 'Manual', planId: null, createdAt: '2026-01-03T00:00:00.000Z' }),
+  ];
+  const g = graph([
+    { id: 'schema', wave: 0 },
+    { id: 'done', wave: 0 },
+    { id: 'older', wave: 0 },
+    { id: 'manual', wave: 0 },
+  ]);
+
+  it('shows closed issues unless told not to', () => {
+    expect(boardItems(issues, g).map((item) => item.issue.title)).toContain('Done');
+    expect(boardItems(issues, g, { includeClosed: false }).map((item) => item.issue.title)).toEqual(
+      ['Schema', 'Older', 'Manual'],
+    );
+  });
+
+  it('narrows to one plan', () => {
+    const scoped = boardItems(issues, g, { planId: 'plan-1', includeClosed: false });
+
+    expect(scoped.map((item) => item.issue.title)).toEqual(['Schema']);
+  });
+
+  it('selects the issues that have no plan', () => {
+    const manual = boardItems(issues, g, { planId: null });
+
+    expect(manual.map((item) => item.issue.title)).toEqual(['Manual']);
+  });
+});
+
 describe('boardItems filtering', () => {
   const issues = [
     issue({ title: 'Schema', label: 'ready' }),

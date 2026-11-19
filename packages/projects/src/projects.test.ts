@@ -42,6 +42,8 @@ interface HarnessOverrides {
   githubToken?: string | null | (() => Promise<string | undefined>);
   /** Project ids handed out by successive `create` calls. */
   ids?: string[];
+  /** Hook the module calls just before forgetting a removed Project. */
+  onRemoved?: (projectId: string) => Promise<void> | void;
 }
 
 /**
@@ -73,6 +75,7 @@ function harness(overrides: HarnessOverrides = {}): Harness {
     templates,
     repositories,
     ...(token === null ? {} : { githubToken: token }),
+    ...(overrides.onRemoved === undefined ? {} : { onRemoved: overrides.onRemoved }),
     ids: () => ids[next++] ?? PROJECT_ID,
     clock: () => clock.now,
     logger: silentLogger,
@@ -542,6 +545,41 @@ describe('remove', () => {
     const result = await module.remove(created.value.id);
 
     expect(result.ok).toBe(true);
+  });
+
+  it('cleans up local artifacts before forgetting the project', async () => {
+    const removed: string[] = [];
+    const { module, store } = harness({
+      onRemoved: (projectId) => {
+        // The Project must still exist here; otherwise the hook could not tell
+        // a real removal from a stray call.
+        expect(store.get(projectId)).toBeDefined();
+        removed.push(projectId);
+      },
+    });
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.remove(created.value.id);
+
+    expect(result.ok).toBe(true);
+    expect(removed).toEqual([created.value.id]);
+    expect(store.get(created.value.id)).toBeUndefined();
+  });
+
+  it('keeps the project when cleanup fails', async () => {
+    const { module, store } = harness({
+      onRemoved: () => {
+        throw new Error('cleanup broke');
+      },
+    });
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.remove(created.value.id);
+
+    expect(result.ok).toBe(false);
+    expect(store.get(created.value.id)).toBeDefined();
   });
 
   it('reports not-found for an unknown id', async () => {

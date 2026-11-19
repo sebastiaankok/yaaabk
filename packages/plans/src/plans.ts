@@ -97,5 +97,11 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
         return plan;
       });
     },
+
+    removeForProject(projectId) {
+      return guard('removeForProject', { projectId }, async () => {
+        store.deleteForProject(projectId);
+      });
+    },
   };
 }

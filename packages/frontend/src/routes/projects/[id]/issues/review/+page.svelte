@@ -33,9 +33,18 @@
   let approved = $state(false);
   let syncMessage = $state<string | null>(null);
 
-  const groups = $derived<WaveGroup[]>(
-    graph === null ? [] : groupByWave(reviewItems(issues, graph)),
+  const reviewList = $derived(
+    graph === null ? [] : reviewItems(issues, graph, plan === null ? {} : { planId: plan.id }),
   );
+
+  const groups = $derived<WaveGroup[]>(groupByWave(reviewList));
+
+  /** How many Issues the active Plan has, closed ones included. */
+  const planIssueCount = $derived.by(() => {
+    const active = plan;
+    if (active === null) return 0;
+    return issues.filter((issue) => issue.planId === active.id).length;
+  });
 
   const labelClass: Record<IssueLabel, string> = {
     ready: 'bg-emerald-100 text-emerald-800',
@@ -137,8 +146,8 @@
     <header class="space-y-2">
       <h1 class="text-2xl font-bold tracking-tight">Review issues</h1>
       <p class="text-neutral-600">
-        Review the issues published for <span class="font-medium">{project.name}</span>, then
-        approve them to make them ready for agents. To change a Plan or its Issues, start another
+        Review the open issues published for <span class="font-medium">{project.name}</span> by its active
+        Plan, then approve them to make them ready for agents. To change a Plan or its Issues, start another
         Grill-Me session.
       </p>
     </header>
@@ -226,18 +235,27 @@
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="issues-heading">
       <div class="mb-3 flex items-center justify-between gap-2">
-        <h2 id="issues-heading" class="text-sm font-semibold">Issues ({issues.length})</h2>
+        <h2 id="issues-heading" class="text-sm font-semibold">Issues ({reviewList.length})</h2>
       </div>
 
-      {#if issues.length === 0}
+      {#if reviewList.length === 0}
         <p class="text-sm text-neutral-500">
-          No issues yet. Finish a Grill-Me session to publish a Plan (PRD) and its Issues.
-          <a
-            href={resolve('/projects/[id]/plan', { id: project.id })}
-            class="font-medium underline"
-          >
-            Start a new Grill-Me session</a
-          >.
+          {#if plan !== null && planIssueCount > 0}
+            Every issue in Plan v{plan.version} is closed. Start a new Grill-Me session to plan the next
+            idea; completed issues stay on the
+            <a
+              href={resolve('/projects/[id]/issues', { id: project.id })}
+              class="font-medium underline">issue board</a
+            >.
+          {:else}
+            No issues yet. Finish a Grill-Me session to publish a Plan (PRD) and its Issues.
+            <a
+              href={resolve('/projects/[id]/plan', { id: project.id })}
+              class="font-medium underline"
+            >
+              Start a new Grill-Me session</a
+            >.
+          {/if}
         </p>
       {:else}
         <div class="flex flex-col gap-4">
@@ -277,7 +295,7 @@
       {/if}
     </section>
 
-    {#if plan !== null && issues.length > 0}
+    {#if plan !== null && reviewList.length > 0}
       <section
         class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-4"
         aria-labelledby="approve-heading"
@@ -285,7 +303,7 @@
         <div>
           <h2 id="approve-heading" class="text-sm font-semibold">Approve these issues</h2>
           <p class="text-xs text-neutral-500">
-            Approval labels every Issue ready and pushes the set to GitHub.
+            Approval labels this Plan's open Issues ready and pushes them to GitHub.
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
