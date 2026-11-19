@@ -4,7 +4,10 @@ import {
   summarizeCheckRuns,
   type CheckRunSummaryInput,
   type CreateReviewInput,
+  type GitHubMergeable,
+  type GitHubMergeability,
   type GitHubMergeMethod,
+  type GitHubMergeStateStatus,
   type GitHubPullRequest,
   type GitHubPulls,
   type GitHubReview,
@@ -29,6 +32,9 @@ interface RawPull {
   head: { ref: string; sha: string };
   labels: Array<string | { name?: string }>;
   draft?: boolean;
+  /** `null` while GitHub is still computing mergeability. */
+  mergeable?: boolean | null;
+  mergeable_state?: string | null;
 }
 
 interface RawCheckRuns {
@@ -73,6 +79,35 @@ function labelNames(labels: RawPull['labels']): string[] {
     .filter((name) => name !== '');
 }
 
+/** Maps GitHub's `mergeable_state` string to the port's own vocabulary. */
+function mergeStateStatusOf(raw: RawPull): GitHubMergeStateStatus {
+  switch (raw.mergeable_state) {
+    case 'behind':
+    case 'blocked':
+    case 'clean':
+    case 'dirty':
+    case 'draft':
+    case 'unstable':
+      return raw.mergeable_state;
+    case 'has_hooks':
+      return 'has-hooks';
+    default:
+      return 'unknown';
+  }
+}
+
+/** Collapses GitHub's nullable `mergeable` flag and state into one verdict. */
+function mergeableOf(raw: RawPull): GitHubMergeable {
+  if (raw.mergeable === false || raw.mergeable_state === 'dirty') return 'conflicting';
+  if (raw.mergeable === true) return 'mergeable';
+  // A known non-dirty state is still mergeable as far as YAAABK is concerned;
+  // `behind` only means branch protection may require an update first.
+  if (raw.mergeable_state !== undefined && raw.mergeable_state !== null) {
+    return raw.mergeable_state === 'unknown' ? 'unknown' : 'mergeable';
+  }
+  return 'unknown';
+}
+
 function toPullRequest(raw: RawPull): GitHubPullRequest {
   return {
     number: raw.number,
@@ -81,6 +116,8 @@ function toPullRequest(raw: RawPull): GitHubPullRequest {
     headSha: raw.head.sha,
     labels: labelNames(raw.labels),
     draft: raw.draft === true,
+    mergeable: mergeableOf(raw),
+    mergeStateStatus: mergeStateStatusOf(raw),
   };
 }
 
@@ -165,6 +202,24 @@ export function createGitHubPullsClient(options: GitHubPullsClientOptions): GitH
       }
     },
 
+    async mergeability(repo, number) {
+      try {
+        const raw = await send<RawPull>('pull-mergeability', () =>
+          fetchImpl(`${apiBaseUrl}/repos/${repo}/pulls/${number}`, {
+            method: 'GET',
+            headers: headers(),
+          }),
+        );
+        const value: GitHubMergeability = {
+          mergeable: mergeableOf(raw),
+          mergeStateStatus: mergeStateStatusOf(raw),
+        };
+        return { ok: true, value };
+      } catch (error) {
+        return { ok: false, error: toGitHubError('pull-mergeability', error) };
+      }
+    },
+
     async checkState(repo, ref) {
       try {
         const raw = await send<RawCheckRuns>('check-state', () =>
@@ -199,6 +254,21 @@ export function createGitHubPullsClient(options: GitHubPullsClientOptions): GitH
         return { ok: true, value };
       } catch (error) {
         return { ok: false, error: toGitHubError('merge-pull', error) };
+      }
+    },
+
+    async updatePullRequestBranch(repo, number) {
+      try {
+        await send<unknown>('update-branch', () =>
+          fetchImpl(`${apiBaseUrl}/repos/${repo}/pulls/${number}/update-branch`, {
+            method: 'PUT',
+            headers: headers(),
+            body: JSON.stringify({}),
+          }),
+        );
+        return { ok: true, value: undefined };
+      } catch (error) {
+        return { ok: false, error: toGitHubError('update-branch', error) };
       }
     },
 

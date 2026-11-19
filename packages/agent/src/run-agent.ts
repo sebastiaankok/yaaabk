@@ -3,6 +3,7 @@ import type { AgentConfig } from './config';
 import { AUTOMERGE_LABEL, defaultBranch, type AgentDependencies, type AgentOutcome } from './ports';
 import {
   buildImplementPrompt,
+  buildResolveConflictsPrompt,
   buildReviewPrompt,
   pullRequestBody,
   pullRequestTitle,
@@ -64,6 +65,14 @@ async function measureSpend<T>(
 function requireReviewTarget(config: AgentConfig): { pullNumber: number; branch: string } {
   if (config.pullNumber === undefined || config.branch === undefined) {
     throw new Error('A review run requires a branch and a pull number');
+  }
+  return { pullNumber: config.pullNumber, branch: config.branch };
+}
+
+/** The pull request a conflict-resolution run repairs, validated by the loader. */
+function requireConflictTarget(config: AgentConfig): { pullNumber: number; branch: string } {
+  if (config.pullNumber === undefined || config.branch === undefined) {
+    throw new Error('A conflict-resolution run requires a branch and a pull number');
   }
   return { pullNumber: config.pullNumber, branch: config.branch };
 }
@@ -237,6 +246,103 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
 }
 
 /**
+ * Repairs a pull request branch that conflicts with the base branch.
+ *
+ * Clones the branch, merges the default branch into it, and — only when that
+ * leaves conflicts — asks OpenCode to reconcile them. Then runs the project's
+ * checks and force-pushes the branch, so CI and review re-run against the new
+ * head. The Agent never opens or merges the pull request itself.
+ */
+async function runResolveConflicts(
+  config: AgentConfig,
+  deps: AgentDependencies,
+): Promise<AgentOutcome> {
+  const directory = deps.directory ?? DEFAULT_DIRECTORY;
+  const { pullNumber, branch } = requireConflictTarget(config);
+  const issue = await deps.github.fetchIssue(config.issueNumber);
+  const logs: string[] = [];
+
+  progress(`resolving conflicts on ${branch} against the default branch`);
+  await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
+  await deps.git.checkoutBranch(directory, branch);
+
+  const merged = await deps.git.mergeDefaultBranch(directory);
+  if (merged.output.trim() !== '') logs.push(merged.output.trimEnd());
+  if (!merged.ok) {
+    const output = logs.join('\n');
+    await deps.reporter.report({ prUrl: null, logs: output });
+    return { ok: false, reason: 'conflict-resolution-failed', output, branch };
+  }
+
+  const conflicts = await deps.git.unmergedPaths(directory);
+  let costCents: number | undefined;
+  if (conflicts.length > 0 || merged.conflicted) {
+    progress(`OpenCode resolving ${conflicts.length} conflicted file(s)`);
+    const resolved = await measureSpend(deps.spend, () =>
+      deps.openCode.resolveConflicts({
+        directory,
+        prompt: buildResolveConflictsPrompt(issue, {
+          pullNumber,
+          branch,
+          paths: conflicts,
+          mergeOutput: merged.output,
+        }),
+      }),
+    );
+    logs.push(resolved.result.output);
+    costCents = resolved.costCents;
+    if (resolved.result.exitCode !== 0) {
+      const output = logs.join('\n');
+      await deps.reporter.report({
+        prUrl: null,
+        logs: output,
+        ...(costCents === undefined ? {} : { costCents }),
+      });
+      return { ok: false, reason: 'conflict-resolution-failed', output, branch };
+    }
+
+    const remaining = await deps.git.unmergedPaths(directory);
+    if (remaining.length > 0) {
+      logs.push(`Conflicts remain in: ${remaining.join(', ')}`);
+      const output = logs.join('\n');
+      await deps.reporter.report({
+        prUrl: null,
+        logs: output,
+        ...(costCents === undefined ? {} : { costCents }),
+      });
+      return { ok: false, reason: 'conflict-resolution-failed', output, branch };
+    }
+  } else {
+    progress('branch merged cleanly; no conflicts to resolve');
+  }
+
+  progress('conflict resolution finished; running the project checks');
+  const checks = await deps.checks.run(directory);
+  logs.push(checks.output);
+  if (!checks.passed) {
+    const output = logs.join('\n');
+    await deps.reporter.report({
+      prUrl: null,
+      logs: output,
+      ...(costCents === undefined ? {} : { costCents }),
+    });
+    return { ok: false, reason: 'checks-failed', output, branch };
+  }
+
+  progress('checks passed; committing and force-pushing the branch');
+  await deps.git.commitAll(directory, `Resolve conflicts for #${issue.number}`);
+  await deps.git.push(directory, branch, { force: true });
+
+  const prUrl = pullRequestUrl(config.repoUrl, pullNumber);
+  await deps.reporter.report({
+    prUrl,
+    logs: logs.join('\n'),
+    ...(costCents === undefined ? {} : { costCents }),
+  });
+  return { ok: true, prUrl, branch };
+}
+
+/**
  * Runs a deploy for a merged commit.
  *
  * Clones the repository, checks out the merged commit SHA, applies the Project's
@@ -353,5 +459,6 @@ export async function runAgent(
   deps: AgentDependencies,
 ): Promise<AgentOutcome> {
   if (config.kind === 'deploy') return runDeploy(config, deps);
+  if (config.kind === 'resolve-conflicts') return runResolveConflicts(config, deps);
   return config.kind === 'review' ? runReview(config, deps) : runImplement(config, deps);
 }

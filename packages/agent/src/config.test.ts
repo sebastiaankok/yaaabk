@@ -57,6 +57,31 @@ describe('loadAgentConfig', () => {
     expect(config).toMatchObject({ kind: 'review', pullNumber: 7, branch: 'agent/issue-42' });
   });
 
+  it('reads the conflict-resolution mode and its pull request', () => {
+    const config = loadAgentConfig({
+      ...baseEnv,
+      AGENT_RUN_KIND: 'resolve-conflicts',
+      PULL_NUMBER: '7',
+      BRANCH: 'agent/issue-42',
+    });
+
+    expect(config).toMatchObject({
+      kind: 'resolve-conflicts',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+  });
+
+  it('rejects a conflict-resolution run without a branch', () => {
+    expect(() =>
+      loadAgentConfig({
+        ...baseEnv,
+        AGENT_RUN_KIND: 'resolve-conflicts',
+        PULL_NUMBER: '7',
+      }),
+    ).toThrow(/BRANCH/);
+  });
+
   it('rejects an unknown run kind', () => {
     expect(() => loadAgentConfig({ ...baseEnv, AGENT_RUN_KIND: 'invalid' })).toThrow(
       /AGENT_RUN_KIND/,

@@ -15,10 +15,15 @@
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed';
 
 /** What an Agent run is for. */
-export type AgentRunKind = 'implement-issue' | 'review' | 'deploy';
+export type AgentRunKind = 'implement-issue' | 'review' | 'resolve-conflicts' | 'deploy';
 
 /** Every valid {@link AgentRunKind}, for validation and the UI. */
-export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review', 'deploy'];
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = [
+  'implement-issue',
+  'review',
+  'resolve-conflicts',
+  'deploy',
+];
 
 /** Narrows an unknown value to an {@link AgentRunKind}. */
 export function isAgentRunKind(value: unknown): value is AgentRunKind {
@@ -29,7 +34,7 @@ export function isAgentRunKind(value: unknown): value is AgentRunKind {
  * The GitHub token scope a run needs. Kept distinct from {@link AgentRunKind}
  * so a new kind can reuse an existing scope rather than minting a new one.
  */
-export type AgentTokenScope = 'implement-issue' | 'review' | 'deploy';
+export type AgentTokenScope = 'implement-issue' | 'review' | 'resolve-conflicts' | 'deploy';
 
 /** The verdict a review run reaches. */
 export type AgentReviewVerdict = 'approve' | 'request-changes';
@@ -61,12 +66,13 @@ export interface AgentRun {
   id: string;
   projectId: string;
   issueId: string;
-  /** What the run is for: implementing the Issue, or reviewing a pull request. */
+  /** What the run is for: implementing, reviewing, resolving conflicts, or deploying. */
   kind: AgentRunKind;
   /**
    * 1-based sequence within the run's kind for this Issue. For an
-   * implement-issue run this is the Issue's attempt number; a review run does
-   * not consume the implement-attempt budget, so its sequence counts reviews.
+   * implement-issue run this is the Issue's attempt number; review and
+   * conflict-resolution runs do not consume the implement-attempt budget, so
+   * their sequence counts runs of that kind.
    */
   attemptNumber: number;
   /** The pull request a review run judges, once dispatched. */
@@ -133,11 +139,15 @@ export interface StoredAgentRun extends AgentRun {
 export interface SpawnOptions {
   /**
    * What the run is for. Defaults to `implement-issue`; `review` judges a pull
-   * request instead of implementing the Issue, and `deploy` deploys the merged
-   * commit of a closed pull request.
+   * request, `resolve-conflicts` merges the base into a conflicting branch and
+   * resolves it, and `deploy` deploys the merged commit of a closed pull
+   * request.
    */
   kind?: AgentRunKind;
-  /** The pull request a review run judges. Required when `kind` is `review`. */
+  /**
+   * The pull request a review or conflict-resolution run works on. Required for
+   * both of those kinds.
+   */
   pullNumber?: number;
   /** The merged commit SHA to deploy. Required when `kind` is `deploy`. */
   commitSha?: string;
@@ -247,9 +257,11 @@ export interface AgentManager {
    * run is dispatched immediately; otherwise it is queued and a later
    * {@link reconcile} dispatches it.
    *
-   * A `review` run judges the pull request identified by `pullNumber` and does
-   * not consume the Issue's implement-attempt budget. A `deploy` run deploys
-   * `commitSha` as `yaaabk-deploy` and records the SHA on the Project.
+   * A `review` run judges the pull request identified by `pullNumber`. A
+   * `resolve-conflicts` run checks out `branch`, merges the base into it and
+   * resolves the result. Neither consumes the Issue's implement-attempt budget.
+   * A `deploy` run deploys `commitSha` as `yaaabk-deploy` and records the SHA on
+   * the Project.
    */
   spawn(
     projectId: string,

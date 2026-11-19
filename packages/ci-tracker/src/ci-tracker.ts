@@ -5,12 +5,13 @@ import { DEFAULT_BRANCH, type Project, type ProjectStore } from '@yaaabk/project
 import { issueNumberFromBranch } from '@yaaabk/shared';
 import {
   AUTOMERGE_LABEL,
+  DEFAULT_MAX_CONFLICT_ATTEMPTS,
   DEFAULT_POLL_INTERVAL_MS,
   MAX_POLL_INTERVAL_MS,
   MIN_POLL_INTERVAL_MS,
   isValidInterval,
 } from './config';
-import { decideAction, type ReviewVerdict } from './decide-action';
+import { decideAction, decideMergeAction, type ReviewVerdict } from './decide-action';
 import { consoleLogger, toCiError, type CiTrackerLogger } from './errors';
 import type {
   CiPollSummary,
@@ -40,6 +41,8 @@ export interface CiTrackerOptions {
   enabled?: boolean;
   /** Merge strategy for a passing pull request. Defaults to the repository's own. */
   mergeMethod?: GitHubMergeMethod;
+  /** Conflict-resolution Agents allowed per Issue. Defaults to 2. */
+  maxConflictAttempts?: number;
   /** Injectable clock. Defaults to `Date`. */
   clock?: () => Date;
   /** Injectable scheduler, so tests can drive the loop without real time. */
@@ -58,12 +61,14 @@ const DEFAULT_TIMERS: CiTimers = {
  * Each pass walks every Project, lists the pull requests labelled `automerge`,
  * and reacts to the check state and review verdict of each head commit. Green
  * checks with no review spawn a review Agent; green checks with an approval
- * merge the pull request and close its Issue. A request-changes verdict spawns a
- * fix attempt carrying the reviewer's summary until the rejection threshold or
- * the Issue's attempt budget is spent, after which it is labelled `needs-human`.
- * Failing checks spawn a fix attempt under the same budget. The head commit is
- * remembered, so a still-failing pull request is not fixed twice, and a review
- * verdict is keyed to the commit it was made against.
+ * merge the pull request and close its Issue. A conflicting branch spawns a
+ * conflict-resolution Agent, bounded separately from the Issue's implementation
+ * attempts. A request-changes verdict spawns a fix attempt carrying the
+ * reviewer's summary until the rejection threshold or the Issue's attempt
+ * budget is spent, after which it is labelled `needs-human`. Failing checks
+ * spawn a fix attempt under the same budget. The head commit is remembered, so
+ * a still-failing pull request is not fixed twice, and a review verdict is keyed
+ * to the commit it was made against.
  */
 export function createCiTracker(options: CiTrackerOptions): CiTracker {
   const { projects, issues, agents, pulls, githubIssues } = options;
@@ -73,6 +78,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
 
   let enabled = options.enabled ?? true;
   let intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const maxConflictAttempts = options.maxConflictAttempts ?? DEFAULT_MAX_CONFLICT_ATTEMPTS;
   let lastCheckedAt: string | null = null;
   let handle: unknown = null;
   let inFlight = false;
@@ -165,6 +171,49 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
   }
 
   /**
+   * How many conflict-resolution Agents an Issue has used, and whether one is
+   * still in flight. `undefined` means the run history could not be read; the
+   * caller waits rather than spawning against an unknown count.
+   */
+  async function conflictState(
+    projectId: string,
+    issueId: string,
+  ): Promise<{ attempts: number; active: boolean } | undefined> {
+    const runs = await agents.runs(projectId, issueId);
+    if (!runs.ok) {
+      logger.error('ci conflict runs failed', { projectId, issueId, kind: runs.error.kind });
+      return undefined;
+    }
+    const conflicts = runs.value.filter((run) => run.kind === 'resolve-conflicts');
+    // A successful resolution starts a fresh budget: a later sibling merge can
+    // conflict again without the Issue being punished for an earlier event.
+    let attempts = 0;
+    for (const run of conflicts) {
+      if (run.status === 'success') attempts = 0;
+      else if (run.status === 'failed') attempts += 1;
+    }
+    return {
+      attempts,
+      active: conflicts.some((run) => run.status === 'queued' || run.status === 'running'),
+    };
+  }
+
+  /** Asks GitHub to merge the base branch into the pull request's head. */
+  async function updateBranch(project: Project, pull: { number: number }): Promise<boolean> {
+    const updated = await pulls.updatePullRequestBranch(project.repoFullName, pull.number);
+    if (!updated.ok) {
+      logger.error('ci update-branch failed', {
+        projectId: project.id,
+        pull: pull.number,
+        kind: updated.error.kind,
+      });
+      return false;
+    }
+    logger.info('ci updated branch', { projectId: project.id, pull: pull.number });
+    return true;
+  }
+
+  /**
    * The latest review, but only when it was made against `headSha`.
    *
    * Returns `ok: false` when the reviews could not be read, so the caller can
@@ -206,6 +255,8 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
         merged: 0,
         reviewSpawned: 0,
         fixSpawned: 0,
+        conflictSpawned: 0,
+        branchesUpdated: 0,
         deploySpawned: 0,
         needsHuman: 0,
       };
@@ -298,6 +349,7 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
           );
           if (action === 'merged' || action === 'needs-human') continue;
 
+          let handledMerge = false;
           switch (decision) {
             case 'wait':
               break;
@@ -328,6 +380,66 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
               }
               break;
             case 'merge': {
+              const readiness = await pulls.mergeability(project.repoFullName, pull.number);
+              if (!readiness.ok) {
+                logger.error('ci mergeability read failed', {
+                  projectId: project.id,
+                  pull: pull.number,
+                  kind: readiness.error.kind,
+                });
+                handledMerge = true;
+                break;
+              }
+              const conflicts = await conflictState(project.id, issue.id);
+              if (conflicts === undefined) {
+                handledMerge = true;
+                break;
+              }
+              if (conflicts.active) {
+                // A conflict run changes this branch's head; serializing here
+                // also gives it a stable base until it pushes.
+                handledMerge = true;
+                break;
+              }
+              const mergeDecision = decideMergeAction(
+                readiness.value.mergeable,
+                conflicts.attempts,
+                maxConflictAttempts,
+              );
+              if (mergeDecision === 'wait') break;
+              if (mergeDecision === 'escalate') {
+                await escalate(project, issue);
+                watches.set(key, { ...watch, action: 'needs-human' });
+                summary.needsHuman += 1;
+                handledMerge = true;
+                break;
+              }
+              if (mergeDecision === 'resolve-conflicts') {
+                const spawnedConflict = await agents.spawn(project.id, issue.id, {
+                  kind: 'resolve-conflicts',
+                  branch: pull.headRef,
+                  pullNumber: pull.number,
+                });
+                if (spawnedConflict.ok) {
+                  watches.set(key, { ...watch, action: 'conflict-spawned' });
+                  summary.conflictSpawned += 1;
+                  logger.info('ci spawned conflict resolution', {
+                    projectId: project.id,
+                    issueId: issue.id,
+                    pull: pull.number,
+                  });
+                } else {
+                  logger.error('ci spawn conflict resolution failed', {
+                    projectId: project.id,
+                    issueId: issue.id,
+                    pull: pull.number,
+                    kind: spawnedConflict.error.kind,
+                  });
+                }
+                handledMerge = true;
+                break;
+              }
+
               const mergedResult = await mergeAndClose(project, issue, pull.number, pull.headSha);
               if (mergedResult.ok) {
                 const spawnedDeploy = await agents.spawn(project.id, issue.id, {
@@ -351,6 +463,18 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
                 }
                 watches.set(key, { ...watch, action: 'merged' });
                 summary.merged += 1;
+                handledMerge = true;
+              } else if (
+                readiness.value.mergeStateStatus === 'behind' &&
+                action !== 'branch-updated'
+              ) {
+                // Branch protection can require an up-to-date head. Ask GitHub
+                // to merge the base in; the new head re-runs CI and review.
+                if (await updateBranch(project, pull)) {
+                  watches.set(key, { ...watch, action: 'branch-updated' });
+                  summary.branchesUpdated += 1;
+                  handledMerge = true;
+                }
               }
               break;
             }
@@ -367,6 +491,10 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
               summary.needsHuman += 1;
               break;
           }
+          // One merge/update/conflict action per Project per pass: a merge
+          // changes every sibling's base, so acting on a stale snapshot would
+          // just recreate the conflict.
+          if (handledMerge) break;
         }
       }
 

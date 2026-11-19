@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentConfig } from './config';
 import type { AgentIssue } from './ports';
-import { buildImplementPrompt } from './prompt';
+import { buildImplementPrompt, buildResolveConflictsPrompt } from './prompt';
 
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
 
@@ -56,5 +56,35 @@ describe('buildImplementPrompt', () => {
 
     expect(prompt).toContain('kubectl');
     expect(prompt).toContain('yaaabk-agent');
+  });
+});
+
+describe('buildResolveConflictsPrompt', () => {
+  it('names the pull request, conflicted files and merge output', () => {
+    const prompt = buildResolveConflictsPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      paths: ['src/a.ts', 'src/b.ts'],
+      mergeOutput: 'CONFLICT (content): src/a.ts',
+    });
+
+    expect(prompt).toContain('Resolve the merge conflicts on pull request #7');
+    expect(prompt).toContain('resolve-conflicts skill');
+    expect(prompt).toContain('src/a.ts');
+    expect(prompt).toContain('src/b.ts');
+    expect(prompt).toContain('CONFLICT (content): src/a.ts');
+    expect(prompt).toContain('With OAuth.');
+  });
+
+  it('tells the Agent not to reimplement the Issue or push', () => {
+    const prompt = buildResolveConflictsPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      paths: [],
+      mergeOutput: '',
+    });
+
+    expect(prompt).toContain('Do not reimplement the Issue');
+    expect(prompt).toContain('Do not push');
   });
 });

@@ -105,6 +105,7 @@
   /** What a run is, so reviews are not mistaken for implement attempts. */
   function runLabel(run: AgentRun): string {
     if (run.kind === 'review') return `Review ${run.attemptNumber}`;
+    if (run.kind === 'resolve-conflicts') return `Conflict fix ${run.attemptNumber}`;
     if (run.kind === 'deploy') return `Deploy ${run.attemptNumber}`;
     return `Attempt ${run.attemptNumber}`;
   }

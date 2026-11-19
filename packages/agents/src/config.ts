@@ -60,11 +60,15 @@ export const IMPLEMENT_SKILL_PATH = '/app/skills/implement-issue/SKILL.md';
 /** Skill the review Job loads. */
 export const REVIEW_SKILL_PATH = '/app/skills/review-pr/SKILL.md';
 
+/** Skill the conflict-resolution Job loads. */
+export const RESOLVE_CONFLICTS_SKILL_PATH = '/app/skills/resolve-conflicts/SKILL.md';
+
 /** Label a failed deploy leaves on the Issue, so the Developer can find it. */
 export const DEPLOY_FAILED_LABEL = 'deploy-failed';
 
 function prefix(kind: AgentRunKind): string {
   if (kind === 'review') return 'agent-review';
+  if (kind === 'resolve-conflicts') return 'agent-resolve';
   if (kind === 'deploy') return 'yaaabk-deploy';
   return 'agent';
 }
@@ -76,7 +80,9 @@ export function jobName(
   kind: AgentRunKind = 'implement-issue',
 ): string {
   const base = `${prefix(kind)}-${issueId}`;
-  return kind === 'review' ? `${base}-${attempt}` : `${base}-attempt-${attempt}`;
+  return kind === 'review' || kind === 'resolve-conflicts'
+    ? `${base}-${attempt}`
+    : `${base}-attempt-${attempt}`;
 }
 
 /** The working PVC name for a run, retained after the Job ends. */

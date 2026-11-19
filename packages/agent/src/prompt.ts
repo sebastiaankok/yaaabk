@@ -43,6 +43,40 @@ export function pullRequestBody(issue: AgentIssue): string {
 export const REVIEW_VERDICT_PATH = '.yaaabk/review.json';
 
 /**
+ * Builds the prompt handed to OpenCode when a pull request branch conflicts
+ * with the base branch.
+ *
+ * The merge has already run and left conflict markers in the working tree, so
+ * the Agent's only job is to reconcile the two changes, keep both Issues'
+ * behaviour, and leave the checks green.
+ */
+export function buildResolveConflictsPrompt(
+  issue: AgentIssue,
+  conflict: { pullNumber: number; branch: string; paths: string[]; mergeOutput: string },
+): string {
+  return [
+    `Resolve the merge conflicts on pull request #${conflict.pullNumber}: ${issue.title}`,
+    '',
+    'Use the resolve-conflicts skill. Work in the checked-out pull request branch:',
+    '- The default branch has already been merged into this branch and left conflicts.',
+    '- Resolve every conflict by preserving the intent of both sides, not by discarding one.',
+    `- Conflicted files:\n${conflict.paths.map((path) => `  - ${path}`).join('\n') || '  (none reported)'}`,
+    '- Do not reimplement the Issue or change unrelated code.',
+    '- Run the pre-commit hooks (lint, type-check, test) and fix any failures.',
+    '- Stage the resolved files so no unmerged path remains; YAAABK commits and force-pushes once you finish.',
+    '- Do not push or open a pull request.',
+    '',
+    `Repository: pull request branch ${conflict.branch}`,
+    '',
+    `Issue #${issue.number}:`,
+    issue.body.trim() === '' ? '(no description)' : issue.body,
+    '',
+    'Merge output:',
+    conflict.mergeOutput.trim() === '' ? '(no output)' : conflict.mergeOutput,
+  ].join('\n');
+}
+
+/**
  * Builds the prompt handed to OpenCode for one review.
  *
  * Kept pure and small so the wording can be asserted in tests; the actual

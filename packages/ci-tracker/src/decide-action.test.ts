@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideAction, REVIEW_REJECTION_THRESHOLD } from './decide-action';
+import { decideAction, decideMergeAction, REVIEW_REJECTION_THRESHOLD } from './decide-action';
 import type { ReviewVerdict } from './decide-action';
 import type { GitHubCheckState } from '@yaaabk/github';
 
@@ -173,5 +173,25 @@ describe('decideAction', () => {
         );
       }
     }
+  });
+});
+
+describe('decideMergeAction', () => {
+  it('merges a mergeable pull request', () => {
+    expect(decideMergeAction('mergeable', 0, 2)).toBe('merge');
+  });
+
+  it('waits while GitHub is still computing mergeability', () => {
+    expect(decideMergeAction('unknown', 0, 2)).toBe('wait');
+  });
+
+  it('spawns a conflict resolution while the budget lasts', () => {
+    expect(decideMergeAction('conflicting', 0, 2)).toBe('resolve-conflicts');
+    expect(decideMergeAction('conflicting', 1, 2)).toBe('resolve-conflicts');
+  });
+
+  it('escalates once the conflict budget is spent', () => {
+    expect(decideMergeAction('conflicting', 2, 2)).toBe('escalate');
+    expect(decideMergeAction('conflicting', 0, 0)).toBe('escalate');
   });
 });

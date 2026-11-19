@@ -1,10 +1,18 @@
 /** Default number of implementation attempts before a human is asked to step in. */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** What the Job is running: implementing an Issue, reviewing a pull request, or deploying a merged commit. */
-export type AgentRunKind = 'implement-issue' | 'review' | 'deploy';
+/**
+ * What the Job is running: implementing an Issue, reviewing a pull request,
+ * resolving a merge conflict, or deploying a merged commit.
+ */
+export type AgentRunKind = 'implement-issue' | 'review' | 'resolve-conflicts' | 'deploy';
 
-export const AGENT_RUN_KINDS: readonly AgentRunKind[] = ['implement-issue', 'review', 'deploy'];
+export const AGENT_RUN_KINDS: readonly AgentRunKind[] = [
+  'implement-issue',
+  'review',
+  'resolve-conflicts',
+  'deploy',
+];
 
 /** Narrows an unknown value to an {@link AgentRunKind}. */
 export function isAgentRunKind(value: unknown): value is AgentRunKind {
@@ -133,12 +141,12 @@ export function loadAgentConfig(env: Env): AgentConfig {
   if (rawKind !== 'deploy') {
     model = require(env, 'AGENT_MODEL');
   }
-  if (rawKind === 'review') {
+  if (rawKind === 'review' || rawKind === 'resolve-conflicts') {
     if (branch === undefined) {
-      throw new Error('Missing required environment variable: BRANCH for a review run');
+      throw new Error(`Missing required environment variable: BRANCH for a ${rawKind} run`);
     }
     if (pullNumber === undefined) {
-      throw new Error('Missing required environment variable: PULL_NUMBER for a review run');
+      throw new Error(`Missing required environment variable: PULL_NUMBER for a ${rawKind} run`);
     }
   }
   if (rawKind === 'deploy') {

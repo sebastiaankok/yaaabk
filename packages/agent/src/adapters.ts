@@ -73,6 +73,31 @@ export function createGit(): Git {
       const result = await Bun.$`git -C ${directory} diff origin/HEAD...HEAD`.quiet();
       return result.stdout.toString();
     },
+    async mergeDefaultBranch(directory) {
+      const fetched = await Bun.$`git -C ${directory} fetch origin`.quiet().nothrow();
+      if (fetched.exitCode !== 0) {
+        return {
+          ok: false,
+          conflicted: false,
+          output: fetched.stderr.toString() || fetched.stdout.toString(),
+        };
+      }
+      const merged = await Bun.$`git -C ${directory} merge --no-edit origin/HEAD`.quiet().nothrow();
+      const output = [merged.stdout.toString(), merged.stderr.toString()]
+        .filter((part) => part.trim() !== '')
+        .join('\n');
+      return { ok: true, conflicted: merged.exitCode !== 0, output };
+    },
+    async unmergedPaths(directory) {
+      const result = await Bun.$`git -C ${directory} diff --name-only --diff-filter=U`
+        .quiet()
+        .nothrow();
+      return result.stdout
+        .toString()
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+    },
   };
 }
 
@@ -417,6 +442,10 @@ export function createOpenCode(
         output: result.output,
         verdict,
       };
+    },
+
+    async resolveConflicts({ directory, prompt }) {
+      return invoke(directory, prompt);
     },
   };
 }

@@ -57,6 +57,19 @@ export interface Git {
    * review sees exactly what the change introduces.
    */
   diff(directory: string): Promise<string>;
+  /**
+   * Merges the repository's default branch into the current branch, leaving
+   * conflict markers in the working tree when the merge cannot complete.
+   * `ok: false` means the fetch or merge command itself failed, not that the
+   * merge produced conflicts.
+   */
+  mergeDefaultBranch(directory: string): Promise<{
+    ok: boolean;
+    conflicted: boolean;
+    output: string;
+  }>;
+  /** Paths with unresolved merge conflicts in the working tree. */
+  unmergedPaths(directory: string): Promise<string[]>;
 }
 
 export interface Kubectl {
@@ -122,6 +135,11 @@ export interface OpenCode {
     exitCode: number;
     output: string;
     verdict: ReviewVerdict;
+  }>;
+  /** Runs OpenCode with the resolve-conflicts prompt in the working directory. */
+  resolveConflicts(input: { directory: string; prompt: string }): Promise<{
+    exitCode: number;
+    output: string;
   }>;
 }
 
@@ -214,7 +232,12 @@ export type AgentOutcome =
   | { ok: true; prUrl: string; branch: string; commitSha?: string }
   | {
       ok: false;
-      reason: 'implementation-failed' | 'checks-failed' | 'review-failed' | 'deploy-failed';
+      reason:
+        | 'implementation-failed'
+        | 'checks-failed'
+        | 'review-failed'
+        | 'conflict-resolution-failed'
+        | 'deploy-failed';
       output: string;
       branch: string;
     };

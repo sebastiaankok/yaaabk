@@ -79,6 +79,7 @@ function fakeTimers() {
 interface HarnessOptions {
   maxAttempts?: number;
   attemptCount?: number;
+  maxConflictAttempts?: number;
   enabled?: boolean;
   timers?: CiTimers;
 }
@@ -150,6 +151,9 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     githubIssues,
     ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
     ...(options.timers === undefined ? {} : { timers: options.timers }),
+    ...(options.maxConflictAttempts === undefined
+      ? {}
+      : { maxConflictAttempts: options.maxConflictAttempts }),
     clock: () => NOW,
     logger: silentLogger,
   };
@@ -171,7 +175,14 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
 /** Seeds an `automerge` pull request for the harness's Issue. */
 function watch(
   h: Harness,
-  options: { headSha?: string; state?: 'pending' | 'success' | 'failure'; draft?: boolean } = {},
+  options: {
+    headSha?: string;
+    state?: 'pending' | 'success' | 'failure';
+    draft?: boolean;
+    mergeable?: 'mergeable' | 'conflicting' | 'unknown';
+    mergeStateStatus?:
+      'behind' | 'blocked' | 'clean' | 'dirty' | 'draft' | 'has-hooks' | 'unstable' | 'unknown';
+  } = {},
 ) {
   const headSha = options.headSha ?? 'sha-7';
   h.pulls.addPullRequest(REPO, {
@@ -180,6 +191,10 @@ function watch(
     headSha,
     labels: ['automerge'],
     ...(options.draft === undefined ? {} : { draft: options.draft }),
+    ...(options.mergeable === undefined ? {} : { mergeable: options.mergeable }),
+    ...(options.mergeStateStatus === undefined
+      ? {}
+      : { mergeStateStatus: options.mergeStateStatus }),
   });
   h.pulls.setChecks(REPO, headSha, {
     state: options.state ?? 'success',
@@ -219,6 +234,69 @@ describe('poll', () => {
       commitSha: 'merge-7',
       branch: 'main',
     });
+  });
+
+  it('spawns a conflict-resolution run instead of merging a conflicting branch', async () => {
+    const h = await harness();
+    watch(h, { mergeable: 'conflicting', mergeStateStatus: 'dirty' });
+    await review(h, 'approve');
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { conflictSpawned: 1, merged: 0, deploySpawned: 0 },
+    });
+    expect(h.pulls.merged(REPO, 7)).toBe(false);
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value).toHaveLength(1);
+    expect(runs.ok && runs.value[0]).toMatchObject({
+      kind: 'resolve-conflicts',
+      branch: h.branch,
+      pullNumber: 7,
+    });
+
+    // While that run is in flight, another poll must not spawn a duplicate.
+    const second = await h.tracker.poll();
+    expect(second).toMatchObject({ ok: true, value: { conflictSpawned: 0 } });
+    const after = await h.agents.runs(h.projectId, h.issueId);
+    expect(after.ok && after.value).toHaveLength(1);
+  });
+
+  it('escalates when the conflict-resolution budget is exhausted', async () => {
+    const h = await harness({ maxConflictAttempts: 0 });
+    watch(h, { mergeable: 'conflicting', mergeStateStatus: 'dirty' });
+    await review(h, 'approve');
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { needsHuman: 1, conflictSpawned: 0 } });
+    const issue = await h.issues.get(h.projectId, h.issueId);
+    expect(issue.ok && issue.value.label).toBe('needs-human');
+  });
+
+  it('updates a behind branch when GitHub refuses to merge it', async () => {
+    const h = await harness();
+    watch(h, { mergeStateStatus: 'behind' });
+    await review(h, 'approve');
+    h.pulls.failNext('merge-pull', {
+      kind: 'conflict',
+      operation: 'merge-pull',
+      message: 'Required status check is expected',
+    });
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { branchesUpdated: 1, merged: 0, deploySpawned: 0 },
+    });
+    expect(h.pulls.calls).toContainEqual({
+      operation: 'update-branch',
+      repo: REPO,
+      number: 7,
+    });
+    expect(h.pulls.merged(REPO, 7)).toBe(false);
   });
 
   it('spawns a review Agent when checks are green and no review exists', async () => {

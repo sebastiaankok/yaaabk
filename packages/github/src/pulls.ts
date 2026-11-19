@@ -4,13 +4,23 @@ import type { GitHubResult } from './types';
  * Public types for the pull-request side of the GitHub integration.
  *
  * The CI Tracker watches the pull requests YAAABK's Agents open: it lists them,
- * reads the combined check state of their head commit, and merges the ones whose
- * checks passed. The `GitHubPulls` port is deliberately narrow — those three
- * verbs and nothing more — so the tracker is testable without a network.
+ * reads their check state and mergeability, and merges the ones whose checks
+ * passed. The `GitHubPulls` port is deliberately narrow — only the verbs the
+ * tracker needs — so it is testable without a network.
  */
 
 /** Whether a pull request's checks are still running, passed, or failed. */
 export type GitHubCheckState = 'pending' | 'success' | 'failure';
+
+/** Whether GitHub can currently merge a pull request. */
+export type GitHubMergeable = 'mergeable' | 'conflicting' | 'unknown';
+
+/**
+ * GitHub's finer-grained merge state. Only the values YAAABK acts on are
+ * spelled out; anything GitHub adds later maps to `unknown`.
+ */
+export type GitHubMergeStateStatus =
+  'behind' | 'blocked' | 'clean' | 'dirty' | 'draft' | 'has-hooks' | 'unstable' | 'unknown';
 
 /** A pull request as the CI Tracker sees it. */
 export interface GitHubPullRequest {
@@ -22,6 +32,19 @@ export interface GitHubPullRequest {
   headSha: string;
   labels: string[];
   draft: boolean;
+  /**
+   * Mergeability from the list response. GitHub often leaves this `unknown`
+   * there; {@link GitHubPulls.mergeability} reads the authoritative value.
+   */
+  mergeable: GitHubMergeable;
+  /** Why the pull request is not mergeable, when GitHub says so. */
+  mergeStateStatus: GitHubMergeStateStatus;
+}
+
+/** GitHub's current mergeability for one pull request. */
+export interface GitHubMergeability {
+  mergeable: GitHubMergeable;
+  mergeStateStatus: GitHubMergeStateStatus;
 }
 
 /** The combined check state of a commit. */
@@ -78,12 +101,22 @@ export interface GitHubPulls {
   listPullRequests(repo: string, labels?: string[]): Promise<GitHubResult<GitHubPullRequest[]>>;
   /** The combined check state of the commit `ref` (usually a head SHA). */
   checkState(repo: string, ref: string): Promise<GitHubResult<GitHubCheckSummary>>;
+  /**
+   * Reads GitHub's authoritative mergeability for one pull request. The list
+   * endpoint often returns `null` here, so a merge decision must not rely on it.
+   */
+  mergeability(repo: string, number: number): Promise<GitHubResult<GitHubMergeability>>;
   /** Merges a pull request. */
   mergePullRequest(
     repo: string,
     number: number,
     input?: MergePullRequestInput,
   ): Promise<GitHubResult<MergePullRequestResult>>;
+  /**
+   * Merges the base branch into a pull request's head, the way GitHub's
+   * "Update branch" button does. Fails when the branches conflict.
+   */
+  updatePullRequestBranch(repo: string, number: number): Promise<GitHubResult<void>>;
   /** Posts a formal review on a pull request. */
   createReview(
     repo: string,

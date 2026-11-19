@@ -295,9 +295,19 @@ function resolveGitHubPulls(settingsModule: SettingsModule): GitHubPulls {
       const built = await build();
       return built.ok ? built.client.checkState(...args) : fail('checkState', built);
     },
+    mergeability: async (...args) => {
+      const built = await build();
+      return built.ok ? built.client.mergeability(...args) : fail('mergeability', built);
+    },
     mergePullRequest: async (...args) => {
       const built = await build();
       return built.ok ? built.client.mergePullRequest(...args) : fail('mergePullRequest', built);
+    },
+    updatePullRequestBranch: async (...args) => {
+      const built = await build();
+      return built.ok
+        ? built.client.updatePullRequestBranch(...args)
+        : fail('updatePullRequestBranch', built);
     },
     createReview: async (...args) => {
       const built = await build();
@@ -360,6 +370,11 @@ const AGENT_TOKEN_PERMISSIONS: Record<AgentTokenScope, InstallationTokenPermissi
     // A review starts by fetching the Issue to judge the change against; with
     // only `pull_requests` the fetch fails with 403 and every review dies
     // before cloning.
+    issues: 'read',
+  },
+  'resolve-conflicts': {
+    contents: 'write',
+    pull_requests: 'write',
     issues: 'read',
   },
   deploy: {
