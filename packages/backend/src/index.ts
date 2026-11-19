@@ -612,18 +612,37 @@ if (Number.isFinite(sessionSweepMs) && sessionSweepMs > 0) {
 }
 
 /**
- * Drives the Agent Manager: dispatches queued attempts, records finished Jobs
- * and schedules retries. The interval is configurable so tests and constrained
- * clusters can slow it down.
+ * One Agent Manager pass: record finished Jobs and schedule retries first, so
+ * their slots are free, then start every `ready` Issue whose dependencies are
+ * closed. Overlapping ticks are skipped because a mint or a cluster call can
+ * outlast the poll interval. The interval is configurable so tests and
+ * constrained clusters can slow it down.
  */
+let agentTickRunning = false;
+async function runAgentTick(): Promise<void> {
+  if (agentTickRunning) return;
+  agentTickRunning = true;
+  try {
+    const reconciled = await agents.reconcile();
+    if (!reconciled.ok) {
+      console.error('agents reconcile failed', reconciled.error);
+    }
+    const dispatched = await agents.autoDispatch();
+    if (!dispatched.ok) {
+      console.error('agents autoDispatch failed', dispatched.error);
+    } else if (dispatched.value.scheduled > 0) {
+      console.info(`agents autoDispatch scheduled ${dispatched.value.scheduled} run(s)`);
+    }
+  } finally {
+    agentTickRunning = false;
+  }
+}
+
 const agentPollMs = Number(process.env.YAAABK_AGENT_POLL_MS ?? 15000);
 if (Number.isFinite(agentPollMs) && agentPollMs > 0) {
+  void runAgentTick();
   setInterval(() => {
-    void agents.reconcile().then((result) => {
-      if (!result.ok) {
-        console.error('agents reconcile failed', result.error);
-      }
-    });
+    void runAgentTick();
   }, agentPollMs);
 }
 

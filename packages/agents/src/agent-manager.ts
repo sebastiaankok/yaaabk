@@ -1,6 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { GitHubIssues } from '@yaaabk/github';
-import type { Issue, IssuesModule } from '@yaaabk/issues';
+import {
+  buildIssueGraph,
+  type Issue,
+  type IssueGraphNode,
+  type IssuesModule,
+} from '@yaaabk/issues';
 import type { K8sClient, JobSpec, PodInfo } from '@yaaabk/k8s';
 import {
   DEPLOY_SOURCE_PATH,
@@ -29,7 +34,7 @@ import {
   openrouterSecretName,
   pvcName,
 } from './config';
-import { agentsError, consoleLogger, toAgentsError, type AgentsLogger } from './errors';
+import { agentsError, consoleLogger, messageOf, toAgentsError, type AgentsLogger } from './errors';
 import type {
   AgentGithubTokenResolver,
   AgentLogOptions,
@@ -39,6 +44,7 @@ import type {
   AgentRunKind,
   AgentStore,
   AgentsResult,
+  AutoDispatchSummary,
   Capacity,
   ReconcileSummary,
   SpawnOptions,
@@ -131,6 +137,12 @@ const MAX_FAILURE_LOG_CHARS = 200_000;
 /** How long a reconcile pass waits for a dead Pod's log before moving on. */
 const FAILURE_LOG_READ_TIMEOUT_MS = 5_000;
 
+/**
+ * How long auto-dispatch leaves an Issue alone after scheduling its first
+ * attempt failed, so a budget or credential problem is not retried every poll.
+ */
+const AUTO_DISPATCH_RETRY_MS = 60_000;
+
 /** A stream that yields `text` once and closes. */
 function textStream(text: string): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -207,6 +219,15 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
   const maxCluster = options.maxCluster ?? DEFAULT_MAX_CONCURRENT_CLUSTER;
   const pvcStorage = options.pvcStorage ?? DEFAULT_PVC_STORAGE;
   const activeDeadlineSeconds = options.activeDeadlineSeconds ?? DEFAULT_ACTIVE_DEADLINE_SECONDS;
+
+  /**
+   * Issues an auto-dispatch pass is currently scheduling, and until when a
+   * failed attempt should not be retried. The set stops overlapping passes
+   * (the timer can fire while a slow mint is still in flight) from creating two
+   * runs for one Issue.
+   */
+  const autoDispatchInFlight = new Set<string>();
+  const autoDispatchRetryAt = new Map<string, number>();
 
   /**
    * Runs an operation, mapping failures to typed errors and logging every
@@ -359,6 +380,21 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
    */
   function resolveModel(issue: Issue, project: Project): string {
     return issue.agentModel ?? project.agentModel ?? defaultModel;
+  }
+
+  /**
+   * Whether an Issue is on the current dependency frontier: `ready`, freshly
+   * created, synced, free of cycles or broken references, and with every
+   * dependency already closed.
+   *
+   * A run history is checked separately, because reviews and deploys do not
+   * advance `attemptCount`.
+   */
+  function canAutoDispatch(issue: Issue, node: IssueGraphNode, byId: Map<string, Issue>): boolean {
+    if (issue.label !== 'ready' || issue.status !== 'open') return false;
+    if (issue.attemptCount > 0 || issue.githubNumber === null) return false;
+    if (node.wave === null || node.missing.length > 0) return false;
+    return node.dependsOn.every((dependencyId) => byId.get(dependencyId)?.status === 'closed');
   }
 
   /**
@@ -729,6 +765,67 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       return guard('projectRuns', { projectId }, async () =>
         store.listForProject(projectId).map(toPublicRun),
       );
+    },
+
+    autoDispatch() {
+      return guard('autoDispatch', {}, async () => {
+        const summary: AutoDispatchSummary = { scheduled: 0 };
+        const at = now().getTime();
+
+        for (const project of projects.list()) {
+          const listed = await issues.list(project.id);
+          if (!listed.ok) {
+            logger.error('agents autoDispatch list failed', {
+              projectId: project.id,
+              kind: listed.error.kind,
+            });
+            continue;
+          }
+
+          const byId = new Map(listed.value.map((issue) => [issue.id, issue]));
+          const nodes = new Map(buildIssueGraph(listed.value).nodes.map((node) => [node.id, node]));
+
+          for (const issue of listed.value) {
+            const key = `${project.id}:${issue.id}`;
+            const node = nodes.get(issue.id);
+            if (node === undefined || !canAutoDispatch(issue, node, byId)) continue;
+            if (autoDispatchInFlight.has(key)) continue;
+            if ((autoDispatchRetryAt.get(key) ?? 0) > at) continue;
+            // Any run at all means the Issue is already under way: an in-flight
+            // attempt, a retry, a review, or a deploy. Re-implementing it would
+            // duplicate a pull request or reopen finished work.
+            if (store.listForIssue(project.id, issue.id).length > 0) continue;
+            // Wait for a free slot rather than queueing the rest of the wave:
+            // `schedule` mints a budgeted key before it checks capacity, and an
+            // idle queued run would hold that credential for no work.
+            if (!canDispatch(project.id)) break;
+
+            autoDispatchInFlight.add(key);
+            try {
+              const run = await schedule(project.id, issue.id);
+              autoDispatchRetryAt.delete(key);
+              summary.scheduled += 1;
+              logger.info('agents autoDispatch scheduled', {
+                projectId: project.id,
+                issueId: issue.id,
+                runId: run.id,
+                status: run.status,
+              });
+            } catch (error) {
+              autoDispatchRetryAt.set(key, at + AUTO_DISPATCH_RETRY_MS);
+              logger.error('agents autoDispatch failed', {
+                projectId: project.id,
+                issueId: issue.id,
+                message: messageOf(error),
+              });
+            } finally {
+              autoDispatchInFlight.delete(key);
+            }
+          }
+        }
+
+        return summary;
+      });
     },
 
     reconcile() {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeGitHubIssues, type FakeGitHubIssues } from '@yaaabk/github';
-import { createInMemoryIssueStore, createIssuesModule, type IssuesModule } from '@yaaabk/issues';
+import {
+  createInMemoryIssueStore,
+  createIssuesModule,
+  type IssueLabel,
+  type IssuesModule,
+} from '@yaaabk/issues';
 import { createMockK8sClient, type K8sObject, type MockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
@@ -125,6 +130,8 @@ async function readyIssue(
     githubNumber?: number;
     maxAttempts?: number;
     agentModel?: string;
+    dependsOn?: string[];
+    label?: IssueLabel;
   } = {},
 ) {
   const projectId = overrides.projectId ?? 'project-1';
@@ -133,6 +140,8 @@ async function readyIssue(
     title: overrides.title ?? 'Add login',
     ...(overrides.maxAttempts === undefined ? {} : { maxAttempts: overrides.maxAttempts }),
     ...(overrides.agentModel === undefined ? {} : { agentModel: overrides.agentModel }),
+    ...(overrides.dependsOn === undefined ? {} : { dependsOn: overrides.dependsOn }),
+    ...(overrides.label === undefined ? {} : { label: overrides.label }),
   });
   if (!created.ok) throw new Error(`issue create failed: ${created.error.message}`);
   const synced = await issues.update(projectId, created.value.id, {
@@ -571,6 +580,117 @@ describe('concurrency', () => {
     expect(statuses).toEqual(['running', 'running', 'running', 'queued']);
     const capacity = manager.capacity();
     expect(capacity.ok && capacity.value).toMatchObject({ cluster: 3, maxCluster: 3 });
+  });
+});
+
+describe('autoDispatch', () => {
+  it('starts the current wave only, then the next once its dependency closes', async () => {
+    const { manager, issues } = await harness();
+    const first = await readyIssue(issues, { title: 'Schema', githubNumber: 1 });
+    const second = await readyIssue(issues, {
+      title: 'Api',
+      githubNumber: 2,
+      dependsOn: ['Schema'],
+    });
+
+    const firstPass = await manager.autoDispatch();
+
+    expect(firstPass.ok && firstPass.value).toEqual({ scheduled: 1 });
+    const firstRuns = await manager.runs('project-1', first.id);
+    expect(firstRuns.ok && firstRuns.value).toHaveLength(1);
+    const secondRuns = await manager.runs('project-1', second.id);
+    expect(secondRuns.ok && secondRuns.value).toHaveLength(0);
+    const waiting = await issues.get('project-1', second.id);
+    expect(waiting.ok && waiting.value).toMatchObject({ status: 'open', attemptCount: 0 });
+
+    // The CI tracker closes the first Issue when its pull request merges.
+    await issues.update('project-1', first.id, {
+      status: 'closed',
+      closedAt: NOW.toISOString(),
+    });
+    const secondPass = await manager.autoDispatch();
+
+    expect(secondPass.ok && secondPass.value).toEqual({ scheduled: 1 });
+    const advanced = await issues.get('project-1', second.id);
+    expect(advanced.ok && advanced.value).toMatchObject({
+      status: 'in_progress',
+      attemptCount: 1,
+    });
+  });
+
+  it('leaves an Issue with an existing run to the retry and CI paths', async () => {
+    const { manager, issues } = await harness();
+    const issue = await readyIssue(issues);
+    const review = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!review.ok) throw new Error('spawn failed');
+
+    const summary = await manager.autoDispatch();
+
+    expect(summary.ok && summary.value.scheduled).toBe(0);
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value).toHaveLength(1);
+    expect(runs.ok && runs.value[0]?.kind).toBe('review');
+  });
+
+  it('skips Issues on a cycle, with a broken dependency, or outside the ready label', async () => {
+    const { manager, issues } = await harness();
+    await readyIssue(issues, { title: 'A', githubNumber: 1, dependsOn: ['B'] });
+    await readyIssue(issues, { title: 'B', githubNumber: 2, dependsOn: ['A'] });
+    await readyIssue(issues, { title: 'Missing', githubNumber: 3, dependsOn: ['Nope'] });
+    await readyIssue(issues, { title: 'Human', githubNumber: 4, label: 'needs-human' });
+    const unsynced = await issues.create({ projectId: 'project-1', title: 'Unsynced' });
+    expect(unsynced.ok).toBe(true);
+
+    const summary = await manager.autoDispatch();
+
+    expect(summary.ok && summary.value.scheduled).toBe(0);
+  });
+
+  it('waits for a free slot before starting the rest of the wave', async () => {
+    const { manager, issues, k8s } = await harness({ maxPerProject: 2 });
+    const first = await readyIssue(issues, { title: 'First', githubNumber: 1 });
+    await readyIssue(issues, { title: 'Second', githubNumber: 2 });
+    const third = await readyIssue(issues, { title: 'Third', githubNumber: 3 });
+
+    const firstPass = await manager.autoDispatch();
+
+    expect(firstPass.ok && firstPass.value.scheduled).toBe(2);
+    const waiting = await manager.runs('project-1', third.id);
+    expect(waiting.ok && waiting.value).toHaveLength(0);
+    const waitingIssue = await issues.get('project-1', third.id);
+    expect(waitingIssue.ok && waitingIssue.value.attemptCount).toBe(0);
+
+    const firstRuns = await manager.runs('project-1', first.id);
+    if (!firstRuns.ok || firstRuns.value[0]?.jobName == null) throw new Error('no run');
+    await finishJob(k8s, NS, firstRuns.value[0].jobName, 'succeeded');
+    await manager.reconcile();
+    const secondPass = await manager.autoDispatch();
+
+    expect(secondPass.ok && secondPass.value.scheduled).toBe(1);
+    const started = await manager.runs('project-1', third.id);
+    expect(started.ok && started.value[0]?.status).toBe('running');
+  });
+
+  it('backs off after a failed dispatch instead of retrying every pass', async () => {
+    let mints = 0;
+    const { manager, issues } = await harness({
+      mintOpenrouterKey: async () => {
+        mints += 1;
+        return { ok: false, message: 'No credits' };
+      },
+    });
+    await readyIssue(issues);
+
+    const first = await manager.autoDispatch();
+    const second = await manager.autoDispatch();
+
+    expect(first.ok && first.value.scheduled).toBe(0);
+    expect(second.ok && second.value.scheduled).toBe(0);
+    expect(mints).toBe(1);
   });
 });
 
