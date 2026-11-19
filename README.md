@@ -384,9 +384,17 @@ over HTTP:
 
 `spawn` creates the attempt's working PVC, optional per-attempt credential Secrets, and Job inside the **Project's Namespace** (`yaaabk-<short-uuid>`) mounted at `/work` with a 30-minute deadline, running as the Project's `yaaabk-agent` ServiceAccount with an auto-mounted, auto-rotating ServiceAccount token so the Agent can debug its Project's running workloads with `kubectl` (get/list/watch on pods, services, configmaps, events, deployments, httproutes; read `pods/log`; create `pods/exec`) without any long-lived cluster credential. The spawn flips the Issue to `in_progress`. At most **two** agents
 run per Project and **ten** cluster-wide; an attempt that arrives over the limit
-is recorded `queued` and dispatched by the reconcile loop as slots free. The loop
-runs on a timer (`YAAABK_AGENT_POLL_MS`, default 15s) and, on a finished Job,
-marks the attempt `success` and records the pull request URL, or marks it
+is recorded `queued` and dispatched by the reconcile loop as slots free.
+
+The same loop also auto-dispatches the current dependency wave: every Issue
+labelled `ready` whose dependencies are all `closed` gets an Agent without a
+click, so a Plan proceeds from one wave to the next as pull requests merge.
+Issues with any prior run — including a review or a deploy — are left to the
+retry and CI paths, as are Issues that are not synced to GitHub, sit on a cycle
+or reference a missing dependency. A dispatch that fails (for example, a budget
+that cannot cover one reply) is retried after a minute instead of on every tick.
+The loop runs on a timer (`YAAABK_AGENT_POLL_MS`, default 15s) and, on a finished
+Job, marks the attempt `success` and records the pull request URL, or marks it
 `failed` and either schedules the next attempt or — once `maxAttempts` is reached
 — labels the Issue `needs-human`. Each attempt gets its own budgeted OpenRouter
 key, minted from the management credential in Settings (or

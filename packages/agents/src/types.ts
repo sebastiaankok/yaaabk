@@ -190,6 +190,12 @@ export interface ReconcileSummary {
   escalated: number;
 }
 
+/** What an {@link AgentManager.autoDispatch} pass scheduled. */
+export interface AutoDispatchSummary {
+  /** Implement runs created for dependency-satisfied `ready` Issues. */
+  scheduled: number;
+}
+
 /** The fields a Job may report back once it finishes. */
 export interface AgentReport {
   /** Pull request the attempt opened. */
@@ -254,6 +260,15 @@ export interface AgentManager {
   runs(projectId: string, issueId: string): Promise<AgentsResult<AgentRun[]>>;
   /** Every run for a Project, newest first. */
   projectRuns(projectId: string): Promise<AgentsResult<AgentRun[]>>;
+  /**
+   * Starts the Implement Agent for every fresh `ready` Issue whose dependencies
+   * are all closed. Issues that are not part of the current dependency wave,
+   * already have a run, or carry another label are left alone.
+   *
+   * Issues beyond the concurrency limits wait for a later pass, after
+   * {@link reconcile} has freed their slot.
+   */
+  autoDispatch(): Promise<AgentsResult<AutoDispatchSummary>>;
   /**
    * Advances every in-flight attempt: dispatches queued runs while capacity
    * allows, records finished Jobs, and retries or escalates failures.
