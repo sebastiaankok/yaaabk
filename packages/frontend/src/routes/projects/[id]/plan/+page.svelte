@@ -53,7 +53,7 @@
   const draftLabel = $derived(
     session === null
       ? ''
-      : `${session.draft.hasPrd ? 'PRD drafted' : 'No PRD yet'} · ${session.draft.issueCount} ${session.draft.issueCount === 1 ? 'issue' : 'issues'} drafted`,
+      : `${session.draft.hasPrd ? 'Plan drafted' : 'No Plan yet'} · ${session.draft.issueCount} ${session.draft.issueCount === 1 ? 'issue' : 'issues'} drafted`,
   );
 
   const statusLabel = $derived(terminalStatusLabel(terminalStatus));
@@ -172,7 +172,7 @@
       activePlan = published.plan;
       issues = published.issues;
       await refreshPlans(projectId);
-      notice = `Published Plan (PRD) v${published.plan.version} and ${published.issues.length} ${published.issues.length === 1 ? 'issue' : 'issues'}.`;
+      notice = `Published Plan v${published.plan.version} and ${published.issues.length} ${published.issues.length === 1 ? 'issue' : 'issues'}.`;
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         finishConflict = { message: cause.message, missing: cause.missing };
@@ -289,9 +289,7 @@
         aria-labelledby="active-plan-heading"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
-          <h2 id="active-plan-heading" class="text-sm font-semibold">
-            {activePlan.source === 'grill-me' ? 'Plan (PRD)' : 'Plan'}
-          </h2>
+          <h2 id="active-plan-heading" class="text-sm font-semibold">Plan</h2>
           <span class="text-xs text-neutral-500">v{activePlan.version} · {activePlan.source}</span>
         </div>
         <div class="prose prose-neutral max-w-none text-sm">
@@ -331,7 +329,7 @@
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="grill-heading">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="grill-heading" class="text-sm font-semibold">Grill-Me session</h2>
+        <h2 id="grill-heading" class="text-sm font-semibold">Agent session</h2>
         {#if session !== null}
           <div class="flex items-center gap-2 text-xs text-neutral-500">
             <span>{session.model}</span>
@@ -372,7 +370,7 @@
           <div class="flex flex-wrap gap-2">
             {#if confirmingCancel}
               <p class="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-                Cancel this session? Its draft PRD and Issues will be discarded.
+                Cancel this session? Its draft Plan and Issues will be discarded.
               </p>
               <button
                 type="button"
@@ -473,7 +471,7 @@
             disabled={busy || idea.trim() === ''}
             class="self-start rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           >
-            Start Grill-Me
+            Start agent
           </button>
         </form>
       {/if}

@@ -61,7 +61,7 @@ test('shows the provisioned project with links to its tooling', async ({ page })
   await expect(page.getByText('abc1234')).toBeVisible();
   await expect(page.getByText('Last deploy')).toBeVisible();
   await expect(page.getByText('Succeeded')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Grill-Me' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Agent' })).toHaveAttribute(
     'href',
     '/projects/p1/plan',
   );

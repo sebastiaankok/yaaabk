@@ -48,7 +48,8 @@ describe('grill-me skill', () => {
   });
 
   it('lets the Developer skip the rest of the interview', () => {
-    expect(skill.toLowerCase()).toContain('write the prd now');
+    expect(skill.toLowerCase()).toContain('write the plan now');
+    expect(skill.toLowerCase()).not.toContain('write the prd now');
   });
 
   it('treats a Developer handing over the remaining decisions as a settled plan', () => {
@@ -135,7 +136,8 @@ describe('to-prd skill', () => {
   });
 
   it('can be asked for at any point without more grilling', () => {
-    expect(skill.toLowerCase()).toContain('write the prd now');
+    expect(skill.toLowerCase()).toContain('write the plan now');
+    expect(skill.toLowerCase()).not.toContain('write the prd now');
   });
 
   it('loads the simple-english skill before writing the Plan', () => {

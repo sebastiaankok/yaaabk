@@ -152,7 +152,7 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
         status: 409,
         json: {
           error: 'incomplete',
-          message: `Cannot finish: ${missing.map((item) => (item === 'prd' ? 'a PRD' : 'an issue list')).join(' and ')} missing`,
+          message: `Cannot finish: ${missing.map((item) => (item === 'prd' ? 'a Plan' : 'an issue list')).join(' and ')} missing`,
           missing,
         },
       });
@@ -167,7 +167,7 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
           endReason: 'finished',
           draft: { hasPrd: false, issueCount: 0 },
         },
-        plan: { ...PLAN, contentMarkdown: '# Plan (PRD)' },
+        plan: { ...PLAN, contentMarkdown: '# Plan' },
         issues: options.issues ?? [],
       },
     });
@@ -216,8 +216,9 @@ test('shows the project and its active plan', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();
 });
 
 test('preselects the Project model and starts the session with it', async ({ page }) => {
@@ -234,7 +235,7 @@ test('preselects the Project model and starts the session with it', async ({ pag
 
   await expect(page.getByLabel('Model')).toHaveValue('openrouter/chosen-model');
   await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+  await page.getByRole('button', { name: 'Start agent' }).click();
 
   await expect.poll(() => startedWith).toBe('openrouter/chosen-model');
 });
@@ -245,7 +246,7 @@ test('starts a live terminal session and cancels it after confirmation', async (
 
   await page.goto('/projects/p1/plan');
   await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+  await page.getByRole('button', { name: 'Start agent' }).click();
 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
@@ -265,7 +266,7 @@ test('keeps the session when the Developer dismisses the cancel confirmation', a
 
   await page.goto('/projects/p1/plan');
   await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+  await page.getByRole('button', { name: 'Start agent' }).click();
 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel session' }).click();
@@ -287,7 +288,7 @@ test('reconnects to a running session after a refresh', async ({ page }) => {
 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
-  await expect(page.getByText('PRD drafted · 1 issue drafted')).toBeVisible();
+  await expect(page.getByText('Plan drafted · 1 issue drafted')).toBeVisible();
   expect(await page.locator('.xterm').count()).toBe(1);
 });
 
@@ -382,15 +383,15 @@ test('a refresh never lands in fullscreen', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Fullscreen terminal' })).toHaveCount(0);
 });
 
-test('finishes a session and shows the published Plan (PRD) and Issues', async ({ page }) => {
+test('finishes a session and shows the published Plan and Issues', async ({ page }) => {
   await mockProject(page, { activeSession: SESSION, issues: [ISSUE] });
   await mockTerminal(page);
 
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
 
-  await expect(page.getByText('Published Plan (PRD) v1 and 1 issue.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
+  await expect(page.getByText('Published Plan v1 and 1 issue.')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Issues' })).toBeVisible();
   await expect(page.getByText('Save a bookmark')).toBeVisible();
   await expect(page.getByLabel('Your idea')).toBeVisible();
@@ -409,10 +410,10 @@ test('warns before publishing an incomplete session and forces on request', asyn
   await expect(page.getByText('Cannot finish: an issue list missing')).toBeVisible();
   await page.getByRole('button', { name: 'Publish anyway' }).click();
 
-  await expect(page.getByText(/Published Plan \(PRD\)/)).toBeVisible();
+  await expect(page.getByText(/Published Plan/)).toBeVisible();
 });
 
-test('does not offer a forced publish when the PRD is missing', async ({ page }) => {
+test('does not offer a forced publish when the Plan is missing', async ({ page }) => {
   await mockProject(page, {
     activeSession: SESSION,
     draft: { hasPrd: false, issueCount: 0 },
@@ -422,8 +423,8 @@ test('does not offer a forced publish when the PRD is missing', async ({ page })
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
 
-  await expect(page.getByText('Cannot finish: a PRD and an issue list missing')).toBeVisible();
-  await expect(page.getByText(/PRD has not been drafted yet/)).toBeVisible();
+  await expect(page.getByText('Cannot finish: a Plan and an issue list missing')).toBeVisible();
+  await expect(page.getByText(/Plan has not been drafted yet/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Publish anyway' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Finish again' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
@@ -434,7 +435,7 @@ test('shows the reason a session could not start', async ({ page }) => {
 
   await page.goto('/projects/p1/plan');
   await page.getByLabel('Your idea').fill('A todo app');
-  await page.getByRole('button', { name: 'Start Grill-Me' }).click();
+  await page.getByRole('button', { name: 'Start agent' }).click();
 
   await expect(page.getByText('ttyd: exec format error')).toBeVisible();
   await expect(page.getByLabel('Your idea')).toBeVisible();
@@ -464,5 +465,5 @@ test('activates an earlier plan version', async ({ page }) => {
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Activate' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Plan (PRD)' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
 });

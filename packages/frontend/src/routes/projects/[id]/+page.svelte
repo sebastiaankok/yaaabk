@@ -241,7 +241,7 @@
           href={resolve('/projects/[id]/plan', { id: project.id })}
           class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700"
         >
-          Grill-Me
+          Agent
         </a>
         <a
           href={resolve('/projects/[id]/issues/review', { id: project.id })}

@@ -148,7 +148,7 @@
       <p class="text-neutral-600">
         Review the open issues published for <span class="font-medium">{project.name}</span> by its active
         Plan, then approve them to make them ready for agents. To change a Plan or its Issues, start another
-        Grill-Me session.
+        agent session.
       </p>
     </header>
 
@@ -210,7 +210,7 @@
       <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
         This project has no active plan yet.
         <a href={resolve('/projects/[id]/plan', { id: project.id })} class="font-medium underline">
-          Start a Grill-Me session</a
+          Start a new agent session</a
         >
         first.
       </p>
@@ -241,19 +241,19 @@
       {#if reviewList.length === 0}
         <p class="text-sm text-neutral-500">
           {#if plan !== null && planIssueCount > 0}
-            Every issue in Plan v{plan.version} is closed. Start a new Grill-Me session to plan the next
+            Every issue in Plan v{plan.version} is closed. Start a new agent session to plan the next
             idea; completed issues stay on the
             <a
               href={resolve('/projects/[id]/issues', { id: project.id })}
               class="font-medium underline">issue board</a
             >.
           {:else}
-            No issues yet. Finish a Grill-Me session to publish a Plan (PRD) and its Issues.
+            No issues yet. Finish an agent session to publish a Plan and its Issues.
             <a
               href={resolve('/projects/[id]/plan', { id: project.id })}
               class="font-medium underline"
             >
-              Start a new Grill-Me session</a
+              Start a new agent session</a
             >.
           {/if}
         </p>
@@ -319,7 +319,7 @@
             href={resolve('/projects/[id]/plan', { id: project.id })}
             class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
           >
-            Start a new Grill-Me session
+            Start a new agent session
           </a>
         </div>
       </section>

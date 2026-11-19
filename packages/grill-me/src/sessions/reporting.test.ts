@@ -115,7 +115,10 @@ describe('reporting session drafts', () => {
     const reported = await sessions.report(id, token, { issues: ISSUES });
 
     expect(reported.ok).toBe(false);
-    if (!reported.ok) expect(reported.error.kind).toBe('invalid-input');
+    if (!reported.ok) {
+      expect(reported.error.kind).toBe('invalid-input');
+      expect(reported.error.message).toBe('Report a Plan before its issues');
+    }
     const current = await sessions.get('p1', id);
     expect(current.ok && current.value.draft).toEqual({ hasPrd: false, issueCount: 0 });
   });
@@ -202,6 +205,7 @@ describe('finishing a session', () => {
     if (!finished.ok) {
       expect(finished.error.kind).toBe('incomplete');
       expect(finished.error.missing).toEqual(['prd', 'issues']);
+      expect(finished.error.message).toBe('Cannot finish: a Plan and an issue list missing');
     }
     const stored = await plans.list('p1');
     expect(stored.ok && stored.value).toEqual([]);

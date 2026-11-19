@@ -142,7 +142,7 @@
               href={resolve('/projects/[id]/plan', { id: project.id })}
               class="rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
             >
-              Grill-Me
+              Agent
             </a>
             <a
               href={resolve('/projects/[id]/issues', { id: project.id })}

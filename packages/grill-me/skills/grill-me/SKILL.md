@@ -70,17 +70,17 @@ Stop grilling when the answers no longer change the shape of the plan.
 ## Handoff
 
 When the plan is settled, load the `to-prd` skill with the `skill` tool and
-follow it. It synthesises the PRD from this conversation, checks the module
-sketch with the Developer, and reports the PRD through `report_prd`. It then
-loads `to-issues`, which breaks the PRD into vertical slices and reports them
+follow it. It synthesises the Plan from this conversation, checks the module
+sketch with the Developer, and reports the Plan through `report_prd`. It then
+loads `to-issues`, which breaks the Plan into vertical slices and reports them
 through `report_issues`.
 
-Do not write the PRD or the Issue list yourself here. The reporting skills own
+Do not write the Plan or the Issue list yourself here. The reporting skills own
 that work, the templates and the tool calls.
 
 ## Skipping ahead
 
-The Developer may say **"write the PRD now"** at any point. When they do, stop
+The Developer may say **"write the Plan now"** at any point. When they do, stop
 the interview immediately, load `to-prd` and continue from there. Do not ask any
 more grilling questions first.
 

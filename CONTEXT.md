@@ -29,7 +29,7 @@ An interactive AI-driven conversation where a **Developer** refines an idea into
 _Avoid_: Chat, brainstorming session
 
 **Plan**:
-A versioned markdown document produced by a **Grill-Me Session**, representing the refined specification of a **Project**. Shaped as a PRD and labelled "Plan (PRD)" in the UI. **Finish** publishes one Plan version together with that Plan's **Issues**; there is no separate issue-generation step.
+A versioned markdown document produced by a **Grill-Me Session**, representing the refined specification of a **Project**. Shaped as a PRD and labelled "Plan" in the UI. **Finish** publishes one Plan version together with that Plan's **Issues**; there is no separate issue-generation step.
 _Avoid_: Specification, design doc
 
 **Issue**:

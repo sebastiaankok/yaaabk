@@ -20,13 +20,13 @@ const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'report_prd',
     description:
-      'Report the finished PRD for this Grill-Me session. YAAABK stores it as a draft and only publishes it when the Developer clicks Finish.',
+      'Report the finished Plan for this agent session. YAAABK stores it as a draft and only publishes it when the Developer clicks Finish.',
     inputSchema: {
       type: 'object',
       properties: {
         prd: {
           type: 'string',
-          description: 'The complete PRD as Markdown, following the YAAABK PRD template.',
+          description: 'The complete Plan as Markdown, following the YAAABK Plan template.',
         },
       },
       required: ['prd'],
@@ -36,7 +36,7 @@ const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'report_issues',
     description:
-      'Report the vertical-slice Issues for this Grill-Me session. YAAABK stores them as drafts and only publishes them when the Developer clicks Finish.',
+      'Report the vertical-slice Issues for this agent session. YAAABK stores them as drafts and only publishes them when the Developer clicks Finish.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -72,7 +72,7 @@ const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'session_status',
     description:
-      'Read this Grill-Me session’s status and whether its PRD and Issues have been reported yet.',
+      'Read this agent session’s status and whether its Plan and Issues have been reported yet.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
 ];
@@ -94,7 +94,7 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 }
 
 function describeDraft(status: SessionStatus): string {
-  const prd = status.draft.hasPrd ? 'PRD reported' : 'PRD missing';
+  const prd = status.draft.hasPrd ? 'Plan reported' : 'Plan missing';
   return `${prd}, ${status.draft.issueCount} ${status.draft.issueCount === 1 ? 'issue' : 'issues'}`;
 }
 
@@ -144,10 +144,12 @@ export function createReportingServer(options: ReportingServerOptions): Reportin
             : ' Report the Issues again if they change.';
         return respond(
           null,
-          textResult(`PRD draft stored for session ${status.id}; ${describeDraft(status)}.${next}`),
+          textResult(
+            `Plan draft stored for session ${status.id}; ${describeDraft(status)}.${next}`,
+          ),
         );
       } catch (error) {
-        return respond(null, textResult(`Could not store the PRD: ${messageOf(error)}`, true));
+        return respond(null, textResult(`Could not store the Plan: ${messageOf(error)}`, true));
       }
     }
 

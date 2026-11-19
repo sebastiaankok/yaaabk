@@ -17,6 +17,13 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toMatch(/load .*`?grill-me`? (?:skill|with the `?skill`? tool)/i);
   });
 
+  it('tells the Developer to ask for the Plan in the terminal', () => {
+    const prompt = buildGrillSessionPrompt(INPUT);
+
+    expect(prompt).toContain('"write the Plan now"');
+    expect(prompt).not.toContain('write the PRD now');
+  });
+
   it('names the skill by the id OpenCode registers for the image directory', () => {
     const prompt = buildGrillSessionPrompt(INPUT);
 

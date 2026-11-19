@@ -88,6 +88,10 @@ test('lists every project with its key metadata', async ({ page }) => {
   await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
   await expect(page.getByText('1 open · 2 closed')).toBeVisible();
   await expect(page.getByText('Idle')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Agent' })).toHaveAttribute(
+    'href',
+    '/projects/p1/plan',
+  );
   await expect(page.getByRole('link', { name: 'Issue board' })).toHaveAttribute(
     'href',
     '/projects/p1/issues',
