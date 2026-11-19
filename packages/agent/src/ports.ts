@@ -60,7 +60,10 @@ export interface Git {
 }
 
 export interface Kubectl {
-  /** Applies the manifests in `path` with `kubectl apply --server-side`. */
+  /**
+   * Applies the manifests in `path` with `kubectl apply --server-side`,
+   * forcing ownership of fields a previous deploy's image pin left behind.
+   */
   applyServerSide(input: { directory: string; namespace: string; path: string }): Promise<void>;
   /**
    * Pins the Deployment's container to the image built for the merged commit.
