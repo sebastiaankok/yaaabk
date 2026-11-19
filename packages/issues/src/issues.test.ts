@@ -52,7 +52,7 @@ describe('create', () => {
       dependsOn: [],
       attemptCount: 0,
       maxAttempts: 3,
-      budgetCents: 50,
+      budgetCents: 100,
       openrouterKeyHash: null,
       agentModel: null,
       closedAt: null,

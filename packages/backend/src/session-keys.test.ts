@@ -1,9 +1,11 @@
 import {
   createFakeOpenRouterApi,
+  DEFAULT_ISSUE_BUDGET_CENTS,
   type FakeOpenRouterApi,
   type ModelCatalogue,
   type SessionModel,
 } from '@yaaabk/cost-control';
+import { DEFAULT_GRILL_MODEL, resolveSessionModel } from '@yaaabk/grill-me';
 import { describe, expect, it, vi } from 'vitest';
 import { createOpenRouterAgentKeys, createOpenRouterSessionKeys } from './session-keys';
 
@@ -54,7 +56,7 @@ function setup(
     ...(options.envManagementKey === undefined
       ? {}
       : { envManagementKey: options.envManagementKey }),
-    budgetCents: 50,
+    budgetCents: DEFAULT_ISSUE_BUDGET_CENTS,
     ttlMs: 4 * 60 * 60 * 1000,
     ...(options.catalogue === undefined ? {} : { catalogue: options.catalogue }),
     api: () => api,
@@ -79,7 +81,7 @@ describe('session OpenRouter keys', () => {
     });
     expect(api.lastCreate).toEqual({
       name: 'yaaabk-session-s1',
-      limitUsd: 0.5,
+      limitUsd: DEFAULT_ISSUE_BUDGET_CENTS / 100,
       limitReset: null,
       expiresAt: result.value.expiresAt,
     });
@@ -279,16 +281,35 @@ describe('agent OpenRouter keys', () => {
 });
 
 describe('session OpenRouter key preflight', () => {
-  it('refuses a session model whose reply reservation exceeds the default budget', async () => {
+  it('starts a session on the default model when none is chosen', async () => {
     const { api, keys } = setup({
       storedManagementKey: 'sk-or-management',
+      catalogue: catalogueOf(SONNET),
+    });
+    const model = resolveSessionModel(undefined, DEFAULT_GRILL_MODEL);
+
+    expect(model).toBe(SONNET.id);
+    const result = await keys.issue('s1', model);
+
+    expect(result.ok).toBe(true);
+    expect(api.calls).toEqual(['getCredits', 'createKey']);
+  });
+
+  it('refuses a session model whose reply reservation exceeds a lower configured budget', async () => {
+    const { api, keys } = setup({
+      storedManagementKey: 'sk-or-management',
+      storedBudgetCents: 50,
       catalogue: catalogueOf(SONNET),
     });
 
     const result = await keys.issue('s1', SONNET.id);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.message).toContain('$0.50 budget');
+    if (!result.ok) {
+      expect(result.message).toContain('$0.50 budget');
+      expect(result.message).toContain('$0.96');
+      expect(result.message).toContain('Raise the budget or choose a cheaper model');
+    }
     expect(api.calls).toEqual([]);
   });
 });

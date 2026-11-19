@@ -1,5 +1,11 @@
-/** Default per-Issue spending cap in cents ($0.50). */
-export const DEFAULT_ISSUE_BUDGET_CENTS = 50;
+/**
+ * Default per-Issue and per-Session spending cap in cents ($1.00).
+ *
+ * Sized to cover one maximum-length reply from the default model, Claude
+ * Sonnet 4.5: 64,000 completion tokens at $15 per million reserve $0.96, and
+ * OpenRouter refuses a request its key or account cannot fully reserve.
+ */
+export const DEFAULT_ISSUE_BUDGET_CENTS = 100;
 
 /** Hard system ceiling per Issue in cents ($5.00); a Developer cannot exceed it. */
 export const MAX_ISSUE_BUDGET_CENTS = 500;

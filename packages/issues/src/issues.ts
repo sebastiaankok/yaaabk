@@ -13,8 +13,13 @@ import {
   type NewIssue,
 } from './types';
 
-/** The default per-Issue OpenRouter budget, in whole cents. */
-export const DEFAULT_BUDGET_CENTS = 50;
+/**
+ * The default per-Issue OpenRouter budget, in whole cents.
+ *
+ * Matches the Cost Control default: $1.00 covers one maximum-length reply from
+ * the default Claude Sonnet 4.5 model, which OpenRouter reserves up front.
+ */
+export const DEFAULT_BUDGET_CENTS = 100;
 /** The largest per-Issue budget a Developer may set, in whole cents. */
 export const MAX_BUDGET_CENTS = 500;
 /** The default cap on Agent attempts before an Issue needs a human. */

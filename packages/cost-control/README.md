@@ -22,7 +22,7 @@ const cost = createCostControlModule({
   defaultBudgetCents: config.defaultBudgetCents,
 });
 
-const issued = await cost.open('a1b2c3d4-...');       // $0.50 default cap
+const issued = await cost.open('a1b2c3d4-...');       // $1.00 default cap
 if (!issued.ok) {
   // issued.error.kind is 'budget-out-of-range' | 'unauthorized' | 'network' | ...
 }
@@ -54,7 +54,7 @@ Issue; the USD conversion happens only at the API boundary.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision sub-keys |
-| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-issue cap in cents, clamped to $5.00 |
+| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `100` | Default per-issue and per-session cap in cents, clamped to $5.00; $1.00 covers one maximum-length Sonnet 4.5 reply ($0.96) |
 
 ### Persistence
 
