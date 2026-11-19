@@ -107,7 +107,13 @@ export function createApp(options: AppOptions): Hono {
   );
   app.route('/', modelRoutes(options.models, options.defaultModel));
   app.route('/', ciRoutes(options.ciTracker));
-  app.route('/', settingsRoutes(options.settings));
+  app.route(
+    '/',
+    settingsRoutes(options.settings, {
+      catalogue: options.models,
+      defaultModel: options.defaultModel,
+    }),
+  );
 
   return app;
 }

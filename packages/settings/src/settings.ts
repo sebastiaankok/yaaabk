@@ -1,4 +1,4 @@
-import { MAX_ISSUE_BUDGET_CENTS } from '@yaaabk/cost-control';
+import { MAX_ISSUE_BUDGET_CENTS, type OpenRouterCredits } from '@yaaabk/cost-control';
 import type { SecretCrypto } from './secret-crypto';
 import { maskSecret } from './secret-crypto';
 import type { CredentialField, CredentialValue, SettingsRecord, SettingsStore } from './types';
@@ -13,7 +13,7 @@ export type SettingsErrorKind =
 /** A typed failure, never thrown across the module boundary. */
 export interface SettingsError {
   kind: SettingsErrorKind;
-  operation: 'update' | 'verify-openrouter' | 'verify-github';
+  operation: 'update' | 'verify-openrouter' | 'verify-github' | 'read-credits';
   message: string;
 }
 
@@ -54,6 +54,11 @@ export interface SettingsModule {
   credentials(): Promise<DecryptedSettings>;
   /** Checks the stored OpenRouter management key with OpenRouter. */
   verifyOpenRouter(): Promise<SettingsResult<OpenRouterAccount>>;
+  /**
+   * The account-wide balance the stored management key can see. Resolves the
+   * credential internally so no caller has to handle the plaintext key.
+   */
+  credits(): Promise<SettingsResult<OpenRouterCredits>>;
   /** Checks the stored GitHub credentials (App preferred, PAT otherwise). */
   verifyGitHub(): Promise<SettingsResult<GitHubAccount>>;
 }
@@ -89,6 +94,11 @@ export interface OpenRouterVerifier {
   verify(managementKey: string): Promise<VerifyOutcome<OpenRouterAccount>>;
 }
 
+/** Reads the account-wide balance with OpenRouter's Management API. */
+export interface OpenRouterCreditsReader {
+  read(managementKey: string): Promise<VerifyOutcome<OpenRouterCredits>>;
+}
+
 /** How the configured GitHub credentials authenticate. */
 export type GitHubCredentialKind = 'pat' | 'app';
 
@@ -121,11 +131,13 @@ export function createSettingsModule({
   store,
   crypto,
   openRouterVerifier,
+  openRouterCredits,
   githubVerifier,
 }: {
   store: SettingsStore;
   crypto: SecretCrypto;
   openRouterVerifier: OpenRouterVerifier;
+  openRouterCredits: OpenRouterCreditsReader;
   githubVerifier: GitHubVerifier;
 }): SettingsModule {
   function viewOf(record: SettingsRecord): SettingsView {
@@ -235,6 +247,20 @@ export function createSettingsModule({
       return openRouterVerifier
         .verify(openrouterManagementKey)
         .then(mapOutcome('verify-openrouter'));
+    },
+    async credits() {
+      const { openrouterManagementKey } = await credentials();
+      if (openrouterManagementKey === undefined) {
+        return {
+          ok: false,
+          error: {
+            kind: 'unauthorized',
+            operation: 'read-credits',
+            message: 'No OpenRouter management key is configured',
+          },
+        };
+      }
+      return openRouterCredits.read(openrouterManagementKey).then(mapOutcome('read-credits'));
     },
     async verifyGitHub() {
       const { githubAppId, githubPrivateKey, githubInstallationId, githubPat } =

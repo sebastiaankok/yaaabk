@@ -113,6 +113,90 @@ describe('PUT /api/settings', () => {
   });
 });
 
+describe('GET /api/settings/openrouter/credits', () => {
+  it('rejects an unauthenticated request', async () => {
+    const { app } = createTestContext();
+
+    const res = await app.request('/api/settings/openrouter/credits');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns the balance and the default model reply reservation', async () => {
+    const { context, session } = await signedIn();
+    await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+    context.openRouterCredits.setCredits({
+      totalCreditsUsd: 40,
+      totalUsageUsd: 39.9928,
+      remainingUsd: 0.0072,
+    });
+
+    const res = await request(context, session, '/api/settings/openrouter/credits');
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      totalCreditsUsd: 40,
+      totalUsageUsd: 39.9928,
+      defaultModel: 'openrouter/default-model',
+      // 64,000 tokens × $15 / 1,000,000 — the same reservation the mint
+      // preflight checks.
+      reservationUsd: 0.96,
+    });
+    expect(body.remainingUsd).toBeCloseTo(0.0072, 6);
+  });
+
+  it('never exposes the management key in the response', async () => {
+    const { context, session } = await signedIn();
+    await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+
+    const res = await request(context, session, '/api/settings/openrouter/credits');
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toContain('sk-or-v1-abcdefgh1c96');
+    expect(context.openRouterCredits.readKeys).toEqual(['sk-or-v1-abcdefgh1c96']);
+  });
+
+  it('reports unauthorized instead of a 500 when no key is configured', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/settings/openrouter/credits');
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'unauthorized' });
+  });
+
+  it('reports a failed lookup as a bad gateway without breaking the response shape', async () => {
+    const { context, session } = await signedIn();
+    await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+    context.openRouterCredits.fail({
+      ok: false,
+      kind: 'network',
+      message: 'OpenRouter is unreachable',
+    });
+
+    const res = await request(context, session, '/api/settings/openrouter/credits');
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'network',
+      message: 'OpenRouter is unreachable',
+    });
+  });
+
+  it('still returns the balance when the catalogue cannot price the default model', async () => {
+    const { context, session } = await signedIn();
+    await context.settings.update({ openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+    context.models.fail('catalogue unavailable');
+
+    const res = await request(context, session, '/api/settings/openrouter/credits');
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ reservationUsd: null });
+  });
+});
+
 describe('POST /api/settings/openrouter/verify', () => {
   it('verifies a key saved through the browser camelCase payload', async () => {
     const { context, session } = await signedIn();

@@ -8,5 +8,6 @@ export * from './fake-openrouter-api';
 export * from './openrouter-http';
 export * from './model-catalogue';
 export * from './openrouter-verifier';
+export * from './openrouter-credits';
 export * from './openrouter-verify-types';
 export * from './cost-control';
