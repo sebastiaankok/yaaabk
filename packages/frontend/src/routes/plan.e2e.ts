@@ -26,6 +26,7 @@ const PLAN = {
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
   isActive: true,
+  acceptedAt: null,
 };
 
 const SESSION = {
@@ -508,4 +509,59 @@ test('activates an earlier plan version', async ({ page }) => {
   await page.getByRole('button', { name: 'Activate' }).click();
 
   await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
+});
+
+test('shows each version\u2019s lifecycle status and links it to review', async ({ page }) => {
+  await mockProject(page, { issues: [ISSUE] });
+  await page.route('**/api/projects/p1/plans', (route) =>
+    route.fulfill({
+      json: {
+        plans: [
+          {
+            ...PLAN,
+            id: 'v2',
+            version: 2,
+            isActive: true,
+            contentMarkdown: '# Plan v2',
+          },
+          {
+            ...PLAN,
+            id: 'v1',
+            version: 1,
+            isActive: false,
+            acceptedAt: '2026-01-02T00:00:00.000Z',
+            contentMarkdown: '# Plan v1',
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/projects/p1/issues', (route) =>
+    route.fulfill({
+      json: {
+        issues: [
+          { ...ISSUE, id: 'old', planId: 'v1', title: 'Old work', status: 'closed' },
+          { ...ISSUE, id: 'new', planId: 'v2', title: 'New work', status: 'open' },
+        ],
+      },
+    }),
+  );
+
+  await page.goto('/projects/p1/plan');
+
+  const versions = page.locator('section[aria-labelledby="versions-heading"]');
+  const previous = versions.getByRole('listitem').filter({ hasText: 'v1' });
+  await expect(previous.getByText('Completed')).toBeVisible();
+  await expect(previous.getByText('1/1 closed')).toBeVisible();
+  await expect(previous.getByRole('link', { name: 'Review' })).toHaveAttribute(
+    'href',
+    '/projects/p1/issues/review?plan=v1',
+  );
+
+  const active = versions.getByRole('listitem').filter({ hasText: 'v2' });
+  await expect(active.getByText('Not accepted')).toBeVisible();
+  await expect(active.getByRole('link', { name: 'Review' })).toHaveAttribute(
+    'href',
+    '/projects/p1/issues/review?plan=v2',
+  );
 });

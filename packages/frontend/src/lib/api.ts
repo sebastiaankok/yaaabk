@@ -364,6 +364,17 @@ export function activatePlan(projectId: string, planId: string): Promise<Plan> {
   );
 }
 
+/**
+ * Accepts the active Plan: checks its Issues, syncs them to GitHub and records
+ * the acceptance. A failed GitHub push leaves the Plan unaccepted.
+ */
+export function acceptPlan(projectId: string, planId: string): Promise<Plan> {
+  return request<Plan>(
+    `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/accept`,
+    { method: 'POST' },
+  );
+}
+
 export function startGrill(
   projectId: string,
   idea: string,
@@ -474,13 +485,6 @@ export function getIssueGraph(projectId: string): Promise<IssueGraph> {
   return request<IssueGraph>(`/api/projects/${encodeURIComponent(projectId)}/issues/graph`);
 }
 
-export function approveIssues(projectId: string): Promise<Issue[]> {
-  return request<{ issues: Issue[] }>(
-    `/api/projects/${encodeURIComponent(projectId)}/issues/approve`,
-    { method: 'POST' },
-  ).then((body) => body.issues);
-}
-
 export function updateIssue(projectId: string, issueId: string, patch: IssuePatch): Promise<Issue> {
   return request<Issue>(
     `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}`,
@@ -501,9 +505,11 @@ export function getIssueSyncStatus(projectId: string): Promise<IssueSyncStatus> 
   );
 }
 
-export function pushIssues(projectId: string): Promise<PushSummary> {
+/** Pushes Issues to GitHub; with a `planId`, only that Plan's Issues. */
+export function pushIssues(projectId: string, planId?: string): Promise<PushSummary> {
   return request<PushSummary>(`/api/projects/${encodeURIComponent(projectId)}/issues/sync/push`, {
     method: 'POST',
+    ...(planId === undefined ? {} : { body: JSON.stringify({ planId }) }),
   });
 }
 

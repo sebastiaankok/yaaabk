@@ -22,6 +22,7 @@
   } from '#lib/api.js';
   import Markdown from '#lib/markdown.svelte';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
+  import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
   import { summaryForPlan } from '#lib/summary.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
@@ -58,6 +59,16 @@
   );
 
   const statusLabel = $derived(terminalStatusLabel(terminalStatus));
+
+  const statusClass: Record<PlanLifecycleStatus, string> = {
+    'not-accepted': 'bg-neutral-100 text-neutral-600',
+    'in-progress': 'bg-amber-100 text-amber-800',
+    completed: 'bg-emerald-100 text-emerald-800',
+  };
+
+  function progressOf(version: Plan) {
+    return planProgress(version, issues);
+  }
 
   /** The active Plan's Issues; earlier Plans' work belongs to their own review. */
   const planIssues = $derived.by(() => {
@@ -484,27 +495,47 @@
         <h2 id="versions-heading" class="mb-2 text-sm font-semibold">Plan versions</h2>
         <ul class="flex flex-col gap-2">
           {#each plans as version (version.id)}
+            {@const progress = progressOf(version)}
             <li
-              class="flex items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
+              class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
             >
               <div>
-                <p class="font-medium">v{version.version}</p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="font-medium">v{version.version}</p>
+                  <span class="rounded-full px-2 py-0.5 text-xs {statusClass[progress.status]}">
+                    {planStatusLabel(progress.status)}
+                  </span>
+                </div>
                 <p class="text-xs text-neutral-500">
                   {version.createdAt} · {version.source}
                   {#if version.isActive}
                     · active{/if}
+                  · {progress.closed}/{progress.total} closed
+                  {#if progress.failed > 0}
+                    · {progress.failed} failed
+                  {/if}
                 </p>
               </div>
-              {#if !version.isActive}
-                <button
-                  type="button"
-                  onclick={() => void activate(version.id)}
-                  disabled={busy}
-                  class="rounded-md border border-neutral-300 px-3 py-1 text-sm hover:bg-neutral-100 disabled:opacity-50"
+              <div class="flex flex-wrap items-center gap-2">
+                <!-- eslint-disable svelte/no-navigation-without-resolve -->
+                <a
+                  href={`${resolve('/projects/[id]/issues/review', { id: version.projectId })}?plan=${encodeURIComponent(version.id)}`}
+                  class="rounded-md border border-neutral-300 px-3 py-1 text-sm hover:bg-neutral-100"
                 >
-                  Activate
-                </button>
-              {/if}
+                  Review
+                </a>
+                <!-- eslint-enable svelte/no-navigation-without-resolve -->
+                {#if !version.isActive}
+                  <button
+                    type="button"
+                    onclick={() => void activate(version.id)}
+                    disabled={busy}
+                    class="rounded-md border border-neutral-300 px-3 py-1 text-sm hover:bg-neutral-100 disabled:opacity-50"
+                  >
+                    Activate
+                  </button>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>

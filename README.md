@@ -337,28 +337,42 @@ Plan generates. The backend exposes it over HTTP:
 | `GET /api/projects/:id/issues/:issueId/budget` | The Issue's budget, spend and remainder |
 | `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
 | `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
-| `POST /api/projects/:id/issues/approve` | Mark the active Plan's open Issues `ready` |
 | `GET /api/projects/:id/issues/sync/status` | How much of the Issue set is mirrored to GitHub |
-| `POST /api/projects/:id/issues/sync/push` | Create or update the Project's Issues on GitHub |
+| `POST /api/projects/:id/issues/sync/push` | Create or update the Project's Issues on GitHub; an optional `planId` scopes it to one Plan |
 | `POST /api/projects/:id/issues/sync/pull` | Pull GitHub's open/closed state back onto local Issues |
 | `POST /api/projects/:id/issues/sync` | A full push-then-pull cycle |
 
-The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
-its **open** Issues grouped by wave (with label pills, dependency tags and any
-circular-dependency warning), and "Approve & Create". Closed Issues are history
-and are left out, and so are earlier Plans, so reviewing a new Plan starts clean
-instead of repeating what is already done. When the Plan has no open Issues the
-page points at the Plan page for the next idea. It offers no one-shot generation
-or prompt refinement; changing a Plan or its Issues means starting another
-Grill-Me session, and the page links back to the Plan page for that. Finish is
-the only endpoint that publishes a Plan or replaces its Issues.
+The browser surface is `/projects/:id/issues/review`: every Plan version with its
+lifecycle status (`Not accepted`, `In progress`, `Completed`), accepted date and
+closed/total and failed counts, then the selected Plan's summary, full Markdown
+and **all** of its Issues including closed ones, grouped by wave. It defaults to
+the active Plan; selecting a previous version shows it read-only. When the Plan
+has no Issues the page points at the Plan page for the next idea. It offers no
+one-shot generation or prompt refinement; changing a Plan or its Issues means
+starting another Grill-Me session, and the page links back to the Plan page for
+that. Finish is the only endpoint that publishes a Plan or replaces its Issues.
 
-Approval is scoped the same way: it marks only the active Plan's open Issues
-`ready`, so approving a new Plan can never relabel closed history or make an
-older Plan's leftovers dispatchable. The issue board follows the active Plan too
-and hides closed Issues by default; **Show closed** and **Show earlier plans**
-bring back the history, and an open Issue from an earlier Plan is called out
-because the Agent Manager still works every ready Issue in the Project.
+Acceptance is the only step that hands a Plan to GitHub and the agents. It is
+available for the active, not yet accepted Plan, and the confirmation modal
+explains that accepting records the Plan, creates or updates its Issues on
+GitHub and lets agents start on `ready` Issues while `needs-human` Issues wait
+for the Developer. Acceptance rejects a Plan with no Issues, a dependency cycle
+or an unresolved dependency, and it never relabels anything: the generated
+`ready`, `needs-human` and `blocked` labels stay as they are. It pushes only the
+selected Plan's Issues and records `acceptedAt` only after that push succeeds; a
+failed push leaves the Plan unaccepted and the page offers **Retry accept**. An
+accepted Plan with Issues that never reached GitHub gets a small **Retry GitHub
+sync** action.
+
+Completion is derived, never stored: a Plan is `Completed` only when it was
+accepted, has at least one Issue, and every one of its Issues is closed. The
+Plan page's version history shows the same status and links each version to its
+review view.
+
+The issue board follows the active Plan too and hides closed Issues by default;
+**Show closed** and **Show earlier plans** bring back the history, and an open
+Issue from an earlier Plan is called out because the Agent Manager still works
+every ready Issue in the Project.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency
@@ -393,9 +407,9 @@ past, so YAAABK-only fields survive a round trip.
 
 An exhausted GitHub rate limit or a network failure is retried up to three times
 with back-off; if it persists the route reports `429` (rate limited) or `502`
-(any other GitHub error) rather than failing silently. The review page shows a
-sync-status indicator and a **Sync with GitHub** button, and **Approve & Create**
-pushes the freshly approved Issues.
+(any other GitHub error) rather than failing silently. Accepting a Plan pushes
+its Issues and records the acceptance only on success; the review page offers a
+scoped **Retry GitHub sync** for an accepted Plan with unsynced Issues.
 
 The GitHub Issues port is unit-tested against an in-memory fake, and the REST
 adapter against an injected `fetch`:
