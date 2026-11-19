@@ -230,7 +230,10 @@ test('offers a route back to a new grill session when there are no issues', asyn
   await page.goto('/projects/p1/issues/review');
 
   await expect(page.getByText('No issues yet.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Start a new Grill-Me session' })).toHaveAttribute(
+  await expect(
+    page.getByText('Finish an agent session to publish a Plan and its Issues.'),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start a new agent session' })).toHaveAttribute(
     'href',
     '/projects/p1/plan',
   );

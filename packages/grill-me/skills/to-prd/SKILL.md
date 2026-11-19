@@ -1,12 +1,12 @@
 ---
 name: YAAABK To PRD
-description: Turn a settled YAAABK grill-me conversation into the Project's PRD. Explores the repository, checks the module sketch with the Developer, writes the PRD template and reports it through report_prd, then hands off to to-issues.
+description: Turn a settled YAAABK grill-me conversation into the Project's Plan. Explores the repository, checks the module sketch with the Developer, writes the Plan template and reports it through report_prd, then hands off to to-issues.
 ---
 
 # YAAABK To PRD
 
 Use this skill when the `grill-me` skill hands off a settled plan, or when the
-Developer says **"write the PRD now"**. The PRD is the durable document a later
+Developer says **"write the Plan now"**. The Plan is the durable document a later
 session, a reviewer or an Agent reads instead of the conversation.
 
 ## 1. Gather what the conversation settled
@@ -17,14 +17,14 @@ Developer already made.
 
 - The problem and who has it.
 - The chosen approach and the alternatives that were rejected, with the reason.
-- The boundaries: what the PRD deliberately does not cover.
+- The boundaries: what the Plan deliberately does not cover.
 - The data and interfaces the work touches.
 - The decisions that are still open. If one blocks the module sketch, ask exactly
   one question, then continue.
 
 ## 2. Sketch the modules
 
-Before writing the PRD, sketch the technical shape in a few lines:
+Before writing the Plan, sketch the technical shape in a few lines:
 
 - **Refactored** modules whose responsibilities change.
 - **New** modules and their narrow public interfaces.
@@ -33,12 +33,12 @@ Before writing the PRD, sketch the technical shape in a few lines:
 
 Show the sketch to the Developer and ask one question: "Do these modules and
 boundaries match how you want this built?" Reflect their corrections. Do not
-write the PRD until the Developer has confirmed the sketch. If the Developer
+write the Plan until the Developer has confirmed the sketch. If the Developer
 already delegated the remaining decisions ("you decide the rest", "fill in the
 answers yourself", "use your recommendations"), pick the sketch you recommend
 and continue without waiting for another confirmation.
 
-## 3. Write the PRD from the template
+## 3. Write the Plan from the template
 
 Before you write the Plan, load the `simple-english` skill with the `skill` tool
 and apply its rules to every sentence. Write Markdown with exactly these
@@ -94,7 +94,7 @@ not automated.
 
 ## Out of Scope
 
-What this PRD does not cover, so later sessions do not assume it was agreed.
+What this Plan does not cover, so later sessions do not assume it was agreed.
 
 ## Further Notes
 
@@ -110,9 +110,9 @@ Rules:
 - Do not include a "Status", "Version" or "Author" section; YAAABK versions
   Plans itself.
 
-## 4. Report the PRD
+## 4. Report the Plan
 
-Call the `report_prd` tool from the `yaaabk` MCP server with the PRD markdown:
+Call the `report_prd` tool from the `yaaabk` MCP server with the Plan markdown:
 
 ```json
 { "prd": "## Problem Statement\n\n..." }
@@ -130,6 +130,6 @@ safe.
 ## 5. Hand off to Issues
 
 After `report_prd` succeeds, load the `to-issues` skill with the `skill` tool and
-follow it. It turns this PRD into vertical slices and reports them through
+follow it. It turns this Plan into vertical slices and reports them through
 `report_issues`. Do not repeat the module confirmation there and do not write
 the Issue list yourself.

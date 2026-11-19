@@ -596,13 +596,13 @@ export function createGrillSessionsModule(
       const hasPrd = report.prd !== undefined;
       const hasIssues = report.issues !== undefined;
       if (!hasPrd && !hasIssues) {
-        return fail('report', 'invalid-input', 'A PRD or an issue list is required');
+        return fail('report', 'invalid-input', 'A Plan or an issue list is required');
       }
 
       let prd: string | undefined;
       if (hasPrd) {
         if (typeof report.prd !== 'string' || report.prd.trim() === '') {
-          return fail('report', 'invalid-input', 'The PRD must be markdown text');
+          return fail('report', 'invalid-input', 'The Plan must be markdown text');
         }
         prd = report.prd.trim();
       }
@@ -620,7 +620,7 @@ export function createGrillSessionsModule(
       }
 
       if (issues !== undefined && (prd ?? session.draft.prd) === null) {
-        return fail('report', 'invalid-input', 'Report a PRD before its issues');
+        return fail('report', 'invalid-input', 'Report a Plan before its issues');
       }
 
       if (prd !== undefined) session.draft.prd = prd;
@@ -663,7 +663,7 @@ export function createGrillSessionsModule(
       if (session.draft.issues === null || session.draft.issues.length === 0)
         missing.push('issues');
       if (missing.length > 0 && finishOptions.force !== true) {
-        const names = missing.map((item) => (item === 'prd' ? 'a PRD' : 'an issue list'));
+        const names = missing.map((item) => (item === 'prd' ? 'a Plan' : 'an issue list'));
         return fail(
           'finish',
           'incomplete',
@@ -671,9 +671,9 @@ export function createGrillSessionsModule(
           missing,
         );
       }
-      // A Plan cannot exist without a PRD, so forcing does not bypass this one.
+      // A Plan cannot exist without its markdown, so forcing does not bypass this one.
       if (session.draft.prd === null) {
-        return fail('finish', 'incomplete', 'Cannot finish: a PRD missing', ['prd']);
+        return fail('finish', 'incomplete', 'Cannot finish: a Plan missing', ['prd']);
       }
       const prd = session.draft.prd;
 

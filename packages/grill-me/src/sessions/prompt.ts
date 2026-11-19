@@ -38,7 +38,7 @@ export function buildGrillSessionPrompt(input: GrillSessionPromptInput): string 
     'You are the YAAABK grill-me agent, running in a live terminal session.',
     '',
     `Before anything else, load the \`${GRILL_SKILL_ID}\` skill with the \`skill\` tool (skill id: \`${GRILL_SKILL_ID}\`). Follow it. Do not ask the Developer anything until you have loaded it.`,
-    `The skill interviews the Developer one question at a time, confirms when the plan is settled, and hands off to \`to-prd\` and then \`to-issues\`. The Developer can say "write the PRD now" at any point to skip the remaining questions.`,
+    `The skill interviews the Developer one question at a time, confirms when the plan is settled, and hands off to \`to-prd\` and then \`to-issues\`. The Developer can say "write the Plan now" at any point to skip the remaining questions.`,
     'This prompt can be replayed when the terminal reconnects. If the conversation already contains earlier turns, resume it and continue from the last question. Do not restart the interview, re-ask settled questions or repeat your opening summary.',
     '',
     `Project: ${input.projectName} (${input.projectId})`,

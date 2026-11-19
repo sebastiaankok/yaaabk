@@ -11,15 +11,16 @@ describe('canForceFinish', () => {
 });
 
 describe('finishHint', () => {
-  it('points a session without a PRD back to the terminal or cancel', () => {
+  it('points a session without a Plan back to the terminal or cancel', () => {
     const hint = finishHint(['prd']);
 
-    expect(hint).toMatch(/PRD/);
+    expect(hint).toMatch(/Plan/);
+    expect(hint).not.toMatch(/PRD/);
     expect(hint).toMatch(/terminal/i);
     expect(hint).toMatch(/cancel/i);
   });
 
-  it('explains that only the Issue list is missing when the PRD exists', () => {
+  it('explains that only the Issue list is missing when the Plan exists', () => {
     const hint = finishHint(['issues']);
 
     expect(hint).toMatch(/issue/i);

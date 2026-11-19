@@ -106,15 +106,16 @@ describe('MCP handshake', () => {
 });
 
 describe('reporting tools', () => {
-  it('stores a PRD and confirms it is only a draft', async () => {
+  it('stores a Plan and confirms it is only a draft', async () => {
     const { server, reports } = setup();
 
-    const response = await server.handle(call(3, 'report_prd', { prd: '# Plan (PRD)' }));
+    const response = await server.handle(call(3, 'report_prd', { prd: '# Plan' }));
 
     const result = response?.result as TextResult;
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain('draft');
-    expect(reports).toEqual([{ prd: '# Plan (PRD)' }]);
+    expect(result.content[0]?.text).toContain('Plan draft stored');
+    expect(result.content[0]?.text).not.toContain('PRD');
+    expect(reports).toEqual([{ prd: '# Plan' }]);
   });
 
   it('rejects a malformed PRD without calling the backend', async () => {

@@ -1,15 +1,15 @@
 ---
 name: YAAABK To Issues
-description: Break a reported YAAABK PRD into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies, maps AFK slices to ready and HITL slices to needs-human, and reports them through report_issues.
+description: Break a reported YAAABK Plan into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies, maps AFK slices to ready and HITL slices to needs-human, and reports them through report_issues.
 ---
 
 # YAAABK To Issues
 
-Use this skill after `to-prd` has reported the PRD, in the same Grill-Me Session.
+Use this skill after `to-prd` has reported the Plan, in the same Grill-Me Session.
 
-## 1. Start from the PRD
+## 1. Start from the Plan
 
-Read the PRD you just reported and the conversation around it. The PRD is the
+Read the Plan you just reported and the conversation around it. The Plan is the
 source of truth: do not invent scope it does not contain, and do not shrink it.
 
 ## 2. Cut vertical slices
@@ -105,7 +105,7 @@ safe.
 
 ## 6. Finish
 
-Tell the Developer the PRD and Issues are ready as drafts. The Project changes
+Tell the Developer the Plan and Issues are ready as drafts. The Project changes
 only when they click **Finish** in YAAABK, which publishes both together. A
 cancelled session leaves nothing behind. Do not ask the Developer to paste the
 Issues anywhere, and do not create GitHub Issues yourself.
