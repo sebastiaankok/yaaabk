@@ -9,6 +9,7 @@
     "start": "bun --env-file=../../.env src/index.ts",
     "build": "bun build src/index.ts --target bun --outdir dist",
     "test:unit": "vitest run",
+    "test:integration": "bun test src/sqlite-budget-store.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

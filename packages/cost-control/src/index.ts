@@ -4,6 +4,7 @@ export * from './config';
 export * from './openrouter-api';
 export * from './keys';
 export * from './budget-store';
+export * from './sqlite-budget-store';
 export * from './fake-openrouter-api';
 export * from './openrouter-http';
 export * from './model-catalogue';

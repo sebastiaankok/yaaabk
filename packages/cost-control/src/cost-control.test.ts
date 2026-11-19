@@ -101,6 +101,125 @@ describe('Cost Control Module', () => {
     });
   });
 
+  describe('attempt budget', () => {
+    it('gives a first attempt the whole Issue budget without reading a prior key', async () => {
+      const { api, module } = setup();
+
+      const result = await module.beginAttempt('issue-1', { budgetCents: 200, attempt: 1 });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual({
+        issueId: 'issue-1',
+        remainingCents: 200,
+        spentCents: 0,
+        priorKeyHash: null,
+      });
+      expect(api.calls).toEqual([]);
+    });
+
+    it('caps a later attempt at the budget minus what earlier attempts spent', async () => {
+      const { api, module } = setup();
+      const firstKey = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!firstKey.ok) throw new Error('mint failed');
+      const first = await module.beginAttempt('issue-1', { budgetCents: 50, attempt: 1 });
+      if (!first.ok) throw new Error('begin failed');
+
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: firstKey.value.keyHash,
+        spentCents: first.value.spentCents,
+        expiresAt: firstKey.value.expiresAt,
+        createdAt: firstKey.value.createdAt,
+      });
+      api.setUsage(firstKey.value.keyHash, 0.3);
+
+      const second = await module.beginAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 2,
+        priorKeyHash: firstKey.value.keyHash,
+      });
+
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(second.value).toEqual({
+        issueId: 'issue-1',
+        remainingCents: 20,
+        spentCents: 30,
+        priorKeyHash: firstKey.value.keyHash,
+      });
+    });
+
+    it('refuses a later attempt when the prior spend cannot be read', async () => {
+      const { api, module } = setup();
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: 'hash-gone',
+        spentCents: 0,
+        expiresAt: THIRTY_DAYS_LATER,
+        createdAt: NOW.toISOString(),
+      });
+      api.fail('getKey', new OpenRouterApiError('API key not found', { statusCode: 404 }));
+
+      const result = await module.beginAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 2,
+        priorKeyHash: 'hash-gone',
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('spend-unreadable');
+      expect(result.error.message).toContain('remaining budget is unknown');
+      expect(result.error.message).toContain('hash-gone');
+      expect(api.calls).toEqual(['getKey']);
+    });
+
+    it('refuses a later attempt when no prior key is recorded', async () => {
+      const { api, module } = setup();
+
+      const result = await module.beginAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 2,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('spend-unreadable');
+      expect(result.error.message).toContain('no OpenRouter key');
+      expect(api.calls).toEqual([]);
+    });
+
+    it('refuses another attempt once the Issue budget is spent', async () => {
+      const { api, module } = setup();
+      const firstKey = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!firstKey.ok) throw new Error('mint failed');
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: firstKey.value.keyHash,
+        spentCents: 0,
+        expiresAt: firstKey.value.expiresAt,
+        createdAt: firstKey.value.createdAt,
+      });
+      api.setUsage(firstKey.value.keyHash, 0.5);
+
+      const result = await module.beginAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 2,
+        priorKeyHash: firstKey.value.keyHash,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('budget-exhausted');
+      expect(result.error.message).toContain('Raise the Issue');
+      expect(api.calls).toEqual(['createKey', 'getKey']);
+    });
+  });
+
   describe('topUp', () => {
     it('raises the spending cap at OpenRouter and records the new budget', async () => {
       const { api, module } = setup();
@@ -137,6 +256,48 @@ describe('Cost Control Module', () => {
       expect(result.error.kind).toBe('not-open');
       expect(api.calls).toEqual([]);
     });
+
+    it('raises the current key only by the new cap minus earlier spend', async () => {
+      const { api, module } = setup();
+      const key = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!key.ok) throw new Error('mint failed');
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: key.value.keyHash,
+        spentCents: 30,
+        expiresAt: key.value.expiresAt,
+        createdAt: key.value.createdAt,
+      });
+
+      const result = await module.topUp('issue-1', 80);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({ budgetCents: 80, spentCents: 30 });
+      expect(api.lastUpdate).toEqual({ hash: key.value.keyHash, input: { limitUsd: 0.5 } });
+    });
+
+    it('refuses a cap that is already spent', async () => {
+      const { api, module } = setup();
+      const key = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!key.ok) throw new Error('mint failed');
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: key.value.keyHash,
+        spentCents: 30,
+        expiresAt: key.value.expiresAt,
+        createdAt: key.value.createdAt,
+      });
+
+      const result = await module.topUp('issue-1', 30);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('budget-exhausted');
+      expect(api.calls).toEqual(['createKey']);
+    });
   });
 
   describe('status', () => {
@@ -161,6 +322,32 @@ describe('Cost Control Module', () => {
         exhausted: false,
       });
       expect(JSON.stringify(result.value)).not.toContain('sk-or-');
+    });
+
+    it('counts earlier attempts in the remaining budget', async () => {
+      const { api, module } = setup();
+      const key = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!key.ok) throw new Error('mint failed');
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: key.value.keyHash,
+        spentCents: 30,
+        expiresAt: key.value.expiresAt,
+        createdAt: key.value.createdAt,
+      });
+      api.setUsage(key.value.keyHash, 0.2);
+
+      const result = await module.status('issue-1');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({
+        budgetCents: 50,
+        usedCents: 50,
+        remainingCents: 0,
+        exhausted: true,
+      });
     });
 
     it('marks the budget exhausted once it is spent', async () => {

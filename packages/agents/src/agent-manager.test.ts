@@ -993,6 +993,28 @@ describe('review runs', () => {
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
   });
 
+  it('mints a per-attempt key for a review run', async () => {
+    let mints = 0;
+    const { manager, issues } = await harness({
+      mintOpenrouterKey: async () => {
+        mints += 1;
+        return { ok: true, key: `sk-review-${mints}`, hash: `hash-review-${mints}` };
+      },
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mints).toBe(1);
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value.openrouterKeyHash).toBe('hash-review-1');
+  });
+
   it('dispatches a conflict-resolution run without consuming an implement attempt', async () => {
     const { manager, issues, k8s } = await harness();
     const issue = await readyIssue(issues);
@@ -1180,6 +1202,33 @@ describe('deploy runs', () => {
     // Does not consume an implement attempt or reopen the Issue.
     const stored = await issues.get('project-1', issue.id);
     expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0, status: 'open' });
+  });
+
+  it('does not mint an OpenRouter key for a deploy run', async () => {
+    let mints = 0;
+    const { manager, issues, k8s } = await harness({
+      mintOpenrouterKey: async () => {
+        mints += 1;
+        return { ok: true, key: 'sk-unused', hash: 'hash-unused' };
+      },
+    });
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-merged-7',
+      branch: 'main',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mints).toBe(0);
+    expect((await k8s.secrets.get(NS, 'agent-openrouter-issue-1-1')).ok).toBe(false);
+    const { container } = await readJobContainer(k8s, NS, 'yaaabk-deploy-issue-1-attempt-1');
+    expect(container.envFrom).not.toContainEqual(
+      expect.objectContaining({
+        secretRef: expect.objectContaining({ name: 'agent-openrouter-issue-1-1' }),
+      }),
+    );
   });
 
   it('refuses a deploy run without a commit SHA', async () => {

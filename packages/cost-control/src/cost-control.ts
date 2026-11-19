@@ -7,7 +7,7 @@ import {
   type CostControlLogger,
 } from './errors';
 import { mintKey, revokeKey, usdFromCents } from './keys';
-import type { OpenRouterApi } from './openrouter-api';
+import type { OpenRouterApi, OpenRouterKey } from './openrouter-api';
 import type { BudgetRecord, CostControlModule, CostControlResult } from './types';
 
 export interface CostControlModuleOptions {
@@ -104,6 +104,8 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
           issueId: trimmed,
           keyHash: minted.keyHash,
           budgetCents: minted.budgetCents,
+          spentCents: 0,
+          attempt: 1,
           expiresAt: minted.expiresAt,
           createdAt: minted.createdAt,
         };
@@ -122,8 +124,18 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
         if (record === undefined) {
           throw costControlError('not-open', `Issue ${trimmed} has no OpenRouter key`);
         }
+        if (cents <= record.spentCents) {
+          throw costControlError(
+            'budget-exhausted',
+            `Issue ${trimmed} has already spent ${usdFromCents(record.spentCents).toFixed(2)} USD; a ${usdFromCents(cents).toFixed(2)} USD budget leaves nothing for the current key.`,
+          );
+        }
 
-        const updated = await api.updateKey(record.keyHash, { limitUsd: usdFromCents(cents) });
+        const updated = await api.updateKey(record.keyHash, {
+          // The key may only spend what the raised cap leaves after earlier
+          // attempts; the total is not a fresh allowance for this key.
+          limitUsd: usdFromCents(cents - record.spentCents),
+        });
         const next: BudgetRecord = {
           ...record,
           budgetCents: cents,
@@ -145,15 +157,9 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
         }
 
         const info = await api.getKey(record.keyHash);
-        const budgetCents =
-          info.limitUsd === null ? record.budgetCents : centsFromUsd(info.limitUsd);
-        const usedCents = centsFromUsd(info.usageUsd);
-        const remainingUsd =
-          info.limitRemainingUsd === null ? info.limitUsd : info.limitRemainingUsd;
-        const remainingCents =
-          remainingUsd === null
-            ? Math.max(0, budgetCents - usedCents)
-            : Math.max(0, centsFromUsd(remainingUsd));
+        const budgetCents = record.budgetCents;
+        const usedCents = record.spentCents + centsFromUsd(info.usageUsd);
+        const remainingCents = Math.max(0, budgetCents - usedCents);
         const expiresAt = info.expiresAt ?? record.expiresAt;
         const expired = expiresAt <= now().toISOString();
 
@@ -168,6 +174,110 @@ export function createCostControlModule(options: CostControlModuleOptions): Cost
           exhausted: info.disabled || expired || remainingCents <= 0,
         };
       });
+    },
+    beginAttempt: (issueId, options) => {
+      const trimmed = issueId?.trim() ?? '';
+      return guard(
+        'beginAttempt',
+        { issueId: trimmed, attempt: options?.attempt, budgetCents: options?.budgetCents },
+        async () => {
+          if (trimmed === '') {
+            throw costControlError('invalid-input', 'An issue id is required');
+          }
+          const budgetCents = budgetOrThrow(options?.budgetCents ?? defaultBudgetCents);
+          const attempt = options?.attempt;
+          if (!Number.isInteger(attempt) || attempt < 1) {
+            throw costControlError(
+              'invalid-input',
+              `An attempt must be a positive whole number (got ${attempt})`,
+            );
+          }
+          const record = store.get(trimmed);
+          const priorKeyHash = record?.keyHash ?? options?.priorKeyHash?.trim() ?? '';
+          if (record === undefined && attempt === 1 && priorKeyHash === '') {
+            return {
+              issueId: trimmed,
+              remainingCents: budgetCents,
+              spentCents: 0,
+              priorKeyHash: null,
+            };
+          }
+
+          if (priorKeyHash === '') {
+            throw costControlError(
+              'spend-unreadable',
+              `Issue ${trimmed} already has attempts but no OpenRouter key to read their spend from, so the remaining budget is unknown. Refusing to start another attempt with a fresh full budget; reset the Issue's budget or contact an administrator.`,
+            );
+          }
+
+          let info: OpenRouterKey;
+          try {
+            info = await api.getKey(priorKeyHash);
+          } catch (error) {
+            throw costControlError(
+              'spend-unreadable',
+              `Could not read the spend of OpenRouter key ${priorKeyHash} for Issue ${trimmed}, so the remaining budget is unknown. Refusing to start another attempt with a fresh full budget; check the OpenRouter management key and the Issue's key, then retry.`,
+              error,
+            );
+          }
+
+          const spentCents = (record?.spentCents ?? 0) + centsFromUsd(info.usageUsd);
+          if (spentCents >= budgetCents) {
+            throw costControlError(
+              'budget-exhausted',
+              `Issue ${trimmed} has spent ${usdFromCents(spentCents).toFixed(2)} USD of its ${usdFromCents(budgetCents).toFixed(2)} USD budget, leaving nothing for another attempt. Raise the Issue's budget to continue.`,
+            );
+          }
+
+          return {
+            issueId: trimmed,
+            remainingCents: budgetCents - spentCents,
+            spentCents,
+            priorKeyHash,
+          };
+        },
+      );
+    },
+    recordAttempt: (issueId, input) => {
+      const trimmed = issueId?.trim() ?? '';
+      return guard(
+        'recordAttempt',
+        { issueId: trimmed, attempt: input?.attempt, keyHash: input?.keyHash },
+        async () => {
+          if (trimmed === '') {
+            throw costControlError('invalid-input', 'An issue id is required');
+          }
+          const budgetCents = budgetOrThrow(input?.budgetCents ?? defaultBudgetCents);
+          if (!Number.isInteger(input?.attempt) || input.attempt < 1) {
+            throw costControlError(
+              'invalid-input',
+              `An attempt must be a positive whole number (got ${input?.attempt})`,
+            );
+          }
+          const keyHash = input?.keyHash?.trim() ?? '';
+          if (keyHash === '') {
+            throw costControlError('invalid-input', 'A key hash is required');
+          }
+          if (!Number.isInteger(input.spentCents) || input.spentCents < 0) {
+            throw costControlError(
+              'invalid-input',
+              `Spent cents must be a whole, non-negative number (got ${input.spentCents})`,
+            );
+          }
+
+          const record: BudgetRecord = {
+            issueId: trimmed,
+            keyHash,
+            budgetCents,
+            spentCents: input.spentCents,
+            attempt: input.attempt,
+            expiresAt: input.expiresAt,
+            createdAt: input.createdAt,
+          };
+          store.save(record);
+          return record;
+        },
+      );
     },
     release: (issueId) => {
       const trimmed = issueId?.trim() ?? '';

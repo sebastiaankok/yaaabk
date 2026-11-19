@@ -18,6 +18,8 @@
 export type CostControlErrorKind =
   | 'invalid-input'
   | 'budget-out-of-range'
+  | 'budget-exhausted'
+  | 'spend-unreadable'
   | 'already-open'
   | 'not-open'
   | 'unauthorized'
@@ -45,8 +47,12 @@ export interface BudgetRecord {
   issueId: string;
   /** OpenRouter key hash, the handle every later API call uses. */
   keyHash: string;
-  /** Spending cap in cents. */
+  /** The Issue's total spending cap in cents. */
   budgetCents: number;
+  /** Cumulative cents spent by earlier attempts, before this key. */
+  spentCents: number;
+  /** 1-based attempt this key was minted for. */
+  attempt: number;
   expiresAt: string;
   createdAt: string;
 }
@@ -79,6 +85,31 @@ export interface MintedKey {
   key: string;
   /** Spending cap in cents. */
   budgetCents: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** What one attempt may still spend before it starts. */
+export interface AttemptBudget {
+  issueId: string;
+  /** Cents the next key may be capped at, after every earlier attempt's spend. */
+  remainingCents: number;
+  /** Cumulative cents already spent on the Issue before this attempt. */
+  spentCents: number;
+  /** The previous attempt's key whose usage was counted, when there was one. */
+  priorKeyHash: string | null;
+}
+
+/** What a caller records after minting an attempt's key. */
+export interface RecordAttemptInput {
+  /** The Issue's total cap in cents. */
+  budgetCents: number;
+  /** 1-based sequence of the attempt the key was minted for. */
+  attempt: number;
+  /** Hash of the freshly minted key. */
+  keyHash: string;
+  /** Cumulative cents spent before this attempt. */
+  spentCents: number;
   expiresAt: string;
   createdAt: string;
 }
@@ -120,6 +151,22 @@ export interface CostControlModule {
   topUp(issueId: string, budgetCents: number): Promise<CostControlResult<BudgetRecord>>;
   /** Reports the Issue's remaining budget and whether the agent must pause. */
   status(issueId: string): Promise<CostControlResult<BudgetStatus>>;
+  /**
+   * Reports what a new attempt may spend after every earlier attempt on the
+   * Issue. The first attempt gets the whole budget; a later one reads the
+   * previous key's usage from OpenRouter, so the cap is cumulative rather than
+   * reset per attempt. Fails with `spend-unreadable` when that usage cannot be
+   * read, rather than granting a fresh full budget.
+   */
+  beginAttempt(
+    issueId: string,
+    options: { budgetCents: number; attempt: number; priorKeyHash?: string | null },
+  ): Promise<CostControlResult<AttemptBudget>>;
+  /** Records the key a new attempt was minted, with the spend it must build on. */
+  recordAttempt(
+    issueId: string,
+    input: RecordAttemptInput,
+  ): Promise<CostControlResult<BudgetRecord>>;
   /** Deletes the Issue's key and forgets its budget. A no-op when not open. */
   release(issueId: string): Promise<CostControlResult<void>>;
   /**

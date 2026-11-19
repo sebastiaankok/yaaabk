@@ -15,11 +15,11 @@ import {
 import { createCiTracker } from '@yaaabk/ci-tracker';
 import {
   createCostControlModule,
-  createInMemoryBudgetStore,
   createOpenRouterApi,
   createOpenRouterCreditsReader,
   createOpenRouterModelCatalogue,
   createOpenRouterVerifier,
+  createSqliteBudgetStore,
   loadCostControlConfig,
 } from '@yaaabk/cost-control';
 import {
@@ -58,6 +58,7 @@ import {
 } from '@yaaabk/settings';
 import { createTemplateModule } from '@yaaabk/template';
 import { createBunWebSocket } from 'hono/bun';
+import { createAgentOpenrouterKeyMinter } from './agent-keys';
 import { createApp } from './app';
 import {
   createGitHubTokenResolver,
@@ -550,15 +551,16 @@ if (!reconciled.ok) {
 /**
  * The Cost Control Module, built from the Settings credential store with the
  * environment as fallback. Without either, an empty management key makes every
- * OpenRouter call fail with a clear `unauthorized` error. Its consumers (the
- * Agent Manager's budget lifecycle) arrive with a later issue.
+ * OpenRouter call fail with a clear `unauthorized` error. Its budget store is
+ * SQLite-backed so an attempt after a backend restart still sees what earlier
+ * attempts spent.
  */
-createCostControlModule({
+const issueBudgets = createCostControlModule({
   api: createOpenRouterApi({
     managementKey:
       bootstrapCredentials.openrouterManagementKey ?? costControlConfig.managementKey ?? '',
   }),
-  store: createInMemoryBudgetStore(),
+  store: createSqliteBudgetStore(database),
   defaultBudgetCents:
     bootstrapCredentials.defaultIssueBudgetCents ?? costControlConfig.defaultBudgetCents,
 });
@@ -570,12 +572,7 @@ const agents = createAgentManager({
   k8s,
   githubIssues: resolveGitHubIssues(settings),
   githubToken: resolveGithubTokenForAgents,
-  mintOpenrouterKey: async (issue, attemptNumber, model) => {
-    const minted = await agentKeys.mint(issue.id, issue.budgetCents, attemptNumber, model);
-    return minted.ok
-      ? { ok: true, key: minted.value.key, hash: minted.value.hash }
-      : { ok: false, message: minted.message };
-  },
+  mintOpenrouterKey: createAgentOpenrouterKeyMinter({ budgets: issueBudgets, keys: agentKeys }),
   // Fallback model for both surfaces: Agent Jobs prefer the Issue's model, then
   // the Project's, before this environment default; Grill-Me Sessions use the
   // per-session choice with this as their fallback.
