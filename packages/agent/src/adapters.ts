@@ -82,7 +82,13 @@ export function createGit(): Git {
           output: fetched.stderr.toString() || fetched.stdout.toString(),
         };
       }
-      const merged = await Bun.$`git -C ${directory} merge --no-edit origin/HEAD`.quiet().nothrow();
+      // The agent image has no global git identity, so a merge commit would
+      // fail with "unable to auto-detect email address" before it ever reported
+      // the conflict. Pass the identity explicitly, as `commitAll` does.
+      const merged =
+        await Bun.$`git -C ${directory} -c user.name=yaaabk -c user.email=agent@yaaabk.io merge --no-edit origin/HEAD`
+          .quiet()
+          .nothrow();
       const output = [merged.stdout.toString(), merged.stderr.toString()]
         .filter((part) => part.trim() !== '')
         .join('\n');
