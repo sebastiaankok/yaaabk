@@ -65,6 +65,7 @@ COPY --from=build /app/packages/agent/skills ./skills
 COPY --from=build /app/packages/grill-me/skills/grill-me ./grill-skills/grill-me
 COPY --from=build /app/packages/grill-me/skills/to-prd ./grill-skills/to-prd
 COPY --from=build /app/packages/grill-me/skills/to-issues ./grill-skills/to-issues
+COPY --from=build /app/packages/grill-me/skills/simple-english ./grill-skills/simple-english
 # The reporting MCP server OpenCode starts for a session. Sessions load their
 # OpenCode config through OPENCODE_CONFIG so Agent Jobs never register a server
 # whose report token they do not have.

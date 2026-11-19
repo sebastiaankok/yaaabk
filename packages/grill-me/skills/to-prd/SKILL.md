@@ -40,7 +40,9 @@ and continue without waiting for another confirmation.
 
 ## 3. Write the PRD from the template
 
-Write Markdown with exactly these sections, in this order:
+Before you write the Plan, load the `simple-english` skill with the `skill` tool
+and apply its rules to every sentence. Write Markdown with exactly these
+sections, in this order:
 
 ```markdown
 ## Problem Statement

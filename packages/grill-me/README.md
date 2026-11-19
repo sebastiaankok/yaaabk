@@ -10,7 +10,7 @@ disconnects, so a reconnecting terminal attaches to the same conversation.
 frames, and `sessionRuntimeContract` is the shared suite every adapter runs.
 
 The opening prompt tells the agent to load the `grill-me` skill before anything
-else. That skill runs the interview, and three bundled skills carry the session
+else. That skill runs the interview, and four bundled skills carry the session
 from idea to report:
 
 | Skill | Role |
@@ -18,6 +18,7 @@ from idea to report:
 | `grill-me` | Interviews one question at a time, adapts to the Skill Level, explores the repository and cluster instead of asking answerable questions, confirms the settled plan and hands off. |
 | `to-prd` | Synthesises the PRD from the conversation, checks the module sketch with the Developer, writes the PRD template and calls `report_prd`. |
 | `to-issues` | Cuts the PRD into vertical slices, quizzes the Developer on granularity and dependencies, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`. |
+| `simple-english` | Sets the prose rules the reporting skills load before they write a Plan, an Issue title, a summary, or a body: short sentences, active voice, simple tenses, one word for one meaning, condition before command, defined technical terms, and no AI slop. |
 
 The skills live under [`skills/`](./skills) and are baked into the shared agent
 image. The session OpenCode config lists the image skills directory, so the

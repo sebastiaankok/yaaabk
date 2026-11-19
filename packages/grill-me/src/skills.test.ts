@@ -7,6 +7,11 @@ function readSkill(id: string): string {
   return readFileSync(fileURLToPath(new URL(`../skills/${id}/SKILL.md`, import.meta.url)), 'utf8');
 }
 
+/** Reads a repository file relative to its root. */
+function readRepoFile(path: string): string {
+  return readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)), 'utf8');
+}
+
 describe('grill-me skill', () => {
   const skill = readSkill('grill-me');
 
@@ -59,6 +64,42 @@ describe('grill-me skill', () => {
   });
 });
 
+describe('simple-english skill', () => {
+  const skill = readSkill('simple-english');
+
+  it('is discoverable with a description OpenCode can advertise', () => {
+    expect(skill.startsWith('---')).toBe(true);
+    expect(skill).toMatch(/^description:\s*\S+/m);
+  });
+
+  it('asks for short sentences, active voice and simple tenses', () => {
+    expect(skill).toMatch(/short sentences/i);
+    expect(skill).toMatch(/active voice/i);
+    expect(skill).toMatch(/simple tenses/i);
+  });
+
+  it('keeps one word for one meaning and puts the condition before the command', () => {
+    expect(skill).toMatch(/one word.{0,10}one meaning/i);
+    expect(skill).toMatch(/condition before (the )?command/i);
+  });
+
+  it('defines every technical term at first use', () => {
+    expect(skill).toMatch(/technical term/i);
+    expect(skill).toMatch(/first use/i);
+  });
+
+  it('removes AI slop', () => {
+    expect(skill).toMatch(/AI slop/i);
+  });
+
+  it('leaves code, identifiers, commands, paths and quoted errors unchanged', () => {
+    for (const untouched of ['code', 'identifiers', 'commands', 'file paths', 'quoted errors']) {
+      expect(skill.toLowerCase()).toContain(untouched);
+    }
+    expect(skill).toMatch(/do not (change|rewrite|touch)/i);
+  });
+});
+
 describe('to-prd skill', () => {
   const skill = readSkill('to-prd');
 
@@ -95,6 +136,12 @@ describe('to-prd skill', () => {
 
   it('can be asked for at any point without more grilling', () => {
     expect(skill.toLowerCase()).toContain('write the prd now');
+  });
+
+  it('loads the simple-english skill before writing the Plan', () => {
+    expect(skill).toContain('simple-english');
+    expect(skill).toMatch(/before (you )?write|before writing/i);
+    expect(skill).toMatch(/skill`? tool/i);
   });
 });
 
@@ -137,5 +184,28 @@ describe('to-issues skill', () => {
     expect(skill).toContain('report_issues');
     expect(skill).toMatch(/finish/i);
     expect(skill).toMatch(/draft/i);
+  });
+
+  it('loads the simple-english skill before writing titles, summaries and bodies', () => {
+    expect(skill).toContain('simple-english');
+    expect(skill).toMatch(/titles/i);
+    expect(skill).toMatch(/summaries/i);
+    expect(skill).toMatch(/bodies/i);
+    expect(skill).toMatch(/before (you )?write|before writing/i);
+    expect(skill).toMatch(/skill`? tool/i);
+  });
+});
+
+describe('skill packaging', () => {
+  it('copies the simple-english skill into the backend and agent images', () => {
+    for (const dockerfile of ['packages/backend/Dockerfile', 'packages/agent/Dockerfile']) {
+      expect(readRepoFile(dockerfile)).toContain(
+        '/app/packages/grill-me/skills/simple-english ./grill-skills/simple-english',
+      );
+    }
+  });
+
+  it('lists the simple-english skill in the grill-me README', () => {
+    expect(readRepoFile('packages/grill-me/README.md')).toMatch(/`simple-english`/);
   });
 });
