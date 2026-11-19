@@ -6,6 +6,7 @@ import {
 } from './kubernetes-runtime';
 import { sessionRuntimeContract } from './runtime-contract';
 import type { SessionRuntimeSpec } from './runtime-types';
+import { SESSION_PROMPT_ENV } from './supervisor';
 
 const NAMESPACE = 'yaaabk-a1b2c3d4';
 const REPO = 'acme/todo-app';
@@ -247,10 +248,15 @@ describe('Kubernetes session Pods', () => {
     const args = pod.containers[0]!.args;
     expect(args.slice(args.indexOf('tmux'), args.indexOf('opencode'))).toEqual([
       'tmux',
+      '-L',
+      `yaaabk-${spec.sessionId}`,
       'new-session',
       '-A',
       '-s',
       `yaaabk-${spec.sessionId}`,
+      'sh',
+      '-c',
+      expect.stringContaining('exec "$0" mini'),
     ]);
   });
 
@@ -277,24 +283,24 @@ describe('Kubernetes session Pods', () => {
         '--writable',
         '--credential',
         'yaaabk:terminal-token',
+        'sh',
+        '-c',
+        expect.stringContaining(`--prompt "$${SESSION_PROMPT_ENV}"`),
         'opencode',
-        'mini',
-        '--session',
         spec.sessionId,
-        '--prompt',
-        'Build a recipe box',
-        '--model',
         'openrouter/test-model',
-        '--replay',
-        '--standalone',
       ]),
     );
+    // ttyd 1.7.7 overflows a fixed 4096-byte title buffer when its command line
+    // is long, so the prompt must reach OpenCode through the environment.
+    expect(main.args).not.toContain('Build a recipe box');
     expect(main.workingDir).toBe('/workspace/repo');
     const env = Object.fromEntries(main.env.map((item) => [item.name, item.value]));
     expect(env).toMatchObject({
       YAAABK_PROJECT_ID: spec.projectId,
       YAAABK_SESSION_ID: spec.sessionId,
       YAAABK_SKILL_LEVEL: spec.skillLevel,
+      [SESSION_PROMPT_ENV]: 'Build a recipe box',
       OPENCODE_CONFIG: '/app/opencode-session.json',
     });
     expect(main.envFrom).toEqual([{ secretRef: { name: 'grill-session-next-session' } }]);
