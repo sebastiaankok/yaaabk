@@ -2,7 +2,7 @@ import type { IssueSyncError, IssueSyncModule } from '@yaaabk/github';
 import type { ProjectsModule } from '@yaaabk/projects';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { fail, projectOrResponse } from './http';
+import { body, fail, projectOrResponse } from './http';
 
 /**
  * Sync failures map to the HTTP status the caller should act on: a malformed
@@ -38,7 +38,16 @@ export function issueSyncRoutes(sync: IssueSyncModule, projects: ProjectsModule)
     const project = await projectOrResponse(c, projects, c.req.param('id'));
     if (project instanceof Response) return project;
 
-    const result = await sync.push(project.id, project.repoFullName);
+    // Recovery after a partly failed acceptance can be scoped to one Plan, so
+    // it does not touch issues that belong to another version.
+    const input = await body(c);
+    const planId =
+      typeof input.planId === 'string' && input.planId !== '' ? input.planId : undefined;
+    const result = await sync.push(
+      project.id,
+      project.repoFullName,
+      planId === undefined ? {} : { planId },
+    );
     return result.ok ? c.json(result.value) : fail(c, result.error, statusFor(result.error));
   });
 

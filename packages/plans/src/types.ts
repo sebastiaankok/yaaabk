@@ -32,6 +32,38 @@ export interface Plan {
   createdAt: string;
   /** Whether this is the active version for its Project. */
   isActive: boolean;
+  /**
+   * When the Developer accepted the Plan, recording it and its Issues on
+   * GitHub. `null` until accepted; set only after the GitHub push succeeds.
+   */
+  acceptedAt: string | null;
+}
+
+/** One of a Plan's Issues, as the dependency graph places it. */
+export interface PlanAcceptanceIssue {
+  title: string;
+  /** 0-based wave, or `null` when the Issue sits on a cycle. */
+  wave: number | null;
+  /** Dependency titles that match no Issue in the graph. */
+  missing: string[];
+}
+
+/** What the acceptance check needs to know about a Plan's Issues. */
+export interface PlanAcceptanceFacts {
+  /** How many Issues the Plan owns, closed ones included. */
+  issueCount: number;
+  /** Where each of those Issues sits in the Project's dependency graph. */
+  issues: PlanAcceptanceIssue[];
+}
+
+/** The result of syncing a Plan's Issues to GitHub during acceptance. */
+export type PlanAcceptPush = { ok: true } | { ok: false; message: string };
+
+/** The facts and side effects `accept` needs from its caller. */
+export interface PlanAcceptance {
+  facts: PlanAcceptanceFacts;
+  /** Syncs only this Plan's Issues to GitHub. Runs after the checks pass. */
+  push(): Promise<PlanAcceptPush>;
 }
 
 /** The values needed to save a new Plan version. */
@@ -48,7 +80,13 @@ export interface NewPlan {
 }
 
 /** The kinds of failure a Plans Module command can report. */
-export type PlanErrorKind = 'invalid-input' | 'not-found' | 'duplicate-version' | 'unknown';
+export type PlanErrorKind =
+  | 'invalid-input'
+  | 'not-found'
+  | 'duplicate-version'
+  | 'not-acceptable'
+  | 'sync-failed'
+  | 'unknown';
 
 /** A typed failure, never thrown across the module boundary. */
 export interface PlanError {
@@ -81,6 +119,8 @@ export interface PlanStore {
   nextVersion(projectId: string): number;
   /** Makes `planId` active and deactivates every other version. */
   activate(projectId: string, planId: string): void;
+  /** Records when a Plan was accepted. Throws when the Plan does not exist. */
+  accept(projectId: string, planId: string, acceptedAt: string): void;
   /** Removes every Plan in a Project, for when the Project itself is deleted. */
   deleteForProject(projectId: string): void;
 }
@@ -95,6 +135,12 @@ export interface PlansModule {
   getActive(projectId: string): Promise<PlansResult<Plan | null>>;
   /** Re-activates an earlier version. */
   activate(projectId: string, planId: string): Promise<PlansResult<Plan>>;
+  /**
+   * Accepts the active, unaccepted Plan: validates its Issues, syncs only them
+   * to GitHub, then records the acceptance. A failed push leaves the Plan
+   * unaccepted so the Developer can retry.
+   */
+  accept(projectId: string, planId: string, acceptance: PlanAcceptance): Promise<PlansResult<Plan>>;
   /** Removes every Plan in a Project, for when the Project itself is deleted. */
   removeForProject(projectId: string): Promise<PlansResult<void>>;
 }

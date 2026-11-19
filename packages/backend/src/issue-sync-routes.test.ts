@@ -75,6 +75,29 @@ describe('issue sync routes', () => {
     expect(context.github.issues('acme/todo-app')).toHaveLength(1);
   });
 
+  it('pushes only the selected plan\u2019s issues when asked', async () => {
+    const { context, session, projectId } = await signedIn();
+    await addIssue(context, session, projectId, {
+      title: 'Old work',
+      planId: 'plan-old',
+    });
+    await addIssue(context, session, projectId, {
+      title: 'New work',
+      planId: 'plan-new',
+    });
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues/sync/push`, {
+      method: 'POST',
+      body: JSON.stringify({ planId: 'plan-new' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ created: 1 });
+    expect(context.github.issues('acme/todo-app').map((issue) => issue.title)).toEqual([
+      'New work',
+    ]);
+  });
+
   it('runs a full push-then-pull cycle', async () => {
     const { context, session, projectId } = await signedIn();
     await addIssue(context, session, projectId, { title: 'Add login' });

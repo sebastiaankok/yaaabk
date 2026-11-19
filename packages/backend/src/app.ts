@@ -95,16 +95,10 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', authRoutes(options.auth, options.authRoutesOptions));
   app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects, options.models));
-  app.route('/', planRoutes(options.projects, options.plans));
+  app.route('/', planRoutes(options.projects, options.plans, options.issues, options.issueSync));
   app.route(
     '/',
-    issueRoutes(
-      options.issues,
-      options.projects,
-      options.plans,
-      options.models,
-      options.issueBudgets,
-    ),
+    issueRoutes(options.issues, options.projects, options.models, options.issueBudgets),
   );
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));

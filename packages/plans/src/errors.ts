@@ -21,6 +21,8 @@ const PLAN_KINDS: ReadonlySet<string> = new Set<PlanErrorKind>([
   'invalid-input',
   'not-found',
   'duplicate-version',
+  'not-acceptable',
+  'sync-failed',
   'unknown',
 ]);
 

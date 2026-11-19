@@ -458,45 +458,6 @@ describe('graph', () => {
   });
 });
 
-describe('approve', () => {
-  it('marks every open issue in the project ready', async () => {
-    const { store, issues } = setup({ ids: ['issue-1', 'issue-2'] });
-    await create(issues, { title: 'First', label: 'refinement-needed' });
-    await create(issues, { title: 'Second', label: 'blocked' });
-
-    const result = await issues.approve('project-1');
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.map((issue) => issue.label)).toEqual(['ready', 'ready']);
-    expect(store.get('project-1', 'issue-1')?.label).toBe('ready');
-  });
-
-  it('leaves closed issues alone', async () => {
-    const { store, issues } = setup({ ids: ['issue-1', 'issue-2'] });
-    const done = await create(issues, { title: 'Done', label: 'refinement-needed' });
-    await create(issues, { title: 'Todo', label: 'refinement-needed' });
-    await issues.update('project-1', done.id, { status: 'closed' });
-
-    const result = await issues.approve('project-1');
-
-    expect(result.ok && result.value.map((issue) => issue.title)).toEqual(['Todo']);
-    expect(store.get('project-1', done.id)?.label).toBe('refinement-needed');
-  });
-
-  it('scopes approval to one plan', async () => {
-    const { store, issues } = setup({ ids: ['issue-1', 'issue-2'] });
-    await create(issues, { title: 'Old', planId: 'plan-1', label: 'refinement-needed' });
-    await create(issues, { title: 'New', planId: 'plan-2', label: 'refinement-needed' });
-
-    const result = await issues.approve('project-1', 'plan-2');
-
-    expect(result.ok && result.value.map((issue) => issue.title)).toEqual(['New']);
-    expect(store.get('project-1', 'issue-1')?.label).toBe('refinement-needed');
-    expect(store.get('project-1', 'issue-2')?.label).toBe('ready');
-  });
-});
-
 describe('removeForProject', () => {
   it('removes the project\u2019s issues and leaves another project alone', async () => {
     const { store, issues } = setup({ ids: ['issue-1', 'issue-2', 'issue-3'] });

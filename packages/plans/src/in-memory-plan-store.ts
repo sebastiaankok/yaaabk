@@ -80,6 +80,14 @@ export function createInMemoryPlanStore(): PlanStore {
       }
     },
 
+    accept(projectId, planId, acceptedAt) {
+      const target = plans.get(planId);
+      if (target === undefined || target.projectId !== projectId) {
+        throw plansError('not-found', `No plan with id "${planId}" for project "${projectId}"`);
+      }
+      plans.set(planId, { ...target, acceptedAt });
+    },
+
     deleteForProject(projectId) {
       for (const [id, plan] of plans) {
         if (plan.projectId === projectId) plans.delete(id);

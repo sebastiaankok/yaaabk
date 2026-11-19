@@ -6,6 +6,7 @@ import { createTestContext } from './test-support';
  * remaining entry points, so the API surface must not offer them again.
  */
 const REMOVED_ROUTES = [
+  { method: 'POST', path: '/api/projects/:id/issues/approve' },
   { method: 'POST', path: '/api/projects/:id/issues/generate' },
   { method: 'POST', path: '/api/projects/:id/issues/refine' },
   { method: 'POST', path: '/api/projects/:id/grill/:sessionId/answer' },

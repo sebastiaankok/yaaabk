@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { IssueSyncStatus } from '@yaaabk/github';
 import type { IssueGraph } from '@yaaabk/issues';
 
 const PROJECT = {
@@ -27,7 +26,10 @@ const PLAN = {
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
   isActive: true,
+  acceptedAt: null,
 };
+
+const ACCEPTED_AT = '2026-01-02T00:00:00.000Z';
 
 function issue(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -76,25 +78,18 @@ const GRAPH: IssueGraph = {
 };
 
 interface Mocks {
+  plans: Record<string, unknown>[];
   issues: Record<string, unknown>[];
   graph: IssueGraph;
-  syncStatus: IssueSyncStatus;
 }
 
-/** The status a fully mirrored project reports. */
-const SYNCED: IssueSyncStatus = {
-  total: 2,
-  synced: 2,
-  pending: 0,
-  lastSyncedAt: '2026-01-02T00:00:00.000Z',
-};
-
-/** Mocks the project, its active plan and the issue endpoints. */
-async function mockReview(page: Page): Promise<Mocks> {
+/** Mocks the project, its Plan versions and the issue endpoints. */
+async function mockReview(page: Page, overrides: Partial<Mocks> = {}): Promise<Mocks> {
   const state: Mocks = {
+    plans: [PLAN],
     issues: [SCHEMA, API],
     graph: GRAPH,
-    syncStatus: { total: 2, synced: 0, pending: 2, lastSyncedAt: null },
+    ...overrides,
   };
 
   await page.route('**/api/auth/status', (route) =>
@@ -103,25 +98,30 @@ async function mockReview(page: Page): Promise<Mocks> {
     }),
   );
   await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
-  await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
+  await page.route('**/api/projects/p1/plans', (route) =>
+    route.fulfill({ json: { plans: state.plans } }),
+  );
   await page.route('**/api/projects/p1/issues', (route) =>
     route.fulfill({ json: { issues: state.issues } }),
   );
   await page.route('**/api/projects/p1/issues/graph', (route) =>
     route.fulfill({ json: state.graph }),
   );
-  await page.route('**/api/projects/p1/issues/sync/status', (route) =>
-    route.fulfill({ json: state.syncStatus }),
-  );
   return state;
 }
 
-test('shows the plan, issues grouped by wave, and their labels', async ({ page }) => {
+test('lists the plan versions and shows the active plan with its issues by wave', async ({
+  page,
+}) => {
   await mockReview(page);
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByRole('heading', { name: 'Active plan' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /v1.*Active.*Not accepted.*0\/2 closed/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan v1' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 0' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 1' })).toBeVisible();
   await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();
@@ -134,9 +134,7 @@ test('shows the plan, issues grouped by wave, and their labels', async ({ page }
 test('renders the Plan and Issue Markdown with typography', async ({ page }) => {
   const state = await mockReview(page);
   const contentMarkdown = '## Outcomes\n\n- Ship the board';
-  await page.route('**/api/projects/p1/plans/active', (route) =>
-    route.fulfill({ json: { ...PLAN, contentMarkdown } }),
-  );
+  state.plans = [{ ...PLAN, contentMarkdown }];
   state.issues = [
     issue({
       id: 'i1',
@@ -172,7 +170,7 @@ test('renders the Plan and Issue Markdown with typography', async ({ page }) => 
   expect(listStyle).toBe('disc');
 });
 
-test('shows only the active plan\u2019s open issues', async ({ page }) => {
+test('shows every issue of the selected plan, including closed ones', async ({ page }) => {
   const state = await mockReview(page);
   state.issues = [
     ...state.issues,
@@ -190,20 +188,26 @@ test('shows only the active plan\u2019s open issues', async ({ page }) => {
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByText('Schema', { exact: true })).toBeVisible();
-  await expect(page.getByText('Finished', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Schema', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Finished', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('closed', { exact: true })).toBeVisible();
   await expect(page.getByText('Legacy', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Issues (2)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Issues (3)' })).toBeVisible();
 });
 
-test('points at a new session once every issue in the plan is closed', async ({ page }) => {
+test('shows a completed plan once it was accepted and every issue is closed', async ({ page }) => {
   const state = await mockReview(page);
+  state.plans = [{ ...PLAN, acceptedAt: ACCEPTED_AT }];
   state.issues = state.issues.map((item) => ({ ...item, status: 'closed' }));
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByText('Every issue in Plan v1 is closed.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Approve & Create' })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: /v1.*Active.*Completed.*2\/2 closed/ }),
+  ).toBeVisible();
+  const plan = page.locator('section[aria-labelledby="plan-heading"]');
+  await expect(plan.getByText('Completed')).toBeVisible();
+  await expect(plan.getByText('Accept plan')).toHaveCount(0);
 });
 
 test('warns about circular dependencies', async ({ page }) => {
@@ -232,52 +236,149 @@ test('offers no one-shot generation or prompt refinement', async ({ page }) => {
   await expect(page.getByLabel('Refinement feedback')).toHaveCount(0);
 });
 
-test('approves the issue list and pushes it to GitHub', async ({ page }) => {
+test('accepts the plan through a modal that explains the GitHub sync', async ({ page }) => {
   const state = await mockReview(page);
-  await page.route('**/api/projects/p1/issues/approve', (route) => {
-    state.issues = state.issues.map((item) => ({ ...item, label: 'ready' }));
-    return route.fulfill({ json: { issues: state.issues } });
-  });
-  await page.route('**/api/projects/p1/issues/sync/push', (route) => {
+  await page.route('**/api/projects/p1/plans/v1/accept', (route) => {
+    state.plans = state.plans.map((plan) => ({ ...plan, acceptedAt: ACCEPTED_AT }));
     state.issues = state.issues.map((item, index) => ({ ...item, githubNumber: index + 1 }));
-    state.syncStatus = SYNCED;
-    return route.fulfill({ json: { created: 2, updated: 0, status: state.syncStatus } });
+    return route.fulfill({ json: state.plans[0] });
   });
 
   await page.goto('/projects/p1/issues/review');
-  await page.getByRole('button', { name: 'Approve & Create' }).click();
+  await page.getByRole('button', { name: 'Accept plan', exact: true }).click();
 
-  await expect(page.getByText('Issues approved.')).toBeVisible();
-  await expect(page.getByText('GitHub in sync · 2 created')).toBeVisible();
-  await expect(page.getByText('All 2 issues on GitHub')).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'Accept Plan v1?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/creates or updates its Issues on GitHub/)).toBeVisible();
+  await expect(dialog.getByText(/agents start on the Issues labelled/)).toBeVisible();
+  await expect(dialog.getByText(/needs-human/)).toBeVisible();
+  await expect(dialog.getByText(/Issue labels do not change/)).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Accept Plan v1' }).click();
+
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub.')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /v1.*Active.*In progress.*0\/2 closed/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry GitHub sync' })).toHaveCount(0);
 });
 
-test('syncs with GitHub on demand', async ({ page }) => {
+test('offers Retry accept with the failure reason and keeps the plan unaccepted', async ({
+  page,
+}) => {
   const state = await mockReview(page);
+  let attempts = 0;
+  await page.route('**/api/projects/p1/plans/v1/accept', (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      return route.fulfill({
+        status: 502,
+        json: { error: 'sync-failed', message: 'Bad credentials' },
+      });
+    }
+    state.plans = state.plans.map((plan) => ({ ...plan, acceptedAt: ACCEPTED_AT }));
+    state.issues = state.issues.map((item, index) => ({ ...item, githubNumber: index + 1 }));
+    return route.fulfill({ json: state.plans[0] });
+  });
 
   await page.goto('/projects/p1/issues/review');
-  await expect(page.getByText('Not yet on GitHub · 2 pending')).toBeVisible();
+  await page.getByRole('button', { name: 'Accept plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept Plan v1' }).click();
 
-  await page.route('**/api/projects/p1/issues/sync', (route) => {
+  await expect(page.getByRole('alert').getByText('Bad credentials')).toBeVisible();
+  await expect(
+    page
+      .getByRole('alert')
+      .getByText('The Plan was not accepted. Its Issues are safe to sync again.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /v1.*Active.*Not accepted/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Retry accept' }).click();
+
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry accept' })).toHaveCount(0);
+});
+
+test('shows a small Retry GitHub sync only for an accepted plan with unsynced issues', async ({
+  page,
+}) => {
+  const state = await mockReview(page);
+  state.plans = [{ ...PLAN, acceptedAt: ACCEPTED_AT }];
+
+  await page.goto('/projects/p1/issues/review');
+  await page.route('**/api/projects/p1/issues/sync/push', (route) => {
     state.issues = state.issues.map((item, index) => ({ ...item, githubNumber: index + 1 }));
-    state.syncStatus = SYNCED;
     return route.fulfill({
       json: {
-        push: { created: 2, updated: 0, status: state.syncStatus },
-        pull: { changed: 0, status: state.syncStatus },
+        created: 2,
+        updated: 0,
+        status: { total: 2, synced: 2, pending: 0, lastSyncedAt: '2026-01-02T00:00:00.000Z' },
       },
     });
   });
-  await page.getByRole('button', { name: 'Sync with GitHub' }).click();
+
+  await expect(page.getByRole('button', { name: 'Retry GitHub sync' })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry GitHub sync' }).click();
 
   await expect(page.getByText('GitHub in sync · 2 created')).toBeVisible();
-  await expect(page.getByText('All 2 issues on GitHub')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry GitHub sync' })).toHaveCount(0);
+});
+
+test('defaults to the active plan and shows a previous plan read-only', async ({ page }) => {
+  const previous = {
+    ...PLAN,
+    id: 'v0',
+    version: 1,
+    isActive: false,
+    acceptedAt: ACCEPTED_AT,
+    contentMarkdown: '# Previous plan',
+    summary: 'The previous plan.',
+  };
+  const active = {
+    ...PLAN,
+    id: 'v2',
+    version: 2,
+    isActive: true,
+    contentMarkdown: '# Active plan',
+    summary: 'The active plan.',
+  };
+  const state = await mockReview(page, {
+    plans: [active, previous],
+    issues: [
+      issue({ id: 'old', title: 'Old work', planId: 'v0', status: 'closed' }),
+      issue({ id: 'new', title: 'New work', planId: 'v2', label: 'ready' }),
+    ],
+    graph: {
+      nodes: [
+        { id: 'old', title: 'Old work', dependsOn: [], missing: [], wave: 0 },
+        { id: 'new', title: 'New work', dependsOn: [], missing: [], wave: 0 },
+      ],
+      cycles: [],
+    },
+  });
+
+  await page.goto('/projects/p1/issues/review');
+
+  await expect(page.getByRole('heading', { name: 'Plan v2' })).toBeVisible();
+  await expect(page.getByText('The active plan.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /v1.*Previous.*Completed/ }).click();
+
+  await expect(page.getByRole('heading', { name: 'Plan v1' })).toBeVisible();
+  await expect(page.getByText('The previous plan.')).toBeVisible();
+  await expect(page.getByText(/This is a previous Plan/)).toBeVisible();
+  await expect(page.getByText('Old work', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('New work', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /v2.*Active/ }).click();
+  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toBeVisible();
+  expect(state.plans).toHaveLength(2);
 });
 
 test('offers a route back to a new grill session when there are no issues', async ({ page }) => {
-  const state = await mockReview(page);
-  state.issues = [];
-  state.graph = { nodes: [], cycles: [] };
+  await mockReview(page, { issues: [], graph: { nodes: [], cycles: [] } });
 
   await page.goto('/projects/p1/issues/review');
 
@@ -285,8 +386,9 @@ test('offers a route back to a new grill session when there are no issues', asyn
   await expect(
     page.getByText('Finish an agent session to publish a Plan and its Issues.'),
   ).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Start a new agent session' })).toHaveAttribute(
-    'href',
-    '/projects/p1/plan',
-  );
+  await expect(
+    page
+      .locator('section[aria-labelledby="issues-heading"]')
+      .getByRole('link', { name: 'Start a new agent session' }),
+  ).toHaveAttribute('href', '/projects/p1/plan');
 });

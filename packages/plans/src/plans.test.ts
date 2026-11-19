@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInMemoryPlanStore } from './in-memory-plan-store';
 import { createPlansModule } from './plans';
-import type { NewPlan, PlansModule } from './types';
+import type { NewPlan, PlanAcceptanceFacts, PlansModule } from './types';
 
 const NOW = new Date('2026-01-01T12:00:00.000Z');
 const INPUT: NewPlan = {
@@ -189,6 +189,157 @@ describe('activate', () => {
     const { plans } = setup();
 
     const result = await plans.activate('project-1', 'missing');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-found');
+  });
+});
+
+describe('accept', () => {
+  const acceptance = (overrides: Partial<PlanAcceptanceFacts> = {}) => ({
+    facts: {
+      issueCount: 1,
+      issues: [{ title: 'Schema', wave: 0, missing: [] }],
+      ...overrides,
+    },
+    push: async () => ({ ok: true as const }),
+  });
+
+  it('records the accepted date for the active plan once its issues can be pushed', async () => {
+    const { store, plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+
+    const result = await plans.accept('project-1', 'plan-1', {
+      facts: { issueCount: 1, issues: [{ title: 'Schema', wave: 0, missing: [] }] },
+      push: async () => ({ ok: true }),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.acceptedAt).toBe(NOW.toISOString());
+    expect(store.get('project-1', 'plan-1')?.acceptedAt).toBe(NOW.toISOString());
+  });
+
+  it('rejects a plan that is no longer the active version', async () => {
+    const { store, plans } = setup({ ids: ['plan-1', 'plan-2'] });
+    await create(plans);
+    await create(plans, { contentMarkdown: '# Plan v2' });
+
+    const result = await plans.accept('project-1', 'plan-1', acceptance());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-acceptable');
+    expect(result.error.message).toMatch(/active/i);
+    expect(store.get('project-1', 'plan-1')?.acceptedAt).toBeNull();
+  });
+
+  it('rejects a plan that was already accepted', async () => {
+    const { plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+    const first = await plans.accept('project-1', 'plan-1', acceptance());
+    expect(first.ok).toBe(true);
+
+    const result = await plans.accept('project-1', 'plan-1', acceptance());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-acceptable');
+    expect(result.error.message).toMatch(/already accepted/i);
+  });
+
+  it('rejects a plan with no issues', async () => {
+    const { plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+    let pushed = false;
+
+    const result = await plans.accept('project-1', 'plan-1', {
+      facts: { issueCount: 0, issues: [] },
+      push: async () => {
+        pushed = true;
+        return { ok: true };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-acceptable');
+    expect(result.error.message).toMatch(/at least one issue/i);
+    expect(pushed).toBe(false);
+  });
+
+  it('rejects a plan whose issues sit on a dependency cycle', async () => {
+    const { plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+    let pushed = false;
+
+    const result = await plans.accept('project-1', 'plan-1', {
+      facts: {
+        issueCount: 2,
+        issues: [
+          { title: 'Schema', wave: null, missing: [] },
+          { title: 'Api', wave: null, missing: [] },
+        ],
+      },
+      push: async () => {
+        pushed = true;
+        return { ok: true };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-acceptable');
+    expect(result.error.message).toMatch(/circular/i);
+    expect(result.error.message).toContain('Schema');
+    expect(pushed).toBe(false);
+  });
+
+  it('rejects a plan with an unresolved dependency', async () => {
+    const { plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+    let pushed = false;
+
+    const result = await plans.accept('project-1', 'plan-1', {
+      facts: {
+        issueCount: 1,
+        issues: [{ title: 'Api', wave: 0, missing: ['Ghost'] }],
+      },
+      push: async () => {
+        pushed = true;
+        return { ok: true };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('not-acceptable');
+    expect(result.error.message).toMatch(/missing/i);
+    expect(result.error.message).toContain('Ghost');
+    expect(pushed).toBe(false);
+  });
+
+  it('leaves the plan unaccepted when the GitHub push fails', async () => {
+    const { store, plans } = setup({ ids: ['plan-1'] });
+    await create(plans);
+
+    const result = await plans.accept('project-1', 'plan-1', {
+      facts: { issueCount: 1, issues: [{ title: 'Schema', wave: 0, missing: [] }] },
+      push: async () => ({ ok: false, message: 'Bad credentials' }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('sync-failed');
+    expect(result.error.message).toBe('Bad credentials');
+    expect(store.get('project-1', 'plan-1')?.acceptedAt).toBeNull();
+  });
+
+  it('reports an unknown plan as not-found', async () => {
+    const { plans } = setup();
+
+    const result = await plans.accept('project-1', 'missing', acceptance());
 
     expect(result.ok).toBe(false);
     if (result.ok) return;

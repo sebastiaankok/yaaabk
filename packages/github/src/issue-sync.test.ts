@@ -62,7 +62,6 @@ async function seed(issues: IssuesModule): Promise<void> {
     dependsOn: ['Schema'],
     budgetCents: 75,
   });
-  await issues.approve('p1');
 }
 
 describe('issue sync push', () => {
@@ -98,6 +97,20 @@ describe('issue sync push', () => {
       body: 'Build the form.',
       metadata: { dependsOn: ['Schema'], budgetCents: 75 },
     });
+  });
+
+  it('pushes only the selected plan\u2019s issues', async () => {
+    const { issues, github, sync } = context();
+    await issues.create({ projectId: 'p1', planId: 'plan-old', title: 'Old work', label: 'ready' });
+    await issues.create({ projectId: 'p1', planId: 'plan-new', title: 'New work', label: 'ready' });
+
+    const result = await sync.push('p1', 'acme/todo-app', { planId: 'plan-new' });
+
+    expect(result.ok).toBe(true);
+    expect(github.issues('acme/todo-app').map((issue) => issue.title)).toEqual(['New work']);
+    const pushed = await list(issues);
+    expect(pushed.find((issue) => issue.title === 'Old work')?.githubNumber).toBeNull();
+    expect(pushed.find((issue) => issue.title === 'New work')?.githubNumber).toBe(1);
   });
 
   it('updates an already-synced issue instead of creating a duplicate', async () => {

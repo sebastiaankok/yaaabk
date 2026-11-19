@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { deriveSummary, isSkillLevel, normaliseSummary } from '@yaaabk/shared';
 import { consoleLogger, plansError, toPlansError, type PlansLogger } from './errors';
-import type { NewPlan, Plan, PlanStore, PlansModule, PlansResult } from './types';
+import type {
+  NewPlan,
+  Plan,
+  PlanAcceptanceFacts,
+  PlanStore,
+  PlansModule,
+  PlansResult,
+} from './types';
 
 export interface PlansModuleOptions {
   store: PlanStore;
@@ -26,6 +33,33 @@ function invalidReason(input: NewPlan): string | undefined {
   if (input.source !== 'grill-me' && input.source !== 'upload') {
     return `"${input.source}" is not a valid plan source`;
   }
+  return undefined;
+}
+
+/**
+ * Returns why a Plan's Issue set cannot be accepted, if anything blocks it.
+ *
+ * Issue titles are part of the message because that is what the Developer sees
+ * on the review page; the graph placement (`wave`, `missing`) comes from the
+ * Issues Module.
+ */
+function acceptanceBlockReason(version: number, facts: PlanAcceptanceFacts): string | undefined {
+  if (facts.issueCount === 0) {
+    return `Plan v${version} needs at least one Issue before it can be accepted`;
+  }
+
+  const cyclic = facts.issues.filter((issue) => issue.wave === null).map((issue) => issue.title);
+  if (cyclic.length > 0) {
+    return `Plan v${version} has circular dependencies among: ${cyclic.join(', ')}. Break the cycle before accepting`;
+  }
+
+  const missing = facts.issues
+    .filter((issue) => issue.missing.length > 0)
+    .map((issue) => `${issue.title} needs ${issue.missing.join(', ')}`);
+  if (missing.length > 0) {
+    return `Plan v${version} has Issues with missing dependencies: ${missing.join('; ')}. Add the missing Issues before accepting`;
+  }
+
   return undefined;
 }
 
@@ -85,6 +119,7 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
           source: input.source,
           createdAt: now().toISOString(),
           isActive: true,
+          acceptedAt: null,
         };
         store.create(plan);
         return plan;
@@ -107,6 +142,38 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
           throw plansError('not-found', `No plan with id "${planId}" for project "${projectId}"`);
         }
         return plan;
+      });
+    },
+
+    accept(projectId, planId, acceptance) {
+      return guard('accept', { projectId, planId }, async () => {
+        const plan = store.get(projectId, planId);
+        if (plan === undefined) {
+          throw plansError('not-found', `No plan with id "${planId}" for project "${projectId}"`);
+        }
+        if (!plan.isActive) {
+          throw plansError(
+            'not-acceptable',
+            `Only the active Plan can be accepted; activate v${plan.version} first`,
+          );
+        }
+        if (plan.acceptedAt !== null) {
+          throw plansError('not-acceptable', `Plan v${plan.version} was already accepted`);
+        }
+
+        const reason = acceptanceBlockReason(plan.version, acceptance.facts);
+        if (reason !== undefined) {
+          throw plansError('not-acceptable', reason);
+        }
+
+        const pushed = await acceptance.push();
+        if (!pushed.ok) {
+          throw plansError('sync-failed', pushed.message);
+        }
+
+        const acceptedAt = now().toISOString();
+        store.accept(projectId, planId, acceptedAt);
+        return { ...plan, acceptedAt };
       });
     },
 
