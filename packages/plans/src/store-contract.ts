@@ -117,5 +117,17 @@ export function planStoreContract(api: StoreTestApi, createStore: () => PlanStor
 
       expect(() => store.create(planRecord({ id: 'plan-2' }))).toThrow();
     });
+
+    it('deletes every plan in one project and no other', () => {
+      const store = createStore();
+      store.create(planRecord({ id: 'plan-1', version: 1 }));
+      store.create(planRecord({ id: 'plan-2', version: 2 }));
+      store.create(planRecord({ id: 'plan-3', projectId: 'project-2', version: 1 }));
+
+      store.deleteForProject('project-1');
+
+      expect(store.list('project-1')).toEqual([]);
+      expect(store.list('project-2')).toHaveLength(1);
+    });
   });
 }

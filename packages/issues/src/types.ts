@@ -170,6 +170,8 @@ export interface IssueStore {
   update(issue: Issue): void;
   /** Removes an Issue from a Project. */
   delete(projectId: string, issueId: string): void;
+  /** Removes every Issue in a Project, for when the Project itself is deleted. */
+  deleteForProject(projectId: string): void;
 }
 
 /** The Issues Module's public contract. */
@@ -191,8 +193,16 @@ export interface IssuesModule {
   /** Updates the mutable fields of an Issue. */
   update(projectId: string, issueId: string, patch: IssuePatch): Promise<IssuesResult<Issue>>;
   remove(projectId: string, issueId: string): Promise<IssuesResult<void>>;
-  /** Marks every Issue in a Project `ready`, finalising the reviewed set. */
-  approve(projectId: string): Promise<IssuesResult<Issue[]>>;
+  /** Removes every Issue in a Project, for when the Project itself is deleted. */
+  removeForProject(projectId: string): Promise<IssuesResult<void>>;
+  /**
+   * Marks a Plan's open Issues `ready`, finalising the reviewed set.
+   *
+   * Closed and failed Issues are history and are never relabelled. With a
+   * `planId`, only that Plan's Issues are touched — approving a new Plan must
+   * not quietly make an older Plan's leftovers dispatchable.
+   */
+  approve(projectId: string, planId?: string): Promise<IssuesResult<Issue[]>>;
   /** The dependency graph for a Project, with waves and cycles. */
   graph(projectId: string): Promise<IssuesResult<IssueGraph>>;
 }

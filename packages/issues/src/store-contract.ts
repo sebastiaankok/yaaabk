@@ -139,6 +139,18 @@ export function issueStoreContract(api: StoreTestApi, createStore: () => IssueSt
       expect(store.get('project-1', 'issue-1')).toBeUndefined();
     });
 
+    it('deletes every issue in one project and no other', () => {
+      const store = createStore();
+      store.create(issueRecord());
+      store.create(issueRecord({ id: 'issue-2', title: 'Api' }));
+      store.create(issueRecord({ id: 'issue-3', projectId: 'project-2', title: 'Other' }));
+
+      store.deleteForProject('project-1');
+
+      expect(store.list('project-1')).toEqual([]);
+      expect(store.list('project-2')).toHaveLength(1);
+    });
+
     it('throws when updating an unknown issue', () => {
       const store = createStore();
 

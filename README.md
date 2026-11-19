@@ -203,7 +203,7 @@ exposes it over HTTP:
 | `GET /api/projects` | List Projects, newest first |
 | `GET /api/projects/:id` | Get a Project |
 | `PATCH /api/projects/:id` | Update its `description`, `skillLevel` and/or `agentModel` |
-| `DELETE /api/projects/:id` | Tear down its repository and cluster resources |
+| `DELETE /api/projects/:id` | Tear down its repository, cluster resources, Plans and Issues |
 
 Project repositories are created **public**: the scaffold is AI-generated, and a
 public repository lets its GHCR image package inherit public visibility so the
@@ -322,18 +322,28 @@ Plan generates. The backend exposes it over HTTP:
 | `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status`, `depends_on` or `agent_model` |
 | `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
 | `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
-| `POST /api/projects/:id/issues/approve` | Mark every Issue `ready` |
+| `POST /api/projects/:id/issues/approve` | Mark the active Plan's open Issues `ready` |
 | `GET /api/projects/:id/issues/sync/status` | How much of the Issue set is mirrored to GitHub |
 | `POST /api/projects/:id/issues/sync/push` | Create or update the Project's Issues on GitHub |
 | `POST /api/projects/:id/issues/sync/pull` | Pull GitHub's open/closed state back onto local Issues |
 | `POST /api/projects/:id/issues/sync` | A full push-then-pull cycle |
 
 The browser surface is `/projects/:id/issues/review`: the active Plan at the top,
-the Issues grouped by wave (with label pills, dependency tags and any
-circular-dependency warning), and "Approve & Create". It offers no one-shot
-generation or prompt refinement; changing a Plan or its Issues means starting
-another Grill-Me session, and the page links back to the Plan page for that.
-Finish is the only endpoint that publishes a Plan or replaces its Issues.
+its **open** Issues grouped by wave (with label pills, dependency tags and any
+circular-dependency warning), and "Approve & Create". Closed Issues are history
+and are left out, and so are earlier Plans, so reviewing a new Plan starts clean
+instead of repeating what is already done. When the Plan has no open Issues the
+page points at the Plan page for the next idea. It offers no one-shot generation
+or prompt refinement; changing a Plan or its Issues means starting another
+Grill-Me session, and the page links back to the Plan page for that. Finish is
+the only endpoint that publishes a Plan or replaces its Issues.
+
+Approval is scoped the same way: it marks only the active Plan's open Issues
+`ready`, so approving a new Plan can never relabel closed history or make an
+older Plan's leftovers dispatchable. The issue board follows the active Plan too
+and hides closed Issues by default; **Show closed** and **Show earlier plans**
+bring back the history, and an open Issue from an earlier Plan is called out
+because the Agent Manager still works every ready Issue in the Project.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency

@@ -79,5 +79,11 @@ export function createInMemoryPlanStore(): PlanStore {
         }
       }
     },
+
+    deleteForProject(projectId) {
+      for (const [id, plan] of plans) {
+        if (plan.projectId === projectId) plans.delete(id);
+      }
+    },
   };
 }

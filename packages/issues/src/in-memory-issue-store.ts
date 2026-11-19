@@ -75,5 +75,11 @@ export function createInMemoryIssueStore(): IssueStore {
       }
       issues.delete(issueId);
     },
+
+    deleteForProject(projectId) {
+      for (const [id, issue] of issues) {
+        if (issue.projectId === projectId) issues.delete(id);
+      }
+    },
   };
 }

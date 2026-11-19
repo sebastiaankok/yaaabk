@@ -93,6 +93,16 @@ export interface BoardQuery {
   filters?: BoardFilters;
   /** Defaults to `wave`. */
   sort?: BoardSort;
+  /**
+   * Only Issues belonging to this Plan. Omit to show every Plan; pass `null`
+   * for Issues that have none.
+   */
+  planId?: string | null;
+  /**
+   * Whether closed Issues are listed. Defaults to `true`; the board hides them
+   * unless the Developer asks for the history.
+   */
+  includeClosed?: boolean;
 }
 
 function matchesFilters(item: BoardItem, filters: BoardFilters): boolean {
@@ -132,8 +142,11 @@ export function boardItems(
 ): BoardItem[] {
   const waveById = new Map(graph.nodes.map((node) => [node.id, node.wave]));
   const filters = query.filters ?? {};
+  const includeClosed = query.includeClosed ?? true;
 
   return issues
+    .filter((issue) => includeClosed || issue.status !== 'closed')
+    .filter((issue) => query.planId === undefined || issue.planId === query.planId)
     .map((issue) => ({
       issue,
       column: boardColumn(issue),

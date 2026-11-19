@@ -47,6 +47,12 @@ export interface ProjectsModuleOptions {
   clock?: () => Date;
   /** Injectable id generator. Defaults to `crypto.randomUUID`. */
   ids?: () => string;
+  /**
+   * Called once a Project's external resources are gone, just before its row is
+   * deleted. The backend uses it to drop the Project's local Plans and Issues,
+   * which would otherwise linger as unreachable rows forever.
+   */
+  onRemoved?: (projectId: string) => Promise<void> | void;
   logger?: ProjectsLogger;
 }
 
@@ -434,13 +440,15 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         }
 
         // Delete the Project Namespace (cascading to its ServiceAccounts,
-        // RoleBindings, Secrets and workloads) and the GitHub repository.
+        // RoleBindings, Secrets and workloads), the GitHub repository, and the
+        // Project's local Plans and Issues.
         await requireOk('kubernetes', 'namespaces.delete', () =>
           k8s.namespaces.delete(project.namespace),
         );
         await requireOk('repository', 'repository.delete', () =>
           repositories.delete(project.repoFullName),
         );
+        await options.onRemoved?.(id);
         store.delete(id);
         return undefined;
       });

@@ -74,6 +74,8 @@ export interface PlanStore {
   nextVersion(projectId: string): number;
   /** Makes `planId` active and deactivates every other version. */
   activate(projectId: string, planId: string): void;
+  /** Removes every Plan in a Project, for when the Project itself is deleted. */
+  deleteForProject(projectId: string): void;
 }
 
 /** The Plans Module's public contract. */
@@ -86,4 +88,6 @@ export interface PlansModule {
   getActive(projectId: string): Promise<PlansResult<Plan | null>>;
   /** Re-activates an earlier version. */
   activate(projectId: string, planId: string): Promise<PlansResult<Plan>>;
+  /** Removes every Plan in a Project, for when the Project itself is deleted. */
+  removeForProject(projectId: string): Promise<PlansResult<void>>;
 }

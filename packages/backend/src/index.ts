@@ -394,6 +394,27 @@ const resolveGithubTokenForAgents = async (scope: AgentTokenScope): Promise<stri
   }
 };
 
+const plans = createPlansModule({ store: createSqlitePlanStore(database) });
+const issues = createIssuesModule({
+  store: createSqliteIssueStore(database),
+  ...(bootstrapCredentials.defaultIssueBudgetCents !== undefined
+    ? { defaultBudgetCents: bootstrapCredentials.defaultIssueBudgetCents }
+    : process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS !== undefined
+      ? { defaultBudgetCents: Number(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS) }
+      : {}),
+});
+
+/**
+ * Drops a removed Project's local artifacts. Both removals are idempotent, so a
+ * partial delete can be retried by deleting the Project again.
+ */
+const removeProjectArtifacts = async (projectId: string): Promise<void> => {
+  const removedPlans = await plans.removeForProject(projectId);
+  if (!removedPlans.ok) throw new Error(removedPlans.error.message);
+  const removedIssues = await issues.removeForProject(projectId);
+  if (!removedIssues.ok) throw new Error(removedIssues.error.message);
+};
+
 const projects = createProjectsModule({
   store: projectStore,
   k8s,
@@ -403,16 +424,7 @@ const projects = createProjectsModule({
   // without a restart, and a short-lived App installation token is minted
   // fresh for the scaffold push rather than snapshotted at startup.
   githubToken: resolveGithubTokenForScaffold,
-});
-
-const plans = createPlansModule({ store: createSqlitePlanStore(database) });
-const issues = createIssuesModule({
-  store: createSqliteIssueStore(database),
-  ...(bootstrapCredentials.defaultIssueBudgetCents !== undefined
-    ? { defaultBudgetCents: bootstrapCredentials.defaultIssueBudgetCents }
-    : process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS !== undefined
-      ? { defaultBudgetCents: Number(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS) }
-      : {}),
+  onRemoved: removeProjectArtifacts,
 });
 const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(settings) });
 

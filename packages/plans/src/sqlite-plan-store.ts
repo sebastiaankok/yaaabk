@@ -162,5 +162,9 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
         throw error;
       }
     },
+
+    deleteForProject(projectId) {
+      database.prepare('DELETE FROM plans WHERE project_id = ?').run(projectId);
+    },
   };
 }
