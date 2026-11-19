@@ -221,6 +221,43 @@ test('shows the project and its active plan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();
 });
 
+test('renders the Plan Markdown with typography and sanitizes it', async ({ page }) => {
+  await mockProject(page);
+  const contentMarkdown = [
+    '# Plan',
+    '',
+    '## Goals',
+    '',
+    '- Save bookmarks',
+    '- Search bookmarks',
+    '',
+    '| Field | Type |',
+    '| ----- | ---- |',
+    '| url   | text |',
+    '',
+    '<img src="x" onerror="window.__pwned = true">',
+  ].join('\n');
+  await page.route('**/api/projects/p1/plans', (route) =>
+    route.fulfill({ json: { plans: [{ ...PLAN, contentMarkdown }] } }),
+  );
+  await page.route('**/api/projects/p1/plans/active', (route) =>
+    route.fulfill({ json: { ...PLAN, contentMarkdown } }),
+  );
+
+  await page.goto('/projects/p1/plan');
+
+  const plan = page.locator('section[aria-labelledby="active-plan-heading"]');
+  await expect(plan.getByRole('heading', { level: 2, name: 'Goals' })).toBeVisible();
+  await expect(plan.getByRole('listitem')).toHaveCount(2);
+  await expect(plan.getByRole('table')).toBeVisible();
+  const listStyle = await plan.locator('ul').evaluate((element) => {
+    return getComputedStyle(element).listStyleType;
+  });
+  expect(listStyle).toBe('disc');
+
+  await expect.poll(() => page.evaluate(() => '__pwned' in window)).toBe(false);
+});
+
 test('preselects the Project model and starts the session with it', async ({ page }) => {
   await mockProject(page);
   await mockTerminal(page);

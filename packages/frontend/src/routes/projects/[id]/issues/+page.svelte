@@ -22,7 +22,7 @@
     type IssueBudget,
     type ModelCatalogueView,
   } from '#lib/api.js';
-  import { renderMarkdown } from '#lib/markdown.js';
+  import Markdown from '#lib/markdown.svelte';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
   import {
     BOARD_COLUMNS,
@@ -858,10 +858,7 @@
               </label>
             </div>
           {:else if selected.body !== ''}
-            <div class="prose prose-neutral max-w-none text-sm">
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-              {@html renderMarkdown(selected.body)}
-            </div>
+            <Markdown markdown={selected.body} class="mt-1" />
           {/if}
 
           <section aria-label="Agent runs" class="space-y-2">
@@ -891,12 +888,10 @@
                       {(run.costCents / 100).toFixed(2)}
                     </span>
                     {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
-                      <div
-                        class="prose prose-neutral mt-1 max-h-64 w-full max-w-none overflow-auto rounded bg-neutral-50 p-2 text-sm"
-                      >
-                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                        {@html renderMarkdown(run.reviewBody)}
-                      </div>
+                      <Markdown
+                        markdown={run.reviewBody}
+                        class="mt-1 max-h-64 w-full overflow-auto rounded bg-neutral-50 p-2"
+                      />
                     {/if}
                     {#if run.model !== null && run.model !== undefined}
                       <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>

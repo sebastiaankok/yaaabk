@@ -20,7 +20,7 @@
     type GrillSessionView,
     type ModelCatalogueView,
   } from '#lib/api.js';
-  import { renderMarkdown } from '#lib/markdown.js';
+  import Markdown from '#lib/markdown.svelte';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
@@ -292,10 +292,7 @@
           <h2 id="active-plan-heading" class="text-sm font-semibold">Plan</h2>
           <span class="text-xs text-neutral-500">v{activePlan.version} · {activePlan.source}</span>
         </div>
-        <div class="prose prose-neutral max-w-none text-sm">
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html renderMarkdown(activePlan.contentMarkdown)}
-        </div>
+        <Markdown markdown={activePlan.contentMarkdown} />
       </section>
 
       {#if planIssues.length > 0}
