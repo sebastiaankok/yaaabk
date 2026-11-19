@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeLocalRuntime } from './fake-runtime';
 import { sessionRuntimeContract } from './runtime-contract';
+import { SESSION_PROMPT_ENV } from './supervisor';
 
 const cases = sessionRuntimeContract(() => createFakeLocalRuntime().harness);
 
@@ -18,10 +19,15 @@ describe('local SessionRuntime contract', () => {
     const args = fake.requests[0]?.args ?? [];
     expect(args.slice(args.indexOf('tmux'), args.indexOf('opencode'))).toEqual([
       'tmux',
+      '-L',
+      'yaaabk-ses_abc',
       'new-session',
       '-A',
       '-s',
       'yaaabk-ses_abc',
+      'sh',
+      '-c',
+      expect.stringContaining('exec "$0" mini'),
     ]);
   });
 
@@ -53,22 +59,22 @@ describe('local SessionRuntime contract', () => {
         '--writable',
         '--credential',
         expect.stringMatching(/^yaaabk:test-token$/),
+        'sh',
+        '-c',
+        expect.stringContaining(`--prompt "$${SESSION_PROMPT_ENV}"`),
         'opencode',
-        'mini',
-        '--session',
         spec.sessionId,
-        '--prompt',
-        spec.prompt,
-        '--model',
         'openrouter/test-model',
-        '--replay',
-        '--standalone',
       ]),
     );
+    // ttyd 1.7.7 overflows a fixed 4096-byte title buffer when its command line
+    // is long, so the prompt must reach OpenCode through the environment.
+    expect(request?.args).not.toContain(spec.prompt);
     expect(request?.env).toMatchObject({
       YAAABK_PROJECT_ID: spec.projectId,
       YAAABK_SESSION_ID: spec.sessionId,
       YAAABK_SKILL_LEVEL: spec.skillLevel,
+      [SESSION_PROMPT_ENV]: spec.prompt,
       YAAABK_REPORT_TOKEN: 'report-token',
       YAAABK_API_URL: 'http://backend:3000',
     });

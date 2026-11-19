@@ -9,7 +9,12 @@ import {
   type SessionRuntimeSpec,
   type SessionTerminalEndpoint,
 } from './runtime-types';
-import { DEFAULT_SUPERVISOR_COMMAND, supervisedCommand, supervisorSessionName } from './supervisor';
+import {
+  DEFAULT_SUPERVISOR_COMMAND,
+  SESSION_PROMPT_ENV,
+  supervisedCommand,
+  supervisorSessionName,
+} from './supervisor';
 
 /** How a local process finished. Mirrors Node's `close` event. */
 export interface LocalProcessExit {
@@ -183,11 +188,11 @@ const realSpawner: LocalProcessSpawner = (command, args, options) => {
   };
 };
 
-/** Ends a tmux session without failing when it already exited. */
+/** Ends a tmux session's isolated server without failing when it already exited. */
 function killTmuxSession(supervisorCommand: string, sessionName: string): Promise<void> {
   return new Promise((resolve) => {
     try {
-      const child = nodeSpawn(supervisorCommand, ['kill-session', '-t', sessionName], {
+      const child = nodeSpawn(supervisorCommand, ['-L', sessionName, 'kill-server'], {
         stdio: 'ignore',
       });
       child.once('error', () => resolve());
@@ -325,17 +330,6 @@ export function createLocalSessionRuntime(
         url: `ws://${host}:${port}/ws`,
         credential: ttydCredential,
       };
-      const opencodeArgs = [
-        'mini',
-        '--session',
-        spec.sessionId,
-        '--prompt',
-        spec.prompt,
-        '--model',
-        spec.model,
-        '--replay',
-        '--standalone',
-      ];
       const args = [
         '--port',
         String(port),
@@ -344,7 +338,7 @@ export function createLocalSessionRuntime(
         '--writable',
         '--credential',
         `${ttydCredential.username}:${ttydCredential.token}`,
-        ...supervisedCommand(supervisorCommand, spec.sessionId, opencodeCommand, opencodeArgs),
+        ...supervisedCommand(supervisorCommand, spec.sessionId, opencodeCommand, spec.model),
       ];
 
       let child: LocalProcess;
@@ -357,6 +351,7 @@ export function createLocalSessionRuntime(
             YAAABK_PROJECT_ID: spec.projectId,
             YAAABK_SESSION_ID: spec.sessionId,
             YAAABK_SKILL_LEVEL: spec.skillLevel,
+            [SESSION_PROMPT_ENV]: spec.prompt,
             ...(spec.openRouterKey === undefined ? {} : { OPENROUTER_API_KEY: spec.openRouterKey }),
             ...(spec.reportToken === undefined ? {} : { YAAABK_REPORT_TOKEN: spec.reportToken }),
             ...(spec.apiUrl === undefined ? {} : { YAAABK_API_URL: spec.apiUrl }),

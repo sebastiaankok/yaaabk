@@ -18,7 +18,7 @@ import {
   type SessionRuntimeSpec,
   type SessionTerminalEndpoint,
 } from './runtime-types';
-import { DEFAULT_SUPERVISOR_COMMAND, supervisedCommand } from './supervisor';
+import { DEFAULT_SUPERVISOR_COMMAND, SESSION_PROMPT_ENV, supervisedCommand } from './supervisor';
 
 /** The Project's agent identity: read-only cluster access plus `pods/exec`. */
 export const SESSION_SERVICE_ACCOUNT = 'yaaabk-agent';
@@ -254,17 +254,7 @@ function sessionPodSpec(
             options.supervisorCommand ?? DEFAULT_SUPERVISOR_COMMAND,
             spec.sessionId,
             options.opencodeCommand ?? 'opencode',
-            [
-              'mini',
-              '--session',
-              spec.sessionId,
-              '--prompt',
-              spec.prompt,
-              '--model',
-              spec.model,
-              '--replay',
-              '--standalone',
-            ],
+            spec.model,
           ),
         ],
         workingDir: SESSION_REPO_PATH,
@@ -272,6 +262,7 @@ function sessionPodSpec(
           YAAABK_PROJECT_ID: spec.projectId,
           YAAABK_SESSION_ID: spec.sessionId,
           YAAABK_SKILL_LEVEL: spec.skillLevel,
+          [SESSION_PROMPT_ENV]: spec.prompt,
           ...(spec.apiUrl === undefined ? {} : { YAAABK_API_URL: spec.apiUrl }),
           ...(options.opencodeConfig === undefined
             ? {}
