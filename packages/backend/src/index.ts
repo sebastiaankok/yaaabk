@@ -394,14 +394,17 @@ const resolveGithubTokenForAgents = async (scope: AgentTokenScope): Promise<stri
   }
 };
 
+/**
+ * The Cost Control configuration is read once. Issue keys and session keys
+ * share its default budget, so one deployment setting sizes both.
+ */
+const costControlConfig = loadCostControlConfig(process.env);
+
 const plans = createPlansModule({ store: createSqlitePlanStore(database) });
 const issues = createIssuesModule({
   store: createSqliteIssueStore(database),
-  ...(bootstrapCredentials.defaultIssueBudgetCents !== undefined
-    ? { defaultBudgetCents: bootstrapCredentials.defaultIssueBudgetCents }
-    : process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS !== undefined
-      ? { defaultBudgetCents: Number(process.env.YAAABK_DEFAULT_ISSUE_BUDGET_CENTS) }
-      : {}),
+  defaultBudgetCents:
+    bootstrapCredentials.defaultIssueBudgetCents ?? costControlConfig.defaultBudgetCents,
 });
 
 /**
@@ -430,13 +433,6 @@ const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(se
 
 /** Model used when neither the request nor the Project chooses one. */
 const defaultModel = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL;
-
-/**
- * The Cost Control configuration is read once. Sessions use its default budget
- * so a session key respects the same deployment cap as issue keys; the key
- * lifetime is shorter because a session cannot outlive its four-hour cap.
- */
-const costControlConfig = loadCostControlConfig(process.env);
 
 /**
  * Interactive sessions run as hardened Pods in the Project Namespace when

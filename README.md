@@ -59,7 +59,7 @@ cp .env.example .env
 | `YAAABK_GITHUB_OWNER_TYPE` | `org` | Whether that account is an `org` or the authenticated `user` |
 | `PUBLIC_API_BASE_URL` | `http://localhost:3000` | Frontend → backend base URL |
 | `OPENROUTER_MANAGEMENT_KEY` | _unset_ | Management key used to provision a budgeted OpenRouter key per Issue and Grill-Me Session |
-| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `50` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
+| `YAAABK_DEFAULT_ISSUE_BUDGET_CENTS` | `100` | Default per-Issue or per-Session budget in cents; overrides are capped at 500 |
 | `YAAABK_DEFAULT_MODEL` | `openrouter/anthropic/claude-sonnet-4.5` | Fallback model when no session choice, Project agent model or Issue override applies |
 | `YAAABK_AGENT_IMAGE` | `yaaabk/agent:0.1.0` | Container image the per-issue agent Jobs run |
 | `YAAABK_AGENT_STORAGE_CLASS` | _cluster default_ | StorageClass an agent's working PVC requests; required when the cluster has no default StorageClass |
@@ -78,6 +78,15 @@ A single root `.env` configures every package: the backend loads it via
 `--env-file`, and Vite loads it via `envDir`. Only variables prefixed with
 `PUBLIC_` are exposed to browser code. You can also override a value for one
 command without editing the file, e.g. `PORT=4000 bun run dev`.
+
+The default budget is **$1.00**, sized to cover one maximum-length reply from the
+default Claude Sonnet 4.5 model: OpenRouter reserves 64,000 completion tokens at
+$15 per million, or $0.96, against the key before streaming. We keep Sonnet as
+the default model and raise the budget rather than capping replies or switching
+to a cheaper model, so a fresh Project needs no configuration. A lower
+configured budget paired with a pricier model is still refused at session or
+Agent start with both amounts and what to change. See
+[ADR 0001](./docs/adr/0001-affordable-default-budget.md).
 
 ### Connecting GitHub
 

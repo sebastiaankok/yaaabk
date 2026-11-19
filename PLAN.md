@@ -474,7 +474,7 @@ Each Grill-Me Session runs in its own Pod in the Project Namespace:
 ┌──────────────────────────────────────────────────┐
 │ Issue Budget Configuration                       │
 │                                                  │
-│ Default: $0.50 per issue                         │
+│ Default: $1.00 per issue                         │
 │ User can override when creating issue            │
 │ Max: $5.00 per issue (system limit)              │
 │                                                  │

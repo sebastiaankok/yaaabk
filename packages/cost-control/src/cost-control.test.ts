@@ -46,7 +46,7 @@ describe('Cost Control Module', () => {
       expect(result.value.keyHash).toBe(api.created[0]?.keyInfo.hash);
       expect(api.lastCreate).toEqual({
         name: 'yaaabk-issue-issue-1',
-        limitUsd: 0.5,
+        limitUsd: DEFAULT_ISSUE_BUDGET_CENTS / 100,
         limitReset: null,
         expiresAt: THIRTY_DAYS_LATER,
       });
@@ -153,9 +153,9 @@ describe('Cost Control Module', () => {
       expect(result.value).toEqual({
         issueId: 'issue-1',
         keyHash: opened.value.keyHash,
-        budgetCents: 50,
+        budgetCents: DEFAULT_ISSUE_BUDGET_CENTS,
         usedCents: 20,
-        remainingCents: 30,
+        remainingCents: DEFAULT_ISSUE_BUDGET_CENTS - 20,
         expiresAt: THIRTY_DAYS_LATER,
         disabled: false,
         exhausted: false,
@@ -167,7 +167,7 @@ describe('Cost Control Module', () => {
       const { api, module } = setup();
       const opened = await module.open('issue-1');
       if (!opened.ok) throw new Error('open failed');
-      api.setUsage(opened.value.keyHash, 0.5);
+      api.setUsage(opened.value.keyHash, DEFAULT_ISSUE_BUDGET_CENTS / 100);
 
       const result = await module.status('issue-1');
 
@@ -296,7 +296,7 @@ describe('Cost Control Module', () => {
       expect(result.value.keyHash).toBe(api.created[0]?.keyInfo.hash);
       expect(api.lastCreate).toEqual({
         name: 'yaaabk-session-s1',
-        limitUsd: 0.5,
+        limitUsd: DEFAULT_ISSUE_BUDGET_CENTS / 100,
         limitReset: null,
         expiresAt: THIRTY_DAYS_LATER,
       });

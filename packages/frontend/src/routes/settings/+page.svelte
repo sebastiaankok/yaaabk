@@ -270,7 +270,7 @@
           type="text"
           inputmode="decimal"
           class="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          placeholder="0.50"
+          placeholder="1.00"
           aria-invalid={budgetError !== null}
           aria-describedby={budgetError !== null ? 'budget-error' : undefined}
         />
