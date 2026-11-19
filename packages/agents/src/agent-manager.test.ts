@@ -9,7 +9,12 @@ import {
 import { createMockK8sClient, type K8sObject, type MockK8sClient } from '@yaaabk/k8s';
 import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
-import { DEFAULT_ACTIVE_DEADLINE_SECONDS, DEFAULT_AGENT_MODEL, REVIEW_SKILL_PATH } from './config';
+import {
+  DEFAULT_ACTIVE_DEADLINE_SECONDS,
+  DEFAULT_AGENT_MODEL,
+  RESOLVE_CONFLICTS_SKILL_PATH,
+  REVIEW_SKILL_PATH,
+} from './config';
 import { silentLogger } from './errors';
 import { createInMemoryAgentStore } from './in-memory-agent-store';
 import type { AgentGithubTokenResolver, AgentManager } from './types';
@@ -986,6 +991,70 @@ describe('review runs', () => {
     expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
     expect(container.env).toContainEqual({ name: 'YAAABK_SKILL_PATH', value: REVIEW_SKILL_PATH });
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
+  });
+
+  it('dispatches a conflict-resolution run without consuming an implement attempt', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, {
+      kind: 'resolve-conflicts',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      kind: 'resolve-conflicts',
+      pullNumber: 7,
+      attemptNumber: 1,
+      status: 'running',
+      jobName: 'agent-resolve-issue-1-1',
+      pvcName: 'agent-resolve-work-issue-1-1',
+    });
+
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ attemptCount: 0 });
+
+    const { container } = await readJobContainer(k8s, NS, 'agent-resolve-issue-1-1');
+    expect(container.env).toContainEqual({ name: 'AGENT_RUN_KIND', value: 'resolve-conflicts' });
+    expect(container.env).toContainEqual({ name: 'PULL_NUMBER', value: '7' });
+    expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
+    expect(container.env).toContainEqual({
+      name: 'YAAABK_SKILL_PATH',
+      value: RESOLVE_CONFLICTS_SKILL_PATH,
+    });
+  });
+
+  it('does not retry a failed conflict-resolution run or change the Issue', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'resolve-conflicts',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    await finishJob(k8s, NS, spawned.value.jobName!, 'failed');
+    const summary = await manager.reconcile();
+
+    expect(summary.ok && summary.value).toMatchObject({ failed: 1, dispatched: 0 });
+    const stored = await issues.get('project-1', issue.id);
+    expect(stored.ok && stored.value).toMatchObject({ status: 'open', attemptCount: 0 });
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value.map((run) => run.status)).toEqual(['failed']);
+  });
+
+  it('refuses a conflict-resolution run without a pull request or branch', async () => {
+    const { manager, issues } = await harness();
+    const issue = await readyIssue(issues);
+
+    const result = await manager.spawn('project-1', issue.id, { kind: 'resolve-conflicts' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
   });
 
   it('mints a token scoped to the run kind', async () => {

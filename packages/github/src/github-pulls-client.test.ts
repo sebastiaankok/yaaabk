@@ -38,6 +38,8 @@ const rawPull = (overrides: { number?: number } & Record<string, unknown> = {}) 
     head: { ref: 'agent/issue-42', sha: 'sha-7' },
     labels: [{ name: 'automerge' }],
     draft: false,
+    mergeable: true,
+    mergeable_state: 'clean',
     ...overrides,
   };
 };
@@ -62,10 +64,32 @@ describe('listPullRequests', () => {
           headSha: 'sha-7',
           labels: ['automerge', 'wip'],
           draft: false,
+          mergeable: 'mergeable',
+          mergeStateStatus: 'clean',
         },
       ],
     });
     expect(calls[0]).toMatchObject({ method: 'GET', path: '/repos/acme/todo-app/pulls' });
+  });
+
+  it('maps mergeability and the blocking state', async () => {
+    const { pulls } = client(() => [
+      rawPull({ number: 7, mergeable: false, mergeable_state: 'dirty' }),
+      rawPull({ number: 8, mergeable: true, mergeable_state: 'behind' }),
+      rawPull({ number: 9, mergeable: null, mergeable_state: null }),
+      rawPull({ number: 10, mergeable: true, mergeable_state: 'has_hooks' }),
+    ]);
+
+    const result = await pulls.listPullRequests('acme/todo-app');
+
+    expect(
+      result.ok && result.value.map((pull) => [pull.mergeable, pull.mergeStateStatus]),
+    ).toEqual([
+      ['conflicting', 'dirty'],
+      ['mergeable', 'behind'],
+      ['unknown', 'unknown'],
+      ['mergeable', 'has-hooks'],
+    ]);
   });
 
   it('maps a GitHub failure to a typed error', async () => {
@@ -79,6 +103,67 @@ describe('listPullRequests', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('unauthorized');
+  });
+});
+
+describe('updatePullRequestBranch', () => {
+  it('asks GitHub to merge the base into the head', async () => {
+    const { pulls, calls } = client(() => ({ message: 'Updating pull request branch.' }));
+
+    const result = await pulls.updatePullRequestBranch('acme/todo-app', 7);
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(calls[0]).toMatchObject({
+      method: 'PUT',
+      path: '/repos/acme/todo-app/pulls/7/update-branch',
+    });
+  });
+
+  it('maps a conflict to a typed error', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ message: 'merge conflict between base and head' }), {
+        status: 422,
+      })) as typeof fetch;
+    const pulls = createGitHubPullsClient({ token: 't', fetch: fetchImpl });
+
+    const result = await pulls.updatePullRequestBranch('acme/todo-app', 7);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('invalid-input');
+      expect(result.error.operation).toBe('update-branch');
+    }
+  });
+});
+
+describe('mergeability', () => {
+  it('reads the authoritative single-pull-request endpoint', async () => {
+    const { pulls, calls } = client(() => rawPull({ mergeable: false, mergeable_state: 'dirty' }));
+
+    const result = await pulls.mergeability('acme/todo-app', 7);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { mergeable: 'conflicting', mergeStateStatus: 'dirty' },
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      path: '/repos/acme/todo-app/pulls/7',
+    });
+  });
+
+  it('maps a GitHub failure to a typed error', async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ message: 'Not found' }), { status: 404 })) as typeof fetch;
+    const pulls = createGitHubPullsClient({ token: 't', fetch: fetchImpl });
+
+    const result = await pulls.mergeability('acme/todo-app', 7);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('not-found');
+      expect(result.error.operation).toBe('pull-mergeability');
+    }
   });
 });
 

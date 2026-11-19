@@ -411,6 +411,11 @@ reset the attempt budget or start work. Model writes are validated against the
 same live, tool-capable catalogue the Grill-Me page uses; clearing the setting
 (`null`) restores inheritance.
 
+Conflict-resolution runs are a separate kind (`resolve-conflicts`): they check
+out the pull request branch, merge the base into it and resolve the conflict
+markers. They do not consume the Issue's implementation attempts; the CI Tracker
+owns their retry budget instead.
+
 Before minting an attempt's key, the resolved model's full reply reservation is
 checked against the Issue budget and the account's remaining credits. A run that
 cannot afford even one reply is refused with the required amount instead of
@@ -462,7 +467,20 @@ each head commit plus the latest review through the `GitHubPulls` port:
 - **failing** — a fix attempt is spawned on the same branch, up to the Issue's
   attempt budget; once the budget is spent the Issue is labelled `needs-human`
   and no further attempts are made.
+- **conflicting** — a conflict-resolution Agent checks out the branch, merges
+  the default branch into it, reconciles the conflict markers, runs the
+  project's checks and force-pushes. CI and review then re-run against the new
+  head. Each Issue gets two resolution attempts before `needs-human`, and a
+  successful resolution resets that budget.
+- **behind but mergeable** — if GitHub refuses a merge because branch protection
+  requires an up-to-date head, the tracker asks GitHub to update the branch and
+  waits for the new head.
 - **pending** — nothing yet; the tracker waits for CI to finish.
+
+Merge-affecting actions are serialized per Project: one merge, branch update or
+conflict resolution per pass, because each one moves the base every sibling
+branch is compared against. Acting on several at once would otherwise recreate
+the conflict it was meant to repair.
 
 The loop policy is extracted into the pure `decideAction` function, so the merge
 gate is table-tested across check states, review verdicts, rejection counts and

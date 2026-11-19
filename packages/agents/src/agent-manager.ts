@@ -26,6 +26,7 @@ import {
   DEPLOY_FAILED_LABEL,
   IMPLEMENT_SKILL_PATH,
   OPENROUTER_SECRET_KEY,
+  RESOLVE_CONFLICTS_SKILL_PATH,
   REVIEW_SKILL_PATH,
   WORKSPACE_MOUNT_PATH,
   WORKSPACE_VOLUME_NAME,
@@ -459,7 +460,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           ? {}
           : {
               AGENT_MODEL: runModel ?? defaultModel,
-              YAAABK_SKILL_PATH: run.kind === 'review' ? REVIEW_SKILL_PATH : IMPLEMENT_SKILL_PATH,
+              YAAABK_SKILL_PATH:
+                run.kind === 'review'
+                  ? REVIEW_SKILL_PATH
+                  : run.kind === 'resolve-conflicts'
+                    ? RESOLVE_CONFLICTS_SKILL_PATH
+                    : IMPLEMENT_SKILL_PATH,
             }),
       };
       if (options.apiUrl !== undefined) {
@@ -592,6 +598,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       return;
     }
 
+    if (run.kind === 'resolve-conflicts') {
+      // The CI Tracker owns conflict retries: it counts these runs, spawns the
+      // next attempt while the budget lasts, and escalates when it does not.
+      return;
+    }
+
     const issue = await requireIssue(run.projectId, run.issueId);
 
     if (run.kind === 'review') {
@@ -658,12 +670,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     }
 
     const kind = spawnOptions.kind ?? 'implement-issue';
-    if (kind === 'review') {
+    if (kind === 'review' || kind === 'resolve-conflicts') {
       if (spawnOptions.pullNumber === undefined) {
-        throw agentsError('invalid-input', 'A review run requires the pull request number');
+        throw agentsError('invalid-input', `A ${kind} run requires the pull request number`);
       }
       if (spawnOptions.branch === undefined) {
-        throw agentsError('invalid-input', 'A review run requires the pull request branch');
+        throw agentsError('invalid-input', `A ${kind} run requires the pull request branch`);
       }
     }
     if (
@@ -674,7 +686,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     }
 
     const attemptNumber =
-      kind === 'review' || kind === 'deploy'
+      kind === 'review' || kind === 'resolve-conflicts' || kind === 'deploy'
         ? store.listForIssue(projectId, issueId).filter((run) => run.kind === kind).length + 1
         : issue.attemptCount + 1;
 

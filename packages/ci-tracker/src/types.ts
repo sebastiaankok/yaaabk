@@ -3,9 +3,10 @@
  *
  * The CI Tracker closes the agent loop. Agents open pull requests labelled
  * `automerge`; this module polls those pull requests, reads the check suite on
- * each head commit, and then either merges a passing pull request (closing its
- * Issue) or — when checks fail — spawns a fix attempt on the same branch, up to
- * the Issue's attempt budget, after which a human is asked to step in.
+ * each head commit, and merges a passing pull request (closing its Issue). It
+ * spawns fix attempts when checks fail, and conflict-resolution Agents when the
+ * base branch has moved underneath the pull request, each under its own budget
+ * before a human is asked to step in.
  *
  * Timestamps are ISO-8601 UTC strings, matching the rest of YAAABK: SQLite
  * stores them as TEXT and they sort lexicographically.
@@ -14,7 +15,13 @@
 import type { GitHubCheckState } from '@yaaabk/github';
 
 /** What the tracker did for a pull request's current head commit. */
-export type WatchAction = 'merged' | 'fix-spawned' | 'review-spawned' | 'needs-human';
+export type WatchAction =
+  | 'merged'
+  | 'fix-spawned'
+  | 'review-spawned'
+  | 'conflict-spawned'
+  | 'branch-updated'
+  | 'needs-human';
 
 /** The tracker's latest view of one watched pull request. */
 export interface PullRequestWatch {
@@ -56,6 +63,10 @@ export interface CiPollSummary {
   reviewSpawned: number;
   /** Fix attempts spawned on a failing pull request. */
   fixSpawned: number;
+  /** Conflict-resolution Agents spawned on a conflicting branch. */
+  conflictSpawned: number;
+  /** Branch updates requested from GitHub to get a pull request mergeable. */
+  branchesUpdated: number;
   /** Deploy runs spawned after merging a passing pull request. */
   deploySpawned: number;
   /** Issues escalated to a human after exhausting their attempts. */

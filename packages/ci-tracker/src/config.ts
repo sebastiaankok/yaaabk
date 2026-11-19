@@ -10,6 +10,12 @@ export const MAX_POLL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** The label YAAABK puts on the pull requests it opens and the tracker watches. */
 export const AUTOMERGE_LABEL = 'automerge';
 
+/**
+ * How many conflict-resolution Agents one Issue may use before the tracker
+ * asks a human to resolve the branch by hand.
+ */
+export const DEFAULT_MAX_CONFLICT_ATTEMPTS = 2;
+
 /** Whether an interval is one the tracker will accept. */
 export function isValidInterval(ms: number): boolean {
   return Number.isInteger(ms) && ms >= MIN_POLL_INTERVAL_MS && ms <= MAX_POLL_INTERVAL_MS;

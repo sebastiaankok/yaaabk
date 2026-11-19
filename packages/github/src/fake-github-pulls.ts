@@ -4,6 +4,8 @@ import {
   type CreateReviewInput,
   type GitHubCheckState,
   type GitHubCheckSummary,
+  type GitHubMergeable,
+  type GitHubMergeStateStatus,
   type GitHubPullRequest,
   type GitHubPulls,
   type GitHubReview,
@@ -13,7 +15,13 @@ import type { GitHubError, GitHubResult } from './types';
 
 /** The operations a fake can be told to fail. */
 export type FakeGitHubPullsOperation =
-  'list-pulls' | 'check-state' | 'merge-pull' | 'create-review' | 'list-reviews';
+  | 'list-pulls'
+  | 'check-state'
+  | 'pull-mergeability'
+  | 'merge-pull'
+  | 'update-branch'
+  | 'create-review'
+  | 'list-reviews';
 
 /** One recorded call, for assertions. */
 export interface FakeGitHubPullsCall {
@@ -31,6 +39,8 @@ export interface FakePullRequestInput {
   url?: string;
   labels?: string[];
   draft?: boolean;
+  mergeable?: GitHubMergeable;
+  mergeStateStatus?: GitHubMergeStateStatus;
 }
 
 /** A queued failure, keyed to the operation that should hit it. */
@@ -52,6 +62,13 @@ export interface FakeGitHubPulls extends GitHubPulls {
   ): void;
   /** Moves a pull request's head to a new commit, as a push would. */
   setHeadSha(repo: string, number: number, headSha: string): void;
+  /** Sets whether GitHub can merge the pull request, and why not. */
+  setMergeable(
+    repo: string,
+    number: number,
+    mergeable: GitHubMergeable,
+    status?: GitHubMergeStateStatus,
+  ): void;
   /** Sets check runs, aggregating them the way GitHub would. */
   setCheckRuns(repo: string, ref: string, runs: CheckRunSummaryInput[]): void;
   /** Whether a pull request has been merged. */
@@ -107,6 +124,7 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
     calls,
 
     addPullRequest(repo, input) {
+      const mergeable = input.mergeable ?? 'mergeable';
       const pull: GitHubPullRequest = {
         number: input.number,
         url: input.url ?? `https://github.com/${repo}/pull/${input.number}`,
@@ -114,6 +132,9 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
         headSha: input.headSha,
         labels: [...(input.labels ?? [])],
         draft: input.draft ?? false,
+        mergeable,
+        mergeStateStatus:
+          input.mergeStateStatus ?? (mergeable === 'conflicting' ? 'dirty' : 'clean'),
       };
       repoPulls(repo).push(pull);
       return { ...pull, labels: [...pull.labels] };
@@ -130,6 +151,13 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
     setHeadSha(repo, number, headSha) {
       const pull = repoPulls(repo).find((candidate) => candidate.number === number);
       if (pull !== undefined) pull.headSha = headSha;
+    },
+
+    setMergeable(repo, number, mergeable, status) {
+      const pull = repoPulls(repo).find((candidate) => candidate.number === number);
+      if (pull === undefined) return;
+      pull.mergeable = mergeable;
+      pull.mergeStateStatus = status ?? (mergeable === 'conflicting' ? 'dirty' : 'clean');
     },
 
     setCheckRuns(repo, ref, runs) {
@@ -171,6 +199,29 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
       return { ok: true, value: { ...summary, failed: [...summary.failed] } };
     },
 
+    async mergeability(repo, number) {
+      calls.push({ operation: 'pull-mergeability', repo, number });
+      const failed = fail<{ mergeable: GitHubMergeable; mergeStateStatus: GitHubMergeStateStatus }>(
+        'pull-mergeability',
+      );
+      if (failed !== undefined) return failed;
+      const pull = repoPulls(repo).find((candidate) => candidate.number === number);
+      if (pull === undefined) {
+        return {
+          ok: false,
+          error: {
+            kind: 'not-found',
+            operation: 'pull-mergeability',
+            message: 'Pull request not found',
+          },
+        };
+      }
+      return {
+        ok: true,
+        value: { mergeable: pull.mergeable, mergeStateStatus: pull.mergeStateStatus },
+      };
+    },
+
     async mergePullRequest(
       repo: string,
       number: number,
@@ -178,8 +229,50 @@ export function createFakeGitHubPulls(): FakeGitHubPulls {
       calls.push({ operation: 'merge-pull', repo, number });
       const failed = fail<MergePullRequestResult>('merge-pull');
       if (failed !== undefined) return failed;
+      const pull = repoPulls(repo).find((candidate) => candidate.number === number);
+      if (pull?.mergeable === 'conflicting') {
+        return {
+          ok: false,
+          error: {
+            kind: 'conflict',
+            operation: 'merge-pull',
+            message: 'Pull request has merge conflicts',
+          },
+        };
+      }
       mergedKeys.add(key(repo, number));
       return { ok: true, value: { merged: true, sha: `merge-${number}` } };
+    },
+
+    async updatePullRequestBranch(repo, number): Promise<GitHubResult<void>> {
+      calls.push({ operation: 'update-branch', repo, number });
+      const failed = fail<void>('update-branch');
+      if (failed !== undefined) return failed;
+      const pull = repoPulls(repo).find((candidate) => candidate.number === number);
+      if (pull === undefined) {
+        return {
+          ok: false,
+          error: {
+            kind: 'not-found',
+            operation: 'update-branch',
+            message: 'Pull request not found',
+          },
+        };
+      }
+      if (pull.mergeable === 'conflicting') {
+        return {
+          ok: false,
+          error: {
+            kind: 'invalid-input',
+            operation: 'update-branch',
+            message: 'Pull request has merge conflicts',
+          },
+        };
+      }
+      pull.headSha = `${pull.headSha}-updated`;
+      pull.mergeable = 'mergeable';
+      pull.mergeStateStatus = 'clean';
+      return { ok: true, value: undefined };
     },
 
     async createReview(

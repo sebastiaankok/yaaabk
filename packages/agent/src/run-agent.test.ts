@@ -32,6 +32,13 @@ const REVIEW_CONFIG: AgentConfig = {
   branch: 'agent/issue-42',
 };
 
+const CONFLICT_CONFIG: AgentConfig = {
+  ...CONFIG,
+  kind: 'resolve-conflicts',
+  pullNumber: 7,
+  branch: 'agent/issue-42',
+};
+
 const DEPLOY_CONFIG: AgentConfig = {
   kind: 'deploy',
   issueNumber: 42,
@@ -68,6 +75,16 @@ function fakes(
     checksPassed?: boolean;
     reviewExitCode?: number;
     verdict?: { event: 'approve' | 'request-changes'; body: string };
+    /** Whether the base-branch merge leaves conflicts behind. */
+    mergeConflicted?: boolean;
+    /** Conflicted paths the first `unmergedPaths` call reports. */
+    conflicts?: string[];
+    /** Conflicted paths a later `unmergedPaths` call reports. */
+    remainingConflicts?: string[];
+    /** Whether the base-branch fetch/merge itself failed. */
+    mergeFailed?: boolean;
+    /** Exit code of the conflict-resolution OpenCode invocation. */
+    conflictExitCode?: number;
     /** Message the clone step fails with, when the deploy never reaches the cluster. */
     cloneError?: string;
     /** Message the rollout step fails with, when the deploy should fail. */
@@ -104,6 +121,7 @@ function fakes(
     },
   };
 
+  let unmergedReads = 0;
   const git: Git = {
     async clone(input) {
       calls.push(`clone:${input.repoUrl}->${input.directory}`);
@@ -127,6 +145,20 @@ function fakes(
     async diff(directory) {
       calls.push(`diff:${directory}`);
       return 'diff --git a/src/a.ts b/src/a.ts';
+    },
+    async mergeDefaultBranch(directory) {
+      calls.push(`merge:${directory}`);
+      return {
+        ok: overrides.mergeFailed !== true,
+        conflicted: overrides.mergeConflicted ?? false,
+        output: overrides.mergeConflicted === true ? 'CONFLICT (content): src/a.ts' : '',
+      };
+    },
+    async unmergedPaths(directory) {
+      calls.push(`unmerged:${directory}`);
+      unmergedReads += 1;
+      if (unmergedReads === 1) return overrides.conflicts ?? [];
+      return overrides.remainingConflicts ?? [];
     },
   };
   const kubectl: Kubectl = {
@@ -176,6 +208,10 @@ function fakes(
         output: 'reviewed',
         verdict: overrides.verdict ?? { event: 'approve', body: 'Looks good.' },
       };
+    },
+    async resolveConflicts(input) {
+      calls.push(`resolve:${input.directory}`);
+      return { exitCode: overrides.conflictExitCode ?? 0, output: 'resolved' };
     },
   };
   const checks: Checks = {
@@ -373,6 +409,96 @@ describe('runAgent', () => {
     expect(reviews).toEqual([]);
     expect(calls).not.toContain('review-post:7:approve');
     expect(reports).toEqual([{ prUrl: null, logs: 'reviewed' }]);
+  });
+
+  it('resolves conflicts, runs the checks, force-pushes, and reports the pull request', async () => {
+    const { deps, calls, reports } = fakes({
+      mergeConflicted: true,
+      conflicts: ['src/a.ts'],
+    });
+
+    const outcome = await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(calls).toEqual([
+      'fetch:42',
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout:/work/repo:agent/issue-42',
+      'merge:/work/repo',
+      'unmerged:/work/repo',
+      'resolve:/work/repo',
+      'unmerged:/work/repo',
+      'checks:/work/repo',
+      'commit:/work/repo:Resolve conflicts for #42',
+      'push:/work/repo:agent/issue-42:force',
+      'report',
+    ]);
+    expect(outcome).toMatchObject({
+      ok: true,
+      branch: 'agent/issue-42',
+      prUrl: 'https://github.com/acme/todo-app/pull/7',
+    });
+    expect(reports[0]).toMatchObject({
+      prUrl: 'https://github.com/acme/todo-app/pull/7',
+    });
+    expect(reports[0]?.logs).toContain('CONFLICT (content): src/a.ts');
+  });
+
+  it('pushes a clean base-branch merge without spending an LLM call', async () => {
+    const { deps, calls } = fakes();
+
+    const outcome = await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(calls).toEqual([
+      'fetch:42',
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout:/work/repo:agent/issue-42',
+      'merge:/work/repo',
+      'unmerged:/work/repo',
+      'checks:/work/repo',
+      'commit:/work/repo:Resolve conflicts for #42',
+      'push:/work/repo:agent/issue-42:force',
+      'report',
+    ]);
+    expect(outcome).toMatchObject({ ok: true, branch: 'agent/issue-42' });
+  });
+
+  it('does not push when the conflict-resolution run fails', async () => {
+    const { deps, calls, reports } = fakes({
+      mergeConflicted: true,
+      conflicts: ['src/a.ts'],
+      conflictExitCode: 1,
+    });
+
+    const outcome = await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'conflict-resolution-failed' });
+    expect(calls).not.toContain('push:/work/repo:agent/issue-42:force');
+    expect(reports[0]?.prUrl).toBeNull();
+  });
+
+  it('does not push when conflicts remain after the resolution run', async () => {
+    const { deps, calls, reports } = fakes({
+      mergeConflicted: true,
+      conflicts: ['src/a.ts'],
+      remainingConflicts: ['src/a.ts'],
+    });
+
+    const outcome = await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'conflict-resolution-failed' });
+    expect(calls).not.toContain('push:/work/repo:agent/issue-42:force');
+    expect(reports[0]?.prUrl).toBeNull();
+    expect(reports[0]?.logs).toContain('Conflicts remain in: src/a.ts');
+  });
+
+  it('does not push when the base-branch merge cannot run', async () => {
+    const { deps, calls, reports } = fakes({ mergeFailed: true });
+
+    const outcome = await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'conflict-resolution-failed' });
+    expect(calls).not.toContain('push:/work/repo:agent/issue-42:force');
+    expect(reports[0]?.prUrl).toBeNull();
   });
 
   it('deploys a merged commit: clones, checks out SHA, applies, waits for rollout, checks health, labels SHA, and reports success', async () => {
