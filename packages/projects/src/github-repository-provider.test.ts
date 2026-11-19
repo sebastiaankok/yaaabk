@@ -55,7 +55,7 @@ describe('create', () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
       name: 'todo-app',
       description: 'A todo list',
-      private: true,
+      private: false,
       auto_init: false,
     });
   });

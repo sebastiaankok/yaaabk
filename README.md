@@ -205,6 +205,10 @@ exposes it over HTTP:
 | `PATCH /api/projects/:id` | Update its `description`, `skillLevel` and/or `agentModel` |
 | `DELETE /api/projects/:id` | Tear down its repository and cluster resources |
 
+Project repositories are created **public**: the scaffold is AI-generated, and a
+public repository lets its GHCR image package inherit public visibility so the
+cluster can pull it anonymously.
+
 Creating a Project runs a fixed sequence, reported to the caller through the
 `onProgress` callback:
 

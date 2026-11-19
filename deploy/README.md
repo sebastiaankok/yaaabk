@@ -138,15 +138,17 @@ kubectl --context k3s-home auth can-i --list \
   are created under (`yaaabk`).
 - **Project images (GHCR)**: each Project's CI publishes
   `ghcr.io/<owner>/<repo>:<commit-sha>`, and the deploy Job pins the Deployment
-  to exactly that tag. The cluster pulls project images anonymously, so the
-  package must be **public**. GitHub cannot make a package public through its
-  API: open the package's settings and change its visibility to public.
-  A workflow can push a new package (it then inherits the repository's Actions
-  access), but a package that already exists — for example from a previous
-  Project with the same name — needs the repository added under **Manage
-  Actions access** with role **Write**. There is no REST or GraphQL API for
-  that setting. If a Project is deleted and recreated under the same name,
-  delete the old package first, or the new repository will keep getting a 403.
+  to exactly that tag. YAAABK creates Project repositories **public**, so the
+  first workflow-created package inherits public visibility and the cluster can
+  pull it anonymously. GitHub has no API for changing package visibility: if a
+  package was created while its repository was private, set it public in the
+  package settings by hand. A workflow can push a new package (it then inherits
+  the repository's Actions access), but a package that already exists — for
+  example from a previous Project with the same name — needs the repository
+  added under **Manage Actions access** with role **Write**. There is no REST
+  or GraphQL API for that setting either. If a Project is deleted and recreated
+  under the same name, delete the old package first, or the new repository will
+  keep getting a 403.
 - **YAAABK images**: `.github/workflows/publish-images.yml` builds the
   backend, frontend, agent and optional Svelte/Bun base images on GitHub's
   runners with the Actions layer cache. It needs the same package access for

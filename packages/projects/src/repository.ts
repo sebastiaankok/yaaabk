@@ -41,7 +41,10 @@ export interface CreateRepositoryInput {
   /** Repository name, matching the Project name. */
   name: string;
   description: string;
-  /** Whether the repository is private. Defaults to true. */
+  /**
+   * Whether the repository is private. Defaults to `false`: YAAABK creates
+   * public repositories, so their GHCR packages can be pulled anonymously.
+   */
   private?: boolean;
 }
 
