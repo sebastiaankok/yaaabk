@@ -1,12 +1,12 @@
 /**
  * The persistence port the Cost Control Module is built on.
  *
- * The Issue is the natural home for `openrouter_key_hash` and `budget_cents`,
- * but the Issues Module does not exist yet. This port is that seam: tests and
- * the current backend use {@link createInMemoryBudgetStore}, and the Issues
- * Module implements it once Issues are persisted.
+ * One record per Issue tracks the key the latest attempt used, the Issue's
+ * total cap and the spend every earlier attempt accumulated. Production uses
+ * {@link createSqliteBudgetStore}; tests and local dev use
+ * {@link createInMemoryBudgetStore}.
  *
- * Deliberately synchronous, matching the `bun:sqlite` adapter it will grow into.
+ * Deliberately synchronous, matching the `bun:sqlite` adapter it grows into.
  */
 
 import type { BudgetRecord } from './types';

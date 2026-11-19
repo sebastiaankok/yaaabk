@@ -58,6 +58,7 @@ export interface IssuedOpenRouterKey {
   key: string;
   hash: string;
   expiresAt: string;
+  createdAt: string;
 }
 
 /** Either a freshly minted key or an actionable reason it could not be made. */
@@ -211,7 +212,12 @@ export function createOpenRouterKeyIssuer(options: SessionKeyIssuerOptions): Ope
         });
         return {
           ok: true,
-          value: { key: minted.key, hash: minted.keyHash, expiresAt: minted.expiresAt },
+          value: {
+            key: minted.key,
+            hash: minted.keyHash,
+            expiresAt: minted.expiresAt,
+            createdAt: minted.createdAt,
+          },
         };
       } catch (error) {
         logger.error('openrouter key mint failed', { subject, message: messageOf(error) });

@@ -42,6 +42,8 @@ export class OpenRouterApiError extends Error {
 const KINDS: ReadonlySet<string> = new Set<CostControlErrorKind>([
   'invalid-input',
   'budget-out-of-range',
+  'budget-exhausted',
+  'spend-unreadable',
   'already-open',
   'not-open',
   'unauthorized',

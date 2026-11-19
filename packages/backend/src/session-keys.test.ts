@@ -78,6 +78,7 @@ describe('session OpenRouter keys', () => {
       key: 'sk-or-v1-1',
       hash: 'hash-1',
       expiresAt: new Date(NOW.getTime() + 4 * 60 * 60 * 1000).toISOString(),
+      createdAt: NOW.toISOString(),
     });
     expect(api.lastCreate).toEqual({
       name: 'yaaabk-session-s1',
