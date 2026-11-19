@@ -14,6 +14,9 @@ source of truth: do not invent scope it does not contain, and do not shrink it.
 
 ## 2. Cut vertical slices
 
+Before you write Issue titles, summaries, or bodies, load the `simple-english`
+skill with the `skill` tool and apply its rules to all generated prose.
+
 Each Issue must be a **vertical slice** that cuts through the whole stack the
 change needs — schema or migration, API or module interface, UI or command, and
 tests — so an Agent can implement and verify it on its own.
