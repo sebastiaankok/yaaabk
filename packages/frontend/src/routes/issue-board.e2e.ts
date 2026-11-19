@@ -281,6 +281,50 @@ test('opens a card to show its body and agent run history', async ({ page }) => 
   await expect(panel.getByText('Agent finished: opened PR #1')).toBeVisible();
 });
 
+test('renders Issue Markdown in the drawer', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.issues = state.issues.map((item) =>
+    item.id === 'i1' ? { ...item, body: '## Context\n\n- Create the tables\n- Add indexes' } : item,
+  );
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByRole('heading', { level: 2, name: 'Context' })).toBeVisible();
+  await expect(panel.locator('.prose ul li')).toHaveCount(2);
+});
+
+test('renders agent review Markdown in the drawer', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.runs = [
+    ...state.runs,
+    {
+      id: 'r-review',
+      issueId: 'i1',
+      kind: 'review',
+      attemptNumber: 2,
+      pullNumber: 1,
+      status: 'success',
+      prUrl: 'https://github.com/acme/todo-app/pull/1',
+      costCents: 4,
+      model: 'openrouter/default-model',
+      reviewVerdict: 'request-changes',
+      reviewBody: '### Findings\n\n- Return 404 for unknown `/api/*` routes.',
+      logs: 'Reviewed the diff.',
+      startedAt: '2026-01-01T00:10:00.000Z',
+      finishedAt: '2026-01-01T00:12:00.000Z',
+    },
+  ];
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByRole('heading', { level: 3, name: 'Findings' })).toBeVisible();
+  await expect(panel.locator('.prose ul li')).toHaveCount(1);
+});
+
 test('shows the budget, spend, remainder and raises the budget', async ({ page }) => {
   const state = await mockBoard(page);
   const patches: Record<string, unknown>[] = [];

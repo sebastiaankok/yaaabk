@@ -120,6 +120,40 @@ test('shows the plan, issues grouped by wave, and their labels', async ({ page }
   await expect(page.getByText('Depends on: Schema')).toBeVisible();
 });
 
+test('renders the Plan and Issue Markdown with typography', async ({ page }) => {
+  const state = await mockReview(page);
+  const contentMarkdown = '## Outcomes\n\n- Ship the board';
+  await page.route('**/api/projects/p1/plans/active', (route) =>
+    route.fulfill({ json: { ...PLAN, contentMarkdown } }),
+  );
+  state.issues = [
+    issue({
+      id: 'i1',
+      title: 'Schema',
+      label: 'ready',
+      body: '## Context\n\n- Create the tables\n- Add indexes',
+    }),
+  ];
+  state.graph = {
+    nodes: [{ id: 'i1', title: 'Schema', dependsOn: [], missing: [], wave: 0 }],
+    cycles: [],
+  };
+
+  await page.goto('/projects/p1/issues/review');
+
+  const plan = page.locator('section[aria-labelledby="plan-heading"]');
+  await expect(plan.getByRole('heading', { level: 2, name: 'Outcomes' })).toBeVisible();
+  await expect(plan.getByRole('listitem')).toHaveCount(1);
+
+  const issueItem = page.locator('section[aria-labelledby="issues-heading"] li');
+  await expect(issueItem.getByRole('heading', { level: 2, name: 'Context' })).toBeVisible();
+  await expect(issueItem.getByRole('listitem')).toHaveCount(2);
+  const listStyle = await issueItem.locator('ul').evaluate((element) => {
+    return getComputedStyle(element).listStyleType;
+  });
+  expect(listStyle).toBe('disc');
+});
+
 test('shows only the active plan\u2019s open issues', async ({ page }) => {
   const state = await mockReview(page);
   state.issues = [

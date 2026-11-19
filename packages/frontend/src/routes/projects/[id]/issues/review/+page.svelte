@@ -18,7 +18,7 @@
   } from '#lib/api.js';
   import { groupByWave, reviewItems, type WaveGroup } from '#lib/issue-review.js';
   import { describePush, describeSyncStatus } from '#lib/issue-sync.js';
-  import { renderMarkdown } from '#lib/markdown.js';
+  import Markdown from '#lib/markdown.svelte';
 
   const projectId = $derived(page.params.id);
 
@@ -201,10 +201,7 @@
           <h2 id="plan-heading" class="text-sm font-semibold">Active plan</h2>
           <span class="text-xs text-neutral-500">v{plan.version}</span>
         </div>
-        <div class="prose prose-neutral max-w-none text-sm">
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html renderMarkdown(plan.contentMarkdown)}
-        </div>
+        <Markdown markdown={plan.contentMarkdown} />
       </section>
     {:else}
       <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
@@ -274,7 +271,7 @@
                       </span>
                     </div>
                     {#if item.issue.body !== ''}
-                      <p class="mt-1 whitespace-pre-wrap text-neutral-600">{item.issue.body}</p>
+                      <Markdown markdown={item.issue.body} class="mt-1" />
                     {/if}
                     {#if item.issue.dependsOn.length > 0}
                       <p class="mt-1 text-xs text-neutral-500">
