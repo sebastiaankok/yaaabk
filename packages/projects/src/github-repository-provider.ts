@@ -65,7 +65,7 @@ export function createGitHubRepositoryProvider(
           body: JSON.stringify({
             name: input.name,
             description: input.description,
-            private: input.private ?? true,
+            private: input.private ?? false,
             auto_init: false,
           }),
         });
