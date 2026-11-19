@@ -10,6 +10,7 @@ import type {
   IssueSyncResult,
   IssueSyncStatus,
   PullSummary,
+  PushOptions,
   PushSummary,
   SyncSummary,
 } from './types';
@@ -116,6 +117,7 @@ export function createIssueSyncModule(options: IssueSyncModuleOptions): IssueSyn
   async function push(
     projectId: string,
     repoFullName: string,
+    options: PushOptions = {},
   ): Promise<IssueSyncResult<PushSummary>> {
     if (projectId.trim() === '' || repoFullName.trim() === '') {
       return {
@@ -131,7 +133,9 @@ export function createIssueSyncModule(options: IssueSyncModuleOptions): IssueSyn
     const listed = await issues.list(projectId);
     if (!listed.ok) return { ok: false, error: fromIssueError('push', listed.error) };
 
-    const targets = listed.value;
+    const targets = listed.value.filter(
+      (issue) => options.planId === undefined || issue.planId === options.planId,
+    );
     const labels = [...new Set(targets.map((issue) => issue.label))];
     if (labels.length > 0) {
       const ensured = await withRetry('ensure-labels', () =>
@@ -175,8 +179,12 @@ export function createIssueSyncModule(options: IssueSyncModuleOptions): IssueSyn
 
     const refreshed = await issues.list(projectId);
     if (!refreshed.ok) return { ok: false, error: fromIssueError('push', refreshed.error) };
-    logger.info('issues pushed', { projectId, created, updated });
-    return { ok: true, value: { created, updated, status: statusOf(refreshed.value) } };
+    logger.info('issues pushed', { projectId, planId: options.planId, created, updated });
+    const scoped =
+      options.planId === undefined
+        ? refreshed.value
+        : refreshed.value.filter((issue) => issue.planId === options.planId);
+    return { ok: true, value: { created, updated, status: statusOf(scoped) } };
   }
 
   async function pull(
