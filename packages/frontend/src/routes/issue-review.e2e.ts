@@ -22,6 +22,7 @@ const PLAN = {
   projectId: 'p1',
   version: 1,
   contentMarkdown: '# Plan',
+  summary: 'A plan for saving bookmarks.',
   skillLevel: 'expert',
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -36,6 +37,7 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
     githubNumber: null,
     githubSyncedAt: null,
     body: '',
+    summary: null,
     status: 'open',
     label: 'refinement-needed',
     dependsOn: [],
@@ -49,12 +51,19 @@ function issue(overrides: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-const SCHEMA = issue({ id: 'i1', title: 'Schema', label: 'ready', body: 'Create the tables' });
+const SCHEMA = issue({
+  id: 'i1',
+  title: 'Schema',
+  label: 'ready',
+  body: 'Create the tables',
+  summary: 'Create the bookmark tables.',
+});
 const API = issue({
   id: 'i2',
   title: 'Api',
   label: 'refinement-needed',
   dependsOn: ['Schema'],
+  summary: 'Expose the bookmark endpoints.',
   createdAt: '2026-01-02T00:00:00.000Z',
 });
 
@@ -115,7 +124,9 @@ test('shows the plan, issues grouped by wave, and their labels', async ({ page }
   await expect(page.getByRole('heading', { name: 'Active plan' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 0' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 1' })).toBeVisible();
-  await expect(page.getByText('Create the tables')).toBeVisible();
+  await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();
+  await expect(page.getByText('Create the bookmark tables.')).toBeVisible();
+  await expect(page.getByText('Expose the bookmark endpoints.')).toBeVisible();
   await expect(page.getByText('refinement-needed')).toBeVisible();
   await expect(page.getByText('Depends on: Schema')).toBeVisible();
 });
@@ -132,6 +143,7 @@ test('renders the Plan and Issue Markdown with typography', async ({ page }) => 
       title: 'Schema',
       label: 'ready',
       body: '## Context\n\n- Create the tables\n- Add indexes',
+      summary: 'Create the bookmark tables.',
     }),
   ];
   state.graph = {
@@ -142,10 +154,16 @@ test('renders the Plan and Issue Markdown with typography', async ({ page }) => 
   await page.goto('/projects/p1/issues/review');
 
   const plan = page.locator('section[aria-labelledby="plan-heading"]');
+  await expect(plan.getByText('A plan for saving bookmarks.')).toBeVisible();
+  await expect(plan.getByRole('heading', { level: 2, name: 'Outcomes' })).toBeHidden();
+  await plan.getByText('Show full plan').click();
   await expect(plan.getByRole('heading', { level: 2, name: 'Outcomes' })).toBeVisible();
   await expect(plan.getByRole('listitem')).toHaveCount(1);
 
   const issueItem = page.locator('section[aria-labelledby="issues-heading"] li');
+  await expect(issueItem.getByText('Create the bookmark tables.')).toBeVisible();
+  await expect(issueItem.getByRole('heading', { level: 2, name: 'Context' })).toBeHidden();
+  await issueItem.getByText('Show full issue').click();
   await expect(issueItem.getByRole('heading', { level: 2, name: 'Context' })).toBeVisible();
   await expect(issueItem.getByRole('listitem')).toHaveCount(2);
   const listStyle = await issueItem.locator('ul').evaluate((element) => {

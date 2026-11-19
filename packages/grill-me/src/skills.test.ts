@@ -145,6 +145,13 @@ describe('to-prd skill', () => {
     expect(skill).toMatch(/before (you )?write|before writing/i);
     expect(skill).toMatch(/skill`? tool/i);
   });
+
+  it('writes a plain summary with the Plan', () => {
+    expect(skill).toMatch(/summary/i);
+    expect(skill).toMatch(/one or two|two plain|plain sentences/i);
+    expect(skill).toMatch(/no Markdown/i);
+    expect(skill).toContain('"summary"');
+  });
 });
 
 describe('to-issues skill', () => {
@@ -195,6 +202,13 @@ describe('to-issues skill', () => {
     expect(skill).toMatch(/bodies/i);
     expect(skill).toMatch(/before (you )?write|before writing/i);
     expect(skill).toMatch(/skill`? tool/i);
+  });
+
+  it('gives every reported Issue a plain summary', () => {
+    expect(skill).toMatch(/plain sentences|plain English|one or two/i);
+    expect(skill).toMatch(/no Markdown/i);
+    expect(skill).toMatch(/`summary`/i);
+    expect(skill).toMatch(/200 characters|at most 200/i);
   });
 });
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isSkillLevel } from '@yaaabk/shared';
+import { deriveSummary, isSkillLevel, normaliseSummary } from '@yaaabk/shared';
 import { consoleLogger, plansError, toPlansError, type PlansLogger } from './errors';
 import type { NewPlan, Plan, PlanStore, PlansModule, PlansResult } from './types';
 
@@ -64,11 +64,23 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
           throw plansError('invalid-input', reason);
         }
 
+        let summary: string;
+        if (input.summary === undefined || input.summary === null) {
+          summary = deriveSummary(input.contentMarkdown);
+        } else {
+          const normalised = normaliseSummary(input.summary);
+          if (!normalised.ok) {
+            throw plansError('invalid-input', normalised.message);
+          }
+          summary = normalised.value;
+        }
+
         const plan: Plan = {
           id: newId(),
           projectId: input.projectId,
           version: store.nextVersion(input.projectId),
           contentMarkdown: input.contentMarkdown,
+          summary,
           skillLevel: input.skillLevel,
           source: input.source,
           createdAt: now().toISOString(),

@@ -4,6 +4,7 @@ import type { Plan, PlansModule } from '@yaaabk/plans';
 import {
   isSkillLevel,
   normaliseGeneratedIssues,
+  normaliseSummary,
   type GeneratedIssueReport,
   type SkillLevel,
 } from '@yaaabk/shared';
@@ -59,6 +60,8 @@ export interface GrillSessionView {
 export interface GrillSessionReport {
   /** The PRD markdown to store as the draft. Validated before storage. */
   prd?: unknown;
+  /** The plain-English Plan summary reported with the PRD. Validated before storage. */
+  summary?: unknown;
   /** The Issue list to store as the draft. Validated before storage. */
   issues?: unknown;
 }
@@ -226,7 +229,7 @@ export interface GrillSessionRecord {
   reportTokenHash: string | null;
   /** OpenRouter key hash for revocation; the plaintext only goes to the runtime. */
   openRouterKeyHash: string | null;
-  draft: { prd: string | null; issues: GeneratedIssueReport[] | null };
+  draft: { prd: string | null; summary: string | null; issues: GeneratedIssueReport[] | null };
   /** The Plan this session published, kept so a retried Finish is idempotent. */
   publishedPlan: Plan | null;
   /** The Issues published with that Plan. */
@@ -361,7 +364,7 @@ export function createGrillSessionsModule(
   }
 
   function discardDrafts(session: GrillSessionRecord): void {
-    session.draft = { prd: null, issues: null };
+    session.draft = { prd: null, summary: null, issues: null };
   }
 
   function find(projectId: string, sessionId: string): GrillSessionRecord | undefined {
@@ -532,7 +535,7 @@ export function createGrillSessionsModule(
         runtime: null,
         reportTokenHash: hashToken(reportToken),
         openRouterKeyHash,
-        draft: { prd: null, issues: null },
+        draft: { prd: null, summary: null, issues: null },
         publishedPlan: null,
         publishedIssues: [],
       };
@@ -594,17 +597,30 @@ export function createGrillSessionsModule(
       if ('ok' in session) return session;
 
       const hasPrd = report.prd !== undefined;
+      const hasSummary = report.summary !== undefined;
       const hasIssues = report.issues !== undefined;
       if (!hasPrd && !hasIssues) {
         return fail('report', 'invalid-input', 'A Plan or an issue list is required');
       }
 
       let prd: string | undefined;
+      let summary: string | undefined;
       if (hasPrd) {
         if (typeof report.prd !== 'string' || report.prd.trim() === '') {
           return fail('report', 'invalid-input', 'The Plan must be markdown text');
         }
+        const parsedSummary = normaliseSummary(report.summary);
+        if (!parsedSummary.ok) {
+          return fail(
+            'report',
+            'invalid-input',
+            `The Plan summary is invalid: ${parsedSummary.message}`,
+          );
+        }
         prd = report.prd.trim();
+        summary = parsedSummary.value;
+      } else if (hasSummary) {
+        return fail('report', 'invalid-input', 'Report the Plan summary with its Plan');
       }
 
       let issues: GeneratedIssueReport[] | undefined;
@@ -623,7 +639,10 @@ export function createGrillSessionsModule(
         return fail('report', 'invalid-input', 'Report a Plan before its issues');
       }
 
-      if (prd !== undefined) session.draft.prd = prd;
+      if (prd !== undefined) {
+        session.draft.prd = prd;
+        session.draft.summary = summary ?? null;
+      }
       if (issues !== undefined) session.draft.issues = issues;
       session.lastActivityAt = clock().toISOString();
       store.save(session);
@@ -687,6 +706,7 @@ export function createGrillSessionsModule(
           const created = await options.plans.create({
             projectId,
             contentMarkdown: prd,
+            summary: session.draft.summary,
             skillLevel: session.skillLevel,
             source: 'grill-me',
           });

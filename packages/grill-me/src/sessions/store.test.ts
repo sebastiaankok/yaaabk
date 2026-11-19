@@ -18,7 +18,7 @@ function record(overrides: Partial<GrillSessionRecord> = {}): GrillSessionRecord
     runtime: null,
     reportTokenHash: 'token-hash',
     openRouterKeyHash: 'key-hash',
-    draft: { prd: null, issues: null },
+    draft: { prd: null, summary: null, issues: null },
     publishedPlan: null,
     publishedIssues: [],
     ...overrides,

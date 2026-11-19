@@ -36,6 +36,7 @@ function issue(overrides: Partial<Issue> = {}): Issue {
     githubSyncedAt: null,
     title: 'Add login',
     body: '',
+    summary: null,
     status: 'open',
     label: 'ready',
     dependsOn: [],

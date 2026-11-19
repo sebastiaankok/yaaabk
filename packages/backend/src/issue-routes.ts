@@ -99,6 +99,7 @@ export function issueRoutes(
       planId: asOptionalString(pick(input, 'planId', 'plan_id')),
       title: asString(input.title),
       body: asOptionalString(input.body),
+      summary: asOptionalString(input.summary),
       label: pick(input, 'label', 'label') as IssueLabel | undefined,
       dependsOn: asStringArray(pick(input, 'dependsOn', 'depends_on')),
       budgetCents: asOptionalNumber(pick(input, 'budgetCents', 'budget_cents')),
@@ -227,6 +228,7 @@ function patchOf(input: Record<string, unknown>): IssuePatch {
   const patch: IssuePatch = {};
   if (input.title !== undefined) patch.title = asString(input.title);
   if (input.body !== undefined) patch.body = asString(input.body);
+  if (input.summary !== undefined) patch.summary = asString(input.summary);
   if (input.status !== undefined) patch.status = input.status as IssueStatus;
   if (input.label !== undefined) patch.label = input.label as IssueLabel;
   const dependsOn = pick(input, 'dependsOn', 'depends_on');

@@ -17,6 +17,11 @@ source of truth: do not invent scope it does not contain, and do not shrink it.
 Before you write Issue titles, summaries, or bodies, load the `simple-english`
 skill with the `skill` tool and apply its rules to all generated prose.
 
+For every Issue, write a **summary**: one or two plain sentences in simple
+English, with no Markdown and no line breaks, that say what the Issue delivers.
+Keep it at most 200 characters. The summary is YAAABK-only UI data; it never
+becomes part of the GitHub Issue body.
+
 Each Issue must be a **vertical slice** that cuts through the whole stack the
 change needs — schema or migration, API or module interface, UI or command, and
 tests — so an Agent can implement and verify it on its own.
@@ -72,6 +77,7 @@ entry has exactly these fields:
 | Field | Type | Contents |
 | --- | --- | --- |
 | `title` | string | Short, unique, imperative title. |
+| `summary` | string | One or two plain sentences, no Markdown, at most 200 characters. |
 | `body` | string | What to build as Markdown: behaviour, modules, data, testing. |
 | `labels` | string[] | `["ready"]` or `["needs-human"]`. |
 | `depends_on` | string[] | Titles of Issues that must land first; `[]` when none. |
@@ -81,12 +87,14 @@ entry has exactly these fields:
   "issues": [
     {
       "title": "Save a bookmark end to end",
+      "summary": "Let a Developer save a link and find it again.",
       "body": "Add the bookmarks table and migration, a repository function, the save form and its tests.",
       "labels": ["ready"],
       "depends_on": []
     },
     {
       "title": "Search saved bookmarks by title and tag",
+      "summary": "Let a Developer search saved bookmarks by title and tag.",
       "body": "Add the search query, API and list filter. Depends on saving bookmarks.",
       "labels": ["ready"],
       "depends_on": ["Save a bookmark end to end"]

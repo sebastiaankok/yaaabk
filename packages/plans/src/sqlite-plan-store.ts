@@ -25,6 +25,7 @@ interface PlanRow {
   project_id: string;
   version: number;
   content_markdown: string;
+  summary: string | null;
   skill_level: string;
   source: string;
   created_at: string;
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS plans (
   project_id       TEXT NOT NULL,
   version          INTEGER NOT NULL,
   content_markdown TEXT NOT NULL,
+  summary          TEXT,
   skill_level      TEXT NOT NULL,
   source           TEXT NOT NULL,
   created_at       TEXT NOT NULL,
@@ -54,6 +56,7 @@ function toPlan(row: PlanRow): Plan {
     projectId: row.project_id,
     version: row.version,
     contentMarkdown: row.content_markdown,
+    summary: row.summary,
     skillLevel: row.skill_level as SkillLevel,
     source: row.source as Plan['source'],
     createdAt: row.created_at,
@@ -66,6 +69,23 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
+ * Adds a column that a newer version of the store introduced, so databases
+ * created before it keep working. `CREATE TABLE IF NOT EXISTS` is a no-op on an
+ * existing table, so additive changes need an explicit step.
+ */
+function ensureColumn(
+  database: SqliteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((entry) => entry.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+/**
  * Builds the production {@link PlanStore} on a SQLite database.
  *
  * The caller owns the database handle (the backend opens it with `bun:sqlite`);
@@ -73,6 +93,7 @@ function isUniqueViolation(error: unknown): boolean {
  */
 export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
   database.exec(SCHEMA);
+  ensureColumn(database, 'plans', 'summary', 'TEXT');
 
   function deactivateAll(projectId: string): void {
     database.prepare('UPDATE plans SET is_active = 0 WHERE project_id = ?').run(projectId);
@@ -88,14 +109,16 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
         database
           .prepare(
             `INSERT INTO plans
-               (id, project_id, version, content_markdown, skill_level, source, created_at, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, project_id, version, content_markdown, summary, skill_level, source, created_at,
+                is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             plan.id,
             plan.projectId,
             plan.version,
             plan.contentMarkdown,
+            plan.summary,
             plan.skillLevel,
             plan.source,
             plan.createdAt,

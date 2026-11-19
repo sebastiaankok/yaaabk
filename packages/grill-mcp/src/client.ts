@@ -9,8 +9,12 @@ export interface SessionStatus {
 
 /** The HTTP calls the reporting tools make. Tests inject a fake. */
 export interface ReportClient {
-  /** Stores the PRD and/or issue list as drafts on the session. */
-  report(report: { prd?: string; issues?: GeneratedIssueReport[] }): Promise<SessionStatus>;
+  /** Stores the PRD, its summary and/or issue list as drafts on the session. */
+  report(report: {
+    prd?: string;
+    summary?: string;
+    issues?: GeneratedIssueReport[];
+  }): Promise<SessionStatus>;
   /** Reads the session's current status and draft counts. */
   status(): Promise<SessionStatus>;
 }

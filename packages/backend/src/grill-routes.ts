@@ -261,6 +261,7 @@ export function grillRoutes(
     const input = await body(c);
     const result = await sessions.report(c.req.param('sessionId'), bearerToken(c), {
       ...(input.prd === undefined ? {} : { prd: input.prd }),
+      ...(input.summary === undefined ? {} : { summary: input.summary }),
       ...(input.issues === undefined ? {} : { issues: input.issues }),
     });
     return result.ok

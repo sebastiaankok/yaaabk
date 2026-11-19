@@ -28,6 +28,7 @@ export function planRoutes(projects: ProjectsModule, plans: PlansModule): Hono {
     const result = await plans.create({
       projectId: project.id,
       contentMarkdown: asString(input.content_markdown ?? input.contentMarkdown),
+      ...(typeof input.summary === 'string' ? { summary: input.summary } : {}),
       skillLevel: asSkillLevel(input) ?? project.skillLevel,
       source: asSource(input),
     });

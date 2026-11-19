@@ -109,18 +109,25 @@ Rules:
 - Keep it readable in one sitting. Prefer concrete nouns and verbs over jargon.
 - Do not include a "Status", "Version" or "Author" section; YAAABK versions
   Plans itself.
+- Write a **summary** of the Plan as one or two plain sentences in simple
+  English, with no Markdown and no line breaks. YAAABK shows it in lists and
+  disclosures instead of the full document. Keep it at most 200 characters.
 
 ## 4. Report the Plan
 
-Call the `report_prd` tool from the `yaaabk` MCP server with the Plan markdown:
+Call the `report_prd` tool from the `yaaabk` MCP server with the Plan markdown
+and its summary:
 
 ```json
-{ "prd": "## Problem Statement\n\n..." }
+{
+  "prd": "## Problem Statement\n\n...",
+  "summary": "Let Developers save bookmarks and find them again."
+}
 ```
 
-If the tool rejects the report, fix exactly what it names and call it again.
-A successful call stores a **draft**. Nothing is published until the Developer
-clicks **Finish** in YAAABK.
+Every `report_prd` call needs both fields. If the tool rejects the report, fix
+exactly what it names and call it again. A successful call stores a **draft**.
+Nothing is published until the Developer clicks **Finish** in YAAABK.
 
 If the call fails with a connection error ("Connection closed", a timeout or a
 5xx), the terminal may have reconnected underneath you. Retry the same report

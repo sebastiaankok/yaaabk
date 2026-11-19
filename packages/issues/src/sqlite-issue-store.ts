@@ -27,6 +27,7 @@ interface IssueRow {
   github_synced_at: string | null;
   title: string;
   body: string;
+  summary: string | null;
   status: string;
   label: string;
   depends_on: string;
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS issues (
   github_synced_at    TEXT,
   title               TEXT NOT NULL,
   body                TEXT NOT NULL,
+  summary             TEXT,
   status              TEXT NOT NULL,
   label               TEXT NOT NULL,
   depends_on          TEXT NOT NULL,
@@ -74,6 +76,7 @@ function toIssue(row: IssueRow): Issue {
     githubSyncedAt: row.github_synced_at,
     title: row.title,
     body: row.body,
+    summary: row.summary,
     status: isIssueStatus(row.status) ? row.status : 'open',
     label: isIssueLabel(row.label) ? row.label : 'ready',
     dependsOn: JSON.parse(row.depends_on) as string[],
@@ -118,6 +121,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
   database.exec(SCHEMA);
   ensureColumn(database, 'issues', 'github_synced_at', 'TEXT');
   ensureColumn(database, 'issues', 'agent_model', 'TEXT');
+  ensureColumn(database, 'issues', 'summary', 'TEXT');
 
   function requireRow(projectId: string, issueId: string): IssueRow {
     const row = database
@@ -134,10 +138,10 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
       database
         .prepare(
           `INSERT INTO issues
-             (id, project_id, plan_id, github_number, github_synced_at, title, body, status, label,
-              depends_on, attempt_count, max_attempts, budget_cents, openrouter_key_hash, agent_model,
-              closed_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, project_id, plan_id, github_number, github_synced_at, title, body, summary, status,
+              label, depends_on, attempt_count, max_attempts, budget_cents, openrouter_key_hash,
+              agent_model, closed_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           issue.id,
@@ -147,6 +151,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
           issue.githubSyncedAt,
           issue.title,
           issue.body,
+          issue.summary,
           issue.status,
           issue.label,
           JSON.stringify(issue.dependsOn),
@@ -194,9 +199,9 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
         database
           .prepare(
             `UPDATE issues SET
-               plan_id = ?, github_number = ?, github_synced_at = ?, title = ?, body = ?, status = ?,
-               label = ?, depends_on = ?, attempt_count = ?, max_attempts = ?, budget_cents = ?,
-               openrouter_key_hash = ?, agent_model = ?, closed_at = ?
+               plan_id = ?, github_number = ?, github_synced_at = ?, title = ?, body = ?, summary = ?,
+               status = ?, label = ?, depends_on = ?, attempt_count = ?, max_attempts = ?,
+               budget_cents = ?, openrouter_key_hash = ?, agent_model = ?, closed_at = ?
              WHERE project_id = ? AND id = ?`,
           )
           .run(
@@ -205,6 +210,7 @@ export function createSqliteIssueStore(database: SqliteDatabase): IssueStore {
             issue.githubSyncedAt,
             issue.title,
             issue.body,
+            issue.summary,
             issue.status,
             issue.label,
             JSON.stringify(issue.dependsOn),

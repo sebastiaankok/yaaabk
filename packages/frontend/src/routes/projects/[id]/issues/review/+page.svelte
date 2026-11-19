@@ -19,6 +19,7 @@
   import { groupByWave, reviewItems, type WaveGroup } from '#lib/issue-review.js';
   import { describePush, describeSyncStatus } from '#lib/issue-sync.js';
   import Markdown from '#lib/markdown.svelte';
+  import { summaryForIssue, summaryForPlan } from '#lib/summary.js';
 
   const projectId = $derived(page.params.id);
 
@@ -201,7 +202,11 @@
           <h2 id="plan-heading" class="text-sm font-semibold">Active plan</h2>
           <span class="text-xs text-neutral-500">v{plan.version}</span>
         </div>
-        <Markdown markdown={plan.contentMarkdown} />
+        <p class="text-sm text-neutral-700">{summaryForPlan(plan)}</p>
+        <details class="mt-2">
+          <summary class="cursor-pointer text-sm text-neutral-600">Show full plan</summary>
+          <div class="mt-2"><Markdown markdown={plan.contentMarkdown} /></div>
+        </details>
       </section>
     {:else}
       <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
@@ -271,7 +276,15 @@
                       </span>
                     </div>
                     {#if item.issue.body !== ''}
-                      <Markdown markdown={item.issue.body} class="mt-1" />
+                      <p class="mt-1 text-sm text-neutral-700">{summaryForIssue(item.issue)}</p>
+                      <details class="mt-1">
+                        <summary class="cursor-pointer text-xs text-neutral-600">
+                          Show full issue
+                        </summary>
+                        <Markdown markdown={item.issue.body} class="mt-1" />
+                      </details>
+                    {:else}
+                      <p class="mt-1 text-sm text-neutral-700">{summaryForIssue(item.issue)}</p>
                     {/if}
                     {#if item.issue.dependsOn.length > 0}
                       <p class="mt-1 text-xs text-neutral-500">

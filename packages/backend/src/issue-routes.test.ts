@@ -105,6 +105,40 @@ describe('POST /api/projects/:id/issues', () => {
     });
   });
 
+  it('stores a supplied summary and derives one when absent', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const supplied = await request(context, session, `/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Add login', summary: '  Let a   Developer sign in. ' }),
+    });
+    const derived = await request(context, session, `/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Add signup', body: 'Create an account.' }),
+    });
+
+    expect(supplied.status).toBe(201);
+    await expect(supplied.json()).resolves.toMatchObject({
+      summary: 'Let a Developer sign in.',
+    });
+    expect(derived.status).toBe(201);
+    await expect(derived.json()).resolves.toMatchObject({ summary: 'Create an account.' });
+  });
+
+  it('rejects an over-long summary with 400', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const res = await request(context, session, `/api/projects/${projectId}/issues`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Add login', summary: 'x'.repeat(201) }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
+  });
+
   it('rejects a blank title with 400', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
@@ -262,6 +296,29 @@ describe('PATCH /api/projects/:id/issues/:issueId', () => {
       status: 'in_progress',
       title: 'Add login',
     });
+  });
+
+  it('updates the summary and rejects an empty or over-long one', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const { id } = await createIssue(context, session, projectId);
+
+    const updated = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ summary: '  Let a   Developer sign in. ' }),
+    });
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toMatchObject({
+      summary: 'Let a Developer sign in.',
+    });
+
+    for (const summary of ['   ', 'x'.repeat(201)]) {
+      const rejected = await request(context, session, `/api/projects/${projectId}/issues/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ summary }),
+      });
+      expect(rejected.status).toBe(400);
+    }
   });
 
   it('rejects an unknown label with 400', async () => {
