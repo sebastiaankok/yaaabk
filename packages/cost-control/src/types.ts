@@ -114,6 +114,25 @@ export interface RecordAttemptInput {
   createdAt: string;
 }
 
+/**
+ * An Issue's budget as the Developer sees it: what it is, what has been spent
+ * and what is left. Unlike {@link BudgetStatus} this does not require an open
+ * key, so the Issue detail can show the figures before the first attempt.
+ */
+export interface BudgetSummary {
+  issueId: string;
+  /** The Issue's total cap in cents, as the caller currently holds it. */
+  budgetCents: number;
+  /** Cumulative cents spent by earlier attempts plus the open key's usage. */
+  spentCents: number;
+  /** `budgetCents - spentCents`; never negative. */
+  remainingCents: number;
+  /** Whether an OpenRouter key is currently recorded for the Issue. */
+  keyOpen: boolean;
+  /** Whether nothing is left, the key is disabled, or the key has expired. */
+  exhausted: boolean;
+}
+
 /** How much of an Issue's budget is left. */
 export interface BudgetStatus {
   issueId: string;
@@ -151,6 +170,12 @@ export interface CostControlModule {
   topUp(issueId: string, budgetCents: number): Promise<CostControlResult<BudgetRecord>>;
   /** Reports the Issue's remaining budget and whether the agent must pause. */
   status(issueId: string): Promise<CostControlResult<BudgetStatus>>;
+  /**
+   * Reports the Issue's budget, spend and remainder against the cap the caller
+   * holds, without requiring an open key. Used by the Issue detail, so a
+   * Developer can see why an attempt was refused.
+   */
+  summary(issueId: string, budgetCents: number): Promise<CostControlResult<BudgetSummary>>;
   /**
    * Reports what a new attempt may spend after every earlier attempt on the
    * Issue. The first attempt gets the whole budget; a later one reads the

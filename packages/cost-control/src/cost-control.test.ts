@@ -403,6 +403,66 @@ describe('Cost Control Module', () => {
     });
   });
 
+  describe('summary', () => {
+    it('reports the whole budget as remaining before an Issue has a key', async () => {
+      const { api, module } = setup();
+
+      const result = await module.summary('issue-1', 200);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toEqual({
+        issueId: 'issue-1',
+        budgetCents: 200,
+        spentCents: 0,
+        remainingCents: 200,
+        keyOpen: false,
+        exhausted: false,
+      });
+      expect(api.calls).toEqual([]);
+    });
+
+    it('counts earlier attempts and the open key usage against the Issue budget', async () => {
+      const { api, module } = setup();
+      const key = await module.mint({ subject: 'agent-issue-1-attempt-1', budgetCents: 50 });
+      if (!key.ok) throw new Error('mint failed');
+      await module.recordAttempt('issue-1', {
+        budgetCents: 50,
+        attempt: 1,
+        keyHash: key.value.keyHash,
+        spentCents: 30,
+        expiresAt: key.value.expiresAt,
+        createdAt: key.value.createdAt,
+      });
+      api.setUsage(key.value.keyHash, 0.2);
+
+      const result = await module.summary('issue-1', 60);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({
+        budgetCents: 60,
+        spentCents: 50,
+        remainingCents: 10,
+        keyOpen: true,
+        exhausted: false,
+      });
+    });
+
+    it('marks an Issue exhausted once its budget is spent', async () => {
+      const { api, module } = setup();
+      const opened = await module.open('issue-1');
+      if (!opened.ok) throw new Error('open failed');
+      api.setUsage(opened.value.keyHash, 1);
+
+      const result = await module.summary('issue-1', 100);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toMatchObject({ spentCents: 100, remainingCents: 0, exhausted: true });
+    });
+  });
+
   describe('release', () => {
     it('deletes the key at OpenRouter and forgets the budget', async () => {
       const { api, module } = setup();

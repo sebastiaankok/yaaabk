@@ -35,7 +35,7 @@ import {
   openrouterSecretName,
   pvcName,
 } from './config';
-import { agentsError, consoleLogger, messageOf, toAgentsError, type AgentsLogger } from './errors';
+import { agentsError, consoleLogger, toAgentsError, type AgentsLogger } from './errors';
 import type {
   AgentGithubTokenResolver,
   AgentLogOptions,
@@ -120,9 +120,28 @@ export interface AgentManagerOptions {
   logger?: AgentsLogger;
 }
 
+/** Why a fresh OpenRouter key could not be issued. */
+export type AgentOpenrouterKeyFailureReason =
+  | 'budget-exhausted'
+  | 'reply-reservation'
+  | 'account-credits'
+  | 'missing-credential'
+  | 'spend-unreadable'
+  | 'other';
+
 /** A freshly minted OpenRouter key, or why it could not be minted. */
 export type AgentOpenrouterKeyResult =
-  { ok: true; key: string; hash: string } | { ok: false; message: string };
+  | { ok: true; key: string; hash: string }
+  | {
+      ok: false;
+      message: string;
+      /** Machine-readable cause, so the manager can escalate a budget problem. */
+      reason?: AgentOpenrouterKeyFailureReason;
+      /** Cumulative cents spent before the refused attempt. */
+      spentCents?: number;
+      /** Cents the refused attempt could have spent. */
+      remainingCents?: number;
+    };
 
 /** SHA-256 hex of a report token, the only form the store keeps. */
 function hashToken(token: string): string {
@@ -567,6 +586,53 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     return canDispatch(run.projectId) ? dispatch(run) : run;
   }
 
+  /**
+   * Labels an Issue `needs-human` when its budget cannot cover another reply.
+   *
+   * Idempotent: once the label is set auto-dispatch no longer selects the Issue,
+   * so a reconcile pass does not write or log the same escalation repeatedly.
+   */
+  async function escalateBudget(
+    projectId: string,
+    issueId: string,
+    message: string,
+  ): Promise<void> {
+    const issue = await requireIssue(projectId, issueId);
+    if (issue.label === 'needs-human' || issue.status === 'closed') return;
+    // No attempt is running on a refused budget, so leave the Issue open for
+    // the Developer to raise the budget rather than marking the work failed.
+    await issues.update(projectId, issueId, {
+      label: 'needs-human',
+      status: issue.status === 'in_progress' ? 'open' : issue.status,
+    });
+    logger.error('agents budget exhausted', { projectId, issueId, message });
+  }
+
+  /**
+   * Schedules a retry, escalating rather than throwing when the Issue's budget
+   * cannot cover the next reply. Any other failure is left to the caller, which
+   * retries on a later pass.
+   */
+  async function scheduleRetry(
+    run: StoredAgentRun,
+    options: SpawnOptions,
+    summary: ReconcileSummary,
+  ): Promise<void> {
+    let retry: AgentRun;
+    try {
+      retry = await schedule(run.projectId, run.issueId, options);
+    } catch (error) {
+      const mapped = toAgentsError('retry', error);
+      if (mapped.kind !== 'budget-exhausted') throw error;
+      await escalateBudget(run.projectId, run.issueId, mapped.message);
+      summary.escalated += 1;
+      return;
+    }
+    if (retry.status === 'running') {
+      summary.dispatched += 1;
+    }
+  }
+
   /** Marks a run terminal and decides whether to retry or escalate. */
   async function failRun(run: StoredAgentRun, summary: ReconcileSummary): Promise<void> {
     const finishedAt = now().toISOString();
@@ -614,14 +680,15 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         .listForIssue(run.projectId, run.issueId)
         .filter((candidate) => candidate.kind === 'review');
       if (reviews.length < issue.maxAttempts) {
-        const retry = await schedule(run.projectId, run.issueId, {
-          kind: 'review',
-          ...(run.pullNumber === null ? {} : { pullNumber: run.pullNumber }),
-          ...(run.branch === null ? {} : { branch: run.branch }),
-        });
-        if (retry.status === 'running') {
-          summary.dispatched += 1;
-        }
+        await scheduleRetry(
+          run,
+          {
+            kind: 'review',
+            ...(run.pullNumber === null ? {} : { pullNumber: run.pullNumber }),
+            ...(run.branch === null ? {} : { branch: run.branch }),
+          },
+          summary,
+        );
       }
       return;
     }
@@ -637,13 +704,14 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       // Continue the pull request this run was working on. A bare retry would
       // clone the default branch and implement the Issue again from scratch,
       // instead of finishing the change the previous attempt pushed.
-      const retry = await schedule(run.projectId, run.issueId, {
-        ...(run.branch === null ? {} : { branch: run.branch }),
-        ...(run.reviewFeedback === null ? {} : { reviewFeedback: run.reviewFeedback }),
-      });
-      if (retry.status === 'running') {
-        summary.dispatched += 1;
-      }
+      await scheduleRetry(
+        run,
+        {
+          ...(run.branch === null ? {} : { branch: run.branch }),
+          ...(run.reviewFeedback === null ? {} : { reviewFeedback: run.reviewFeedback }),
+        },
+        summary,
+      );
       return;
     }
 
@@ -703,7 +771,12 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         resolveModel(issue, project),
       );
       if (!minted.ok) {
-        throw agentsError('unknown', minted.message);
+        // A budget that cannot cover one reply is not a transient failure: the
+        // same attempt would be refused on every pass. Mark it distinctly so
+        // auto-dispatch and retries can escalate instead of looping.
+        const budgetRefusal =
+          minted.reason === 'budget-exhausted' || minted.reason === 'reply-reservation';
+        throw agentsError(budgetRefusal ? 'budget-exhausted' : 'unknown', minted.message);
       }
       openrouterApiKey = minted.key;
       openrouterKeyHash = minted.hash;
@@ -824,11 +897,20 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
                 status: run.status,
               });
             } catch (error) {
-              autoDispatchRetryAt.set(key, at + AUTO_DISPATCH_RETRY_MS);
+              const mapped = toAgentsError('autoDispatch', error);
+              if (mapped.kind === 'budget-exhausted') {
+                // The budget cannot cover another reply, so a back-off would
+                // only retry the same refusal. Surface it once and stop
+                // selecting the Issue.
+                await escalateBudget(project.id, issue.id, mapped.message);
+              } else {
+                autoDispatchRetryAt.set(key, at + AUTO_DISPATCH_RETRY_MS);
+              }
               logger.error('agents autoDispatch failed', {
                 projectId: project.id,
                 issueId: issue.id,
-                message: messageOf(error),
+                kind: mapped.kind,
+                message: mapped.message,
               });
             } finally {
               autoDispatchInFlight.delete(key);

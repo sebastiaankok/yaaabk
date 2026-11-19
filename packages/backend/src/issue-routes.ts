@@ -1,4 +1,4 @@
-import type { ModelCatalogue } from '@yaaabk/cost-control';
+import type { CostControlError, CostControlModule, ModelCatalogue } from '@yaaabk/cost-control';
 import type { IssueError, IssueLabel, IssuePatch, IssueStatus, IssuesModule } from '@yaaabk/issues';
 import type { PlanError, PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
@@ -28,6 +28,22 @@ const PLAN_STATUS_BY_KIND: Record<PlanError['kind'], ContentfulStatusCode> = {
   unknown: 500,
 };
 
+/** Cost Control failures, reached when reading or topping up an Issue budget. */
+const BUDGET_STATUS_BY_KIND: Record<CostControlError['kind'], ContentfulStatusCode> = {
+  'invalid-input': 400,
+  'budget-out-of-range': 400,
+  'budget-exhausted': 409,
+  'spend-unreadable': 502,
+  'already-open': 409,
+  'not-open': 404,
+  unauthorized: 502,
+  'not-found': 404,
+  'rate-limited': 429,
+  server: 502,
+  network: 502,
+  unknown: 500,
+};
+
 /** Reads a field under either its camelCase or documented snake_case key. */
 function pick(input: Record<string, unknown>, camel: string, snake: string): unknown {
   return input[camel] !== undefined ? input[camel] : input[snake];
@@ -39,6 +55,7 @@ export function issueRoutes(
   projects: ProjectsModule,
   plans: PlansModule,
   catalogue?: ModelCatalogue,
+  budgets?: CostControlModule,
 ): Hono {
   const app = new Hono();
 
@@ -114,6 +131,20 @@ export function issueRoutes(
       : fail(c, result.error, STATUS_BY_KIND[result.error.kind]);
   });
 
+  if (budgets !== undefined) {
+    app.get('/api/projects/:id/issues/:issueId/budget', async (c) => {
+      const project = await projectOrResponse(c, projects, c.req.param('id'));
+      if (project instanceof Response) return project;
+
+      const issue = await issues.get(project.id, c.req.param('issueId'));
+      if (!issue.ok) return fail(c, issue.error, STATUS_BY_KIND[issue.error.kind]);
+      const summary = await budgets.summary(issue.value.id, issue.value.budgetCents);
+      return summary.ok
+        ? c.json(summary.value)
+        : fail(c, summary.error, BUDGET_STATUS_BY_KIND[summary.error.kind]);
+    });
+  }
+
   app.get('/api/projects/:id/issues/:issueId', async (c) => {
     const project = await projectOrResponse(c, projects, c.req.param('id'));
     if (project instanceof Response) return project;
@@ -139,6 +170,22 @@ export function issueRoutes(
       }
       patch.agentModel = agentModel.value;
     }
+
+    // A raised budget must reach the key that is already open, not only the
+    // local Issue: OpenRouter still caps that key at the old amount until the
+    // next attempt mints a fresh one. An Issue without a key is not an error;
+    // its next attempt reads the new budget directly.
+    if (budgets !== undefined && patch.budgetCents !== undefined) {
+      const existing = await issues.get(project.id, c.req.param('issueId'));
+      if (!existing.ok) return fail(c, existing.error, STATUS_BY_KIND[existing.error.kind]);
+      if (patch.budgetCents > existing.value.budgetCents) {
+        const toppedUp = await budgets.topUp(existing.value.id, patch.budgetCents);
+        if (!toppedUp.ok && toppedUp.error.kind !== 'not-open') {
+          return fail(c, toppedUp.error, BUDGET_STATUS_BY_KIND[toppedUp.error.kind]);
+        }
+      }
+    }
+
     const result = await issues.update(project.id, c.req.param('issueId'), patch);
     return result.ok
       ? c.json(result.value)

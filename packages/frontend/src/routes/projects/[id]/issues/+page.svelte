@@ -10,6 +10,7 @@
     ApiError,
     deleteIssue,
     getActivePlan,
+    getIssueBudget,
     getIssueGraph,
     getProject,
     listIssues,
@@ -18,9 +19,11 @@
     spawnAgent,
     streamAgentRunLogs,
     updateIssue,
+    type IssueBudget,
     type ModelCatalogueView,
   } from '#lib/api.js';
   import { renderMarkdown } from '#lib/markdown.js';
+  import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
   import {
     BOARD_COLUMNS,
     BOARD_COLUMN_LABELS,
@@ -59,7 +62,12 @@
   let editing = $state(false);
   let draftTitle = $state('');
   let draftBody = $state('');
+  let draftBudget = $state('');
   let confirmingDelete = $state(false);
+  /** The current Issue's budget summary, as Cost Control computes it. */
+  let issueBudget = $state<IssueBudget | null>(null);
+  /** A refusal or validation failure for the open card, shown in the panel. */
+  let actionError = $state<string | null>(null);
 
   let catalogue = $state<ModelCatalogueView | null>(null);
   let catalogueError = $state<string | null>(null);
@@ -142,6 +150,42 @@
   /** The issue whose detail panel is open, taken from the unfiltered list. */
   const selected = $derived(issues.find((candidate) => candidate.id === selectedId) ?? null);
 
+  /**
+   * The open Issue's budget. The authoritative summary comes from Cost Control
+   * and includes a key that is still open; while it loads, or when OpenRouter
+   * is unreachable, the totals the runs reported stand in.
+   */
+  const selectedBudget = $derived.by<IssueBudget | null>(() => {
+    if (selected === null) return null;
+    if (issueBudget !== null && issueBudget.issueId === selected.id) return issueBudget;
+    const spentCents = spend.get(selected.id) ?? 0;
+    const remainingCents = budgetRemaining(selected, spentCents);
+    return {
+      issueId: selected.id,
+      budgetCents: selected.budgetCents,
+      spentCents,
+      remainingCents,
+      keyOpen: false,
+      exhausted: remainingCents <= 0,
+    };
+  });
+
+  /** Formats cents as the dollars the Developer reads everywhere else. */
+  function usd(cents: number): string {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  /** Loads the open Issue's budget; a failure leaves the run totals in place. */
+  async function loadBudget(issueId: string): Promise<void> {
+    if (projectId === undefined) return;
+    try {
+      const next = await getIssueBudget(projectId, issueId);
+      if (selectedId === issueId) issueBudget = next;
+    } catch {
+      if (selectedId === issueId) issueBudget = null;
+    }
+  }
+
   /** The model an issue with no override of its own runs on. */
   const effectiveDefault = $derived(
     project?.agentModel ?? catalogue?.defaultModel ?? 'the environment default',
@@ -164,11 +208,15 @@
     if (projectId === undefined || busy) return;
     busy = true;
     error = null;
+    actionError = null;
     try {
       await spawnAgent(projectId, issueId);
       runs = await listProjectRuns(projectId);
+      await loadBudget(issueId);
     } catch (cause) {
-      error = describe(cause);
+      // Keep the backend's refusal in the panel: it names the amounts and what
+      // the Developer must change, unlike a generic failure banner.
+      actionError = describe(cause);
     } finally {
       busy = false;
     }
@@ -179,9 +227,12 @@
     selectedId = issueId;
     editing = false;
     confirmingDelete = false;
+    issueBudget = null;
+    actionError = null;
     modelChoice = issues.find((candidate) => candidate.id === issueId)?.agentModel ?? '';
     modelStatus = null;
     modelError = null;
+    void loadBudget(issueId);
   }
 
   /** Saves the issue-level model override; the empty option inherits. */
@@ -209,25 +260,40 @@
   function startEdit(issue: Issue): void {
     editing = true;
     confirmingDelete = false;
+    actionError = null;
     draftTitle = issue.title;
     draftBody = issue.body;
+    draftBudget = (issue.budgetCents / 100).toFixed(2);
   }
 
-  /** Saves the edited title and body, then reloads the graph (titles moved). */
+  /** Saves the edited title, body and budget, then reloads the graph (titles moved). */
   async function saveEdit(): Promise<void> {
     if (projectId === undefined || selected === null || busy) return;
+    const budgetReason = validateBudgetDollars(draftBudget);
+    if (budgetReason !== undefined) {
+      actionError = budgetReason;
+      return;
+    }
+    const budgetCents = dollarsToCents(draftBudget);
+    if (budgetCents === undefined) {
+      actionError = 'Enter the budget in dollars, e.g. 0.50';
+      return;
+    }
     busy = true;
     error = null;
+    actionError = null;
     try {
       const updated = await updateIssue(projectId, selected.id, {
         title: draftTitle.trim(),
         body: draftBody,
+        budgetCents,
       });
       issues = issues.map((issue) => (issue.id === updated.id ? updated : issue));
       graph = await getIssueGraph(projectId);
+      await loadBudget(updated.id);
       editing = false;
     } catch (cause) {
-      error = describe(cause);
+      actionError = describe(cause);
     } finally {
       busy = false;
     }
@@ -702,18 +768,30 @@
             <p class="text-xs text-neutral-500">GitHub #{selected.githubNumber}</p>
           {/if}
 
-          <dl class="grid grid-cols-2 gap-3 text-sm">
+          <dl class="grid grid-cols-3 gap-3 text-sm">
             <div>
               <dt class="text-neutral-500">Attempts</dt>
               <dd>{selected.attemptCount} / {selected.maxAttempts}</dd>
             </div>
             <div>
-              <dt class="text-neutral-500">Budget left</dt>
-              <dd>
-                {(budgetRemaining(selected, spend.get(selected.id) ?? 0) / 100).toFixed(2)}
-              </dd>
+              <dt class="text-neutral-500">Budget</dt>
+              <dd>{usd(selectedBudget?.budgetCents ?? selected.budgetCents)}</dd>
+            </div>
+            <div>
+              <dt class="text-neutral-500">Spent</dt>
+              <dd>{usd(selectedBudget?.spentCents ?? spend.get(selected.id) ?? 0)}</dd>
+            </div>
+            <div>
+              <dt class="text-neutral-500">Left</dt>
+              <dd>{usd(selectedBudget?.remainingCents ?? selected.budgetCents)}</dd>
             </div>
           </dl>
+
+          {#if selectedBudget?.exhausted}
+            <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+              This Issue’s budget is spent. Raise it to allow another attempt.
+            </p>
+          {/if}
 
           <div class="flex flex-col gap-1">
             <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
@@ -765,6 +843,18 @@
                   bind:value={draftBody}
                   class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
                 ></textarea>
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-neutral-500">
+                Issue budget (USD)
+                <input
+                  aria-label="Issue budget (USD)"
+                  inputmode="decimal"
+                  bind:value={draftBudget}
+                  class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+                />
+                <span class="text-neutral-400">
+                  Between $0.01 and $5.00. Raising it lets the next attempt spend the difference.
+                </span>
               </label>
             </div>
           {:else if selected.body !== ''}
@@ -848,6 +938,12 @@
               </ul>
             {/if}
           </section>
+
+          {#if actionError !== null}
+            <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {actionError}
+            </p>
+          {/if}
 
           <div class="mt-auto flex flex-wrap gap-2">
             {#if editing}

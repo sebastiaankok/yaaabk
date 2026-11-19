@@ -448,6 +448,22 @@ export interface GrillSessionView {
 
 // --- Issues -----------------------------------------------------------------
 
+/** An Issue's budget as the backend's Cost Control module computes it. */
+export interface IssueBudget {
+  issueId: string;
+  budgetCents: number;
+  spentCents: number;
+  remainingCents: number;
+  keyOpen: boolean;
+  exhausted: boolean;
+}
+
+export function getIssueBudget(projectId: string, issueId: string): Promise<IssueBudget> {
+  return request<IssueBudget>(
+    `/api/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/budget`,
+  );
+}
+
 export function listIssues(projectId: string): Promise<Issue[]> {
   return request<{ issues: Issue[] }>(`/api/projects/${encodeURIComponent(projectId)}/issues`).then(
     (body) => body.issues,

@@ -168,7 +168,7 @@ This is a Bun workspace monorepo:
 | `@yaaabk/stats` | `packages/stats` | Pure Project statistics (`computeProjectStats`): issue counts, velocity, agent success, cost and durations |
 | `@yaaabk/ci-tracker` | `packages/ci-tracker` | The CI Tracker: watches `automerge` pull requests, merges the passing ones and spawns fix attempts (`createCiTracker`) |
 | `@yaaabk/github` | `packages/github` | GitHub Issues and Pulls ports + REST adapters, the `createIssueSyncModule` mirror and fakes |
-| `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`release`) |
+| `@yaaabk/cost-control` | `packages/cost-control` | Per-issue OpenRouter budgets (`open`/`topUp`/`status`/`summary`/`release`) |
 | `@yaaabk/shared` | `packages/shared` | Types and constants shared across packages |
 
 Project templates live in [`templates/`](./templates). `@yaaabk/template` copies
@@ -333,7 +333,8 @@ Plan generates. The backend exposes it over HTTP:
 | `POST /api/projects/:id/issues` | Create an Issue (`title`, `body`, `label`, `depends_on`, `budget_cents`, `agent_model`) |
 | `GET /api/projects/:id/issues` | List a Project's Issues, oldest first |
 | `GET /api/projects/:id/issues/:issueId` | Get an Issue |
-| `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status`, `depends_on` or `agent_model` |
+| `PATCH /api/projects/:id/issues/:issueId` | Update its `title`, `body`, `label`, `status`, `depends_on`, `budget_cents` or `agent_model` |
+| `GET /api/projects/:id/issues/:issueId/budget` | The Issue's budget, spend and remainder |
 | `DELETE /api/projects/:id/issues/:issueId` | Remove an Issue |
 | `GET /api/projects/:id/issues/graph` | The dependency graph, with waves and any cycles |
 | `POST /api/projects/:id/issues/approve` | Mark the active Plan's open Issues `ready` |
@@ -362,8 +363,18 @@ because the Agent Manager still works every ready Issue in the Project.
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency
 after that, and reports any cycle (or an Issue that transitively depends on one)
-with no wave, so the UI can surface it. The module is unit-tested against an
-in-memory `IssueStore` and the SQLite store runs against `bun:sqlite`:
+with no wave, so the UI can surface it.
+
+The Issue detail shows the budget, what has been spent and what is left, and
+lets the Developer edit the budget in dollars. Raising it updates the cap on the
+key that is already open as well as the Issue, so the next attempt can use the
+new remainder without resetting the attempt counter or reopening a completed
+Issue. A spawn or retry the budget cannot afford is refused with the spent,
+remaining and required reply amounts and the change to make, rather than
+starting a Job OpenRouter would reject.
+
+The module is unit-tested against an in-memory `IssueStore` and the SQLite store
+runs against `bun:sqlite`:
 
 ```sh
 bun run --filter '@yaaabk/issues' test:integration
@@ -415,8 +426,11 @@ labelled `ready` whose dependencies are all `closed` gets an Agent without a
 click, so a Plan proceeds from one wave to the next as pull requests merge.
 Issues with any prior run — including a review or a deploy — are left to the
 retry and CI paths, as are Issues that are not synced to GitHub, sit on a cycle
-or reference a missing dependency. A dispatch that fails (for example, a budget
-that cannot cover one reply) is retried after a minute instead of on every tick.
+or reference a missing dependency. A dispatch refused because the Issue's budget
+cannot cover one reply is not retried: the Issue is labelled `needs-human` once,
+without spending an attempt, so the Developer can raise the budget or pick a
+cheaper model. Other transient dispatch failures are retried after a minute
+instead of on every tick.
 The loop runs on a timer (`YAAABK_AGENT_POLL_MS`, default 15s) and, on a finished
 Job, marks the attempt `success` and records the pull request URL, or marks it
 `failed` and either schedules the next attempt or — once `maxAttempts` is reached

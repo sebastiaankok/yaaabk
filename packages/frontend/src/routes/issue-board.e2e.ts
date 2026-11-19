@@ -96,6 +96,7 @@ interface Mocks {
   issues: Record<string, unknown>[];
   graph: IssueGraph;
   runs: Record<string, unknown>[];
+  budgets: Record<string, Record<string, unknown>>;
 }
 
 /** Mocks the project and the endpoints the board reads on load. */
@@ -103,6 +104,16 @@ async function mockBoard(page: Page): Promise<Mocks> {
   const state: Mocks = {
     issues: [READY, BLOCKED, ACTIVE, CLOSED, FAILED],
     graph: GRAPH,
+    budgets: {
+      i1: {
+        issueId: 'i1',
+        budgetCents: 50,
+        spentCents: 20,
+        remainingCents: 30,
+        keyOpen: true,
+        exhausted: false,
+      },
+    },
     runs: [
       {
         id: 'r1',
@@ -131,6 +142,14 @@ async function mockBoard(page: Page): Promise<Mocks> {
   await page.route('**/api/projects/p1/issues/graph', (route) =>
     route.fulfill({ json: state.graph }),
   );
+  await page.route('**/api/projects/p1/issues/*/budget', (route) => {
+    const segments = new URL(route.request().url()).pathname.split('/');
+    const id = segments[segments.length - 2] ?? '';
+    const budget = state.budgets[id];
+    return budget === undefined
+      ? route.fulfill({ json: { error: 'not-found', message: 'no budget' }, status: 404 })
+      : route.fulfill({ json: budget });
+  });
   await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
   await page.route('**/api/projects/p1/agent-runs', (route) =>
     route.fulfill({ json: { runs: state.runs } }),
@@ -262,6 +281,54 @@ test('opens a card to show its body and agent run history', async ({ page }) => 
   await expect(panel.getByText('Agent finished: opened PR #1')).toBeVisible();
 });
 
+test('shows the budget, spend, remainder and raises the budget', async ({ page }) => {
+  const state = await mockBoard(page);
+  const patches: Record<string, unknown>[] = [];
+  await page.route('**/api/projects/p1/issues/i1', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    const patch = route.request().postDataJSON() as Record<string, unknown>;
+    patches.push(patch);
+    const updated = {
+      ...state.issues.find((item) => item.id === 'i1'),
+      ...patch,
+    };
+    state.issues = state.issues.map((item) => (item.id === 'i1' ? updated : item));
+    const budget = state.budgets.i1;
+    if (budget !== undefined && typeof patch.budgetCents === 'number') {
+      state.budgets.i1 = {
+        ...budget,
+        budgetCents: patch.budgetCents,
+        remainingCents: Math.max(
+          0,
+          patch.budgetCents - (typeof budget.spentCents === 'number' ? budget.spentCents : 0),
+        ),
+      };
+    }
+    await route.fulfill({ json: updated });
+  });
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByText('$0.50', { exact: true })).toBeVisible();
+  await expect(panel.getByText('$0.20', { exact: true })).toBeVisible();
+  await expect(panel.getByText('$0.30', { exact: true })).toBeVisible();
+
+  await panel.getByRole('button', { name: 'Edit' }).click();
+  await panel.getByLabel('Issue budget (USD)').fill('2.00');
+  await panel.getByRole('button', { name: 'Save' }).click();
+
+  await expect
+    .poll(() => patches)
+    .toEqual([{ title: 'Schema', body: 'Create the tables', budgetCents: 200 }]);
+  await expect(panel.getByText('$2.00', { exact: true })).toBeVisible();
+  await expect(panel.getByText('$1.80', { exact: true })).toBeVisible();
+});
+
 test('shows a review verdict and its written summary', async ({ page }) => {
   const state = await mockBoard(page);
   state.runs = [
@@ -318,6 +385,28 @@ test('re-runs an agent for the open issue', async ({ page }) => {
   const panel = page.getByRole('dialog', { name: 'Schema' });
   await expect(panel.getByText('Attempt 2')).toBeVisible();
   await expect(panel.getByText('queued')).toBeVisible();
+});
+
+test('shows why a re-run was refused when the budget cannot cover a reply', async ({ page }) => {
+  await mockBoard(page);
+  await page.route('**/api/projects/p1/issues/i1/spawn', (route) =>
+    route.fulfill({
+      status: 402,
+      json: {
+        error: 'budget-exhausted',
+        message:
+          '$0.30 remains of Issue Schema’s $0.50 budget after $0.20 spent, but the model can reserve up to $0.96 for one reply. Raise the Issue’s budget to at least $1.16 or choose a cheaper model.',
+      },
+    }),
+  );
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await panel.getByRole('button', { name: 'Re-run' }).click();
+
+  await expect(panel.getByRole('alert')).toContainText('$0.30 remains');
+  await expect(panel.getByRole('alert')).toContainText('Raise the Issue’s budget');
 });
 
 test('saves and clears the issue agent model override', async ({ page }) => {

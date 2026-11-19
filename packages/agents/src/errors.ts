@@ -23,6 +23,7 @@ const AGENT_KINDS: ReadonlySet<string> = new Set<AgentErrorKind>([
   'issue-not-synced',
   'kubernetes',
   'unauthorized',
+  'budget-exhausted',
   'unknown',
 ]);
 

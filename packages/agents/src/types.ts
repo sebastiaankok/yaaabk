@@ -237,7 +237,13 @@ export interface AgentLogOptions {
 
 /** The kinds of failure an Agent Manager command can report. */
 export type AgentErrorKind =
-  'invalid-input' | 'not-found' | 'issue-not-synced' | 'kubernetes' | 'unauthorized' | 'unknown';
+  | 'invalid-input'
+  | 'not-found'
+  | 'issue-not-synced'
+  | 'kubernetes'
+  | 'unauthorized'
+  | 'budget-exhausted'
+  | 'unknown';
 
 /** A typed failure, never thrown across the module boundary. */
 export interface AgentError {
