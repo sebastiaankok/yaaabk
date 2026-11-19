@@ -32,6 +32,7 @@ export function planRecord(overrides: Partial<Plan> = {}): Plan {
     source: 'grill-me',
     createdAt: '2026-01-01T00:00:00.000Z',
     isActive: true,
+    acceptedAt: null,
     ...overrides,
   };
 }
@@ -127,6 +128,21 @@ export function planStoreContract(api: StoreTestApi, createStore: () => PlanStor
       store.create(planRecord());
 
       expect(() => store.create(planRecord({ id: 'plan-2' }))).toThrow();
+    });
+
+    it('records when a plan was accepted', () => {
+      const store = createStore();
+      store.create(planRecord());
+
+      store.accept('project-1', 'plan-1', '2026-02-01T00:00:00.000Z');
+
+      expect(store.get('project-1', 'plan-1')?.acceptedAt).toBe('2026-02-01T00:00:00.000Z');
+    });
+
+    it('throws when accepting an unknown plan', () => {
+      const store = createStore();
+
+      expect(() => store.accept('project-1', 'missing', '2026-02-01T00:00:00.000Z')).toThrow();
     });
 
     it('deletes every plan in one project and no other', () => {

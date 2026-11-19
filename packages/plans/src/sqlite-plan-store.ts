@@ -30,6 +30,7 @@ interface PlanRow {
   source: string;
   created_at: string;
   is_active: number;
+  accepted_at: string | null;
 }
 
 const SCHEMA = `
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS plans (
   source           TEXT NOT NULL,
   created_at       TEXT NOT NULL,
   is_active        INTEGER NOT NULL,
+  accepted_at      TEXT,
   UNIQUE (project_id, version)
 );
 
@@ -61,6 +63,7 @@ function toPlan(row: PlanRow): Plan {
     source: row.source as Plan['source'],
     createdAt: row.created_at,
     isActive: row.is_active === 1,
+    acceptedAt: row.accepted_at,
   };
 }
 
@@ -94,6 +97,7 @@ function ensureColumn(
 export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
   database.exec(SCHEMA);
   ensureColumn(database, 'plans', 'summary', 'TEXT');
+  ensureColumn(database, 'plans', 'accepted_at', 'TEXT');
 
   function deactivateAll(projectId: string): void {
     database.prepare('UPDATE plans SET is_active = 0 WHERE project_id = ?').run(projectId);
@@ -110,8 +114,8 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
           .prepare(
             `INSERT INTO plans
                (id, project_id, version, content_markdown, summary, skill_level, source, created_at,
-                is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                is_active, accepted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             plan.id,
@@ -123,6 +127,7 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
             plan.source,
             plan.createdAt,
             plan.isActive ? 1 : 0,
+            plan.acceptedAt,
           );
         database.exec('COMMIT');
       } catch (error) {
@@ -184,6 +189,18 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
         database.exec('ROLLBACK');
         throw error;
       }
+    },
+
+    accept(projectId, planId, acceptedAt) {
+      const target = database
+        .prepare('SELECT id FROM plans WHERE project_id = ? AND id = ?')
+        .get(projectId, planId) as { id: string } | null | undefined;
+      if (target == null) {
+        throw plansError('not-found', `No plan with id "${planId}" for project "${projectId}"`);
+      }
+      database
+        .prepare('UPDATE plans SET accepted_at = ? WHERE project_id = ? AND id = ?')
+        .run(acceptedAt, projectId, planId);
     },
 
     deleteForProject(projectId) {
