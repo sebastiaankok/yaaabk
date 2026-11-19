@@ -111,6 +111,11 @@ without an Installation ID is called out by name, since it can never mint a
 token. `YAAABK_GITHUB_TOKEN` (a PAT with the `repo` scope) remains a fallback
 for local development.
 
+The OpenRouter section shows the account's remaining credits and the default
+model's worst-case reply reservation. When the balance cannot cover one reply,
+it says so before a run starts and names the fix: add credits or choose a free
+model.
+
 To work on one package at a time:
 
 ```sh

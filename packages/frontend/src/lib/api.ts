@@ -15,6 +15,7 @@ import type { Project, ProjectPatch, ProvisioningEvent } from '@yaaabk/projects'
 import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
 import type { SkillLevel } from '@yaaabk/shared';
 import type { ProjectStats } from '@yaaabk/stats';
+import type { OpenRouterCreditsView } from './openrouter-balance';
 
 export interface AuthUser {
   id: string;
@@ -146,6 +147,13 @@ export function verifyGithubSettings(): Promise<GitHubVerifyOk> {
 export function verifyOpenrouterSettings(): Promise<OpenRouterVerifyOk> {
   return request<OpenRouterVerifyOk>('/api/settings/openrouter/verify', { method: 'POST' });
 }
+
+/** The account balance, the default model and its worst-case reply reservation. */
+export function getOpenRouterCredits(): Promise<OpenRouterCreditsView> {
+  return request<OpenRouterCreditsView>('/api/settings/openrouter/credits');
+}
+
+export type { OpenRouterCreditsView } from './openrouter-balance';
 
 // --- Sessions and models -----------------------------------------------------
 

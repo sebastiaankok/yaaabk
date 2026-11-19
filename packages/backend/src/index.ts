@@ -17,6 +17,7 @@ import {
   createCostControlModule,
   createInMemoryBudgetStore,
   createOpenRouterApi,
+  createOpenRouterCreditsReader,
   createOpenRouterModelCatalogue,
   createOpenRouterVerifier,
   loadCostControlConfig,
@@ -97,6 +98,7 @@ const settings = createSettingsModule({
   store: createSqliteSettingsStore(database),
   crypto: createSecretCrypto({ secret: authSecret }),
   openRouterVerifier: createOpenRouterVerifier(),
+  openRouterCredits: createOpenRouterCreditsReader(),
   githubVerifier: createGitHubCredentialVerifier(),
 });
 

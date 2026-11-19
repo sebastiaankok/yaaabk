@@ -47,10 +47,12 @@ import { createCiTracker, silentLogger as ciLogger, type CiTracker } from '@yaaa
 import type { ModelCatalogue, SessionModel } from '@yaaabk/cost-control';
 import {
   createFakeGitHubVerifier,
+  createFakeOpenRouterCreditsReader,
   createFakeOpenRouterVerifier,
   createInMemorySettingsStore,
   createSecretCrypto,
   createSettingsModule,
+  type OpenRouterCreditsReader,
   type SettingsModule,
 } from '@yaaabk/settings';
 import {
@@ -141,6 +143,7 @@ export interface TestContext {
   ciTracker: CiTracker;
   pulls: FakeGitHubPulls;
   settings: SettingsModule;
+  openRouterCredits: ReturnType<typeof createFakeOpenRouterCreditsReader> & OpenRouterCreditsReader;
   projectStore: ProjectStore;
   k8s: MockK8sClient;
   store: AuthStore;
@@ -264,10 +267,12 @@ export function createTestContext(
   });
 
   const pulls = createFakeGitHubPulls();
+  const openRouterCredits = createFakeOpenRouterCreditsReader();
   const settings = createSettingsModule({
     store: createInMemorySettingsStore(),
     crypto: createSecretCrypto({ secret: 'x'.repeat(MIN_SECRET_LENGTH) }),
     openRouterVerifier: createFakeOpenRouterVerifier(),
+    openRouterCredits,
     githubVerifier: createFakeGitHubVerifier(),
   });
   const models = createFakeModelCatalogue();
@@ -316,6 +321,7 @@ export function createTestContext(
     ciTracker,
     pulls,
     settings,
+    openRouterCredits,
     projectStore,
     k8s,
     store,

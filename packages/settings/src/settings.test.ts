@@ -7,7 +7,11 @@ import {
   type SettingsUpdate,
   type SettingsView,
 } from './settings';
-import { createFakeGitHubVerifier, createFakeOpenRouterVerifier } from './fake-verifiers';
+import {
+  createFakeGitHubVerifier,
+  createFakeOpenRouterCreditsReader,
+  createFakeOpenRouterVerifier,
+} from './fake-verifiers';
 
 const SECRET = 'a'.repeat(32);
 
@@ -16,6 +20,7 @@ function createModule() {
     store: createInMemorySettingsStore(),
     crypto: createSecretCrypto({ secret: SECRET }),
     openRouterVerifier: createFakeOpenRouterVerifier(),
+    openRouterCredits: createFakeOpenRouterCreditsReader(),
     githubVerifier: createFakeGitHubVerifier(),
   });
 }
@@ -104,6 +109,7 @@ describe('SettingsModule', () => {
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier,
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier: createFakeGitHubVerifier(),
     });
     await applyUpdate(settings, { openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
@@ -114,11 +120,82 @@ describe('SettingsModule', () => {
     expect(openRouterVerifier.verified).toEqual(['sk-or-v1-abcdefgh1c96']);
   });
 
+  it('reads the account balance with the stored OpenRouter management key', async () => {
+    const readKeys: string[] = [];
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: {
+        async read(managementKey) {
+          readKeys.push(managementKey);
+          return {
+            ok: true,
+            value: { totalCreditsUsd: 40, totalUsageUsd: 39.9928, remainingUsd: 0.0072 },
+          };
+        },
+      },
+      githubVerifier: createFakeGitHubVerifier(),
+    });
+    await applyUpdate(settings, { openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+
+    const result = await settings.credits();
+
+    expect(result).toEqual({
+      ok: true,
+      value: { totalCreditsUsd: 40, totalUsageUsd: 39.9928, remainingUsd: 0.0072 },
+    });
+    expect(readKeys).toEqual(['sk-or-v1-abcdefgh1c96']);
+  });
+
+  it('reports a failed balance lookup as a typed error', async () => {
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: {
+        read: async () => ({ ok: false, kind: 'network', message: 'OpenRouter is unreachable' }),
+      },
+      githubVerifier: createFakeGitHubVerifier(),
+    });
+    await applyUpdate(settings, { openrouterManagementKey: 'sk-or-v1-abcdefgh1c96' });
+
+    const result = await settings.credits();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('network');
+      expect(result.error.message).toBe('OpenRouter is unreachable');
+    }
+  });
+
+  it('reports unauthorized when reading the balance without a configured key', async () => {
+    const settings = createSettingsModule({
+      store: createInMemorySettingsStore(),
+      crypto: createSecretCrypto({ secret: SECRET }),
+      openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: {
+        read: async () => {
+          throw new Error('must not read credits without a key');
+        },
+      },
+      githubVerifier: createFakeGitHubVerifier(),
+    });
+
+    const result = await settings.credits();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('unauthorized');
+    }
+  });
+
   it('reports unauthorized when verifying OpenRouter without a configured key', async () => {
     const settings = createSettingsModule({
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier: createFakeGitHubVerifier(),
     });
 
@@ -139,6 +216,7 @@ describe('SettingsModule', () => {
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier,
     });
     await applyUpdate(settings, {
@@ -161,6 +239,7 @@ describe('SettingsModule', () => {
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier,
     });
     await applyUpdate(settings, { githubPat: 'ghp_originalvalue1234' });
@@ -180,6 +259,7 @@ describe('SettingsModule', () => {
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier,
     });
     await applyUpdate(settings, {
@@ -205,6 +285,7 @@ describe('SettingsModule', () => {
       store: createInMemorySettingsStore(),
       crypto: createSecretCrypto({ secret: SECRET }),
       openRouterVerifier: createFakeOpenRouterVerifier(),
+      openRouterCredits: createFakeOpenRouterCreditsReader(),
       githubVerifier,
     });
     await applyUpdate(settings, {

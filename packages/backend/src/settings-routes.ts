@@ -1,3 +1,8 @@
+import {
+  maxCompletionCostUsd,
+  type ModelCatalogue,
+  type OpenRouterCredits,
+} from '@yaaabk/cost-control';
 import type {
   CredentialField,
   SettingsError,
@@ -63,8 +68,42 @@ const CLEAR_FIELD_ALIASES: Readonly<Record<string, CredentialField>> = {
   openrouterManagementKey: 'openrouterManagementKey',
 };
 
+/** What the Settings page needs to explain an unaffordable balance. */
+export interface OpenRouterCreditsView extends OpenRouterCredits {
+  /** The model a paid run uses when nothing else chooses one. */
+  defaultModel: string;
+  /**
+   * The most one maximum-length reply of the default model can reserve, in USD;
+   * `null` when the catalogue cannot price it. The UI warns only when the
+   * remaining balance is below this amount.
+   */
+  reservationUsd: number | null;
+}
+
+export interface SettingsRoutesOptions {
+  /** Prices the default model so the UI can warn before a run is refused. */
+  catalogue?: ModelCatalogue;
+  /** The default model paid runs use when nothing else chooses one. */
+  defaultModel?: string;
+}
+
+/** The worst-case reply cost of the default model, when it can be priced. */
+async function defaultReservationUsd(
+  catalogue: ModelCatalogue | undefined,
+  defaultModel: string | undefined,
+): Promise<number | null> {
+  if (catalogue === undefined || defaultModel === undefined || defaultModel === '') return null;
+  const listed = await catalogue.list();
+  if (!listed.ok) return null;
+  const model = listed.value.find((candidate) => candidate.id === defaultModel);
+  return model === undefined ? null : maxCompletionCostUsd(model);
+}
+
 /** Builds the `/api/settings*` routes. */
-export function settingsRoutes(settings: SettingsModule): Hono {
+export function settingsRoutes(
+  settings: SettingsModule,
+  options: SettingsRoutesOptions = {},
+): Hono {
   const app = new Hono();
 
   app.get('/api/settings', async (c) => {
@@ -96,6 +135,17 @@ export function settingsRoutes(settings: SettingsModule): Hono {
     }
     const result = await settings.update(update);
     return result.ok ? c.json(result.value) : fail(c, result.error);
+  });
+
+  app.get('/api/settings/openrouter/credits', async (c) => {
+    const result = await settings.credits();
+    if (!result.ok) return fail(c, result.error);
+    const view: OpenRouterCreditsView = {
+      ...result.value,
+      defaultModel: options.defaultModel ?? '',
+      reservationUsd: await defaultReservationUsd(options.catalogue, options.defaultModel),
+    };
+    return c.json(view);
   });
 
   app.post('/api/settings/openrouter/verify', async (c) => {

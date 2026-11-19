@@ -1,7 +1,9 @@
+import type { OpenRouterCredits } from '@yaaabk/cost-control';
 import type {
   GitHubAccount,
   GitHubVerifier,
   OpenRouterAccount,
+  OpenRouterCreditsReader,
   OpenRouterVerifier,
   VerifyOutcome,
 } from './settings';
@@ -19,6 +21,37 @@ export function createFakeOpenRouterVerifier(
     async verify(managementKey) {
       verified.push(managementKey);
       return result;
+    },
+  };
+}
+
+/**
+ * An {@link OpenRouterCreditsReader} fake for tests. Starts with a healthy
+ * balance and records each management key it was asked to read with.
+ */
+export function createFakeOpenRouterCreditsReader(
+  result: VerifyOutcome<OpenRouterCredits> = {
+    ok: true,
+    value: { totalCreditsUsd: 10, totalUsageUsd: 1, remainingUsd: 9 },
+  },
+): OpenRouterCreditsReader & {
+  readKeys: string[];
+  setCredits(credits: OpenRouterCredits): void;
+  fail(outcome: Extract<VerifyOutcome<OpenRouterCredits>, { ok: false }>): void;
+} {
+  const readKeys: string[] = [];
+  let outcome = result;
+  return {
+    readKeys,
+    setCredits(credits) {
+      outcome = { ok: true, value: credits };
+    },
+    fail(failure) {
+      outcome = failure;
+    },
+    async read(managementKey) {
+      readKeys.push(managementKey);
+      return outcome;
     },
   };
 }

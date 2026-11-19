@@ -2,13 +2,16 @@
   import { resolve } from '$app/paths';
   import {
     ApiError,
+    getOpenRouterCredits,
     getSettings,
     updateSettings,
     verifyGithubSettings,
     verifyOpenrouterSettings,
     type GitHubVerifyOk,
+    type OpenRouterCreditsView,
     type OpenRouterVerifyOk,
   } from '#lib/api.js';
+  import { affordabilityWarning, formatUsd } from '#lib/openrouter-balance.js';
   import {
     toSettingsUpdate,
     validateBudgetDollars,
@@ -34,6 +37,10 @@
   let githubVerifyError = $state<string | null>(null);
   let openrouterVerification = $state<OpenRouterVerifyOk | null>(null);
   let openrouterVerifyError = $state<string | null>(null);
+  let credits = $state<OpenRouterCreditsView | null>(null);
+  let creditsLoading = $state(false);
+  let creditsFailure = $state<string | null>(null);
+  let creditsWarning = $derived(credits === null ? null : affordabilityWarning(credits));
 
   $effect(() => {
     getSettings()
@@ -45,6 +52,7 @@
         if (view.githubPat !== undefined && view.githubAppId === undefined) {
           githubMode = 'pat';
         }
+        void loadCredits();
       })
       .catch(() => {
         loadFailure = 'Could not load settings. Please try again.';
@@ -53,6 +61,25 @@
 
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
+  }
+
+  async function loadCredits(): Promise<void> {
+    credits = null;
+    creditsFailure = null;
+    // A missing credential is an expected setup step, not a failed lookup: say
+    // what to do instead of asking OpenRouter and showing a transport error.
+    if (settings?.openrouterManagementKey === undefined) {
+      creditsFailure = 'Add an OpenRouter management key to see the account balance.';
+      return;
+    }
+    creditsLoading = true;
+    try {
+      credits = await getOpenRouterCredits();
+    } catch (cause) {
+      creditsFailure = `Could not read the OpenRouter balance: ${describe(cause)}`;
+    } finally {
+      creditsLoading = false;
+    }
   }
 
   async function save(): Promise<void> {
@@ -86,6 +113,7 @@
       githubPat = '';
       openrouterManagementKey = '';
       saveState = 'saved';
+      void loadCredits();
     } catch (cause) {
       saveError = describe(cause);
       saveState = 'idle';
@@ -276,6 +304,25 @@
         />
         {#if budgetError !== null}
           <p id="budget-error" class="text-sm text-red-600">{budgetError}</p>
+        {/if}
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-medium">Account balance</h3>
+        {#if creditsLoading}
+          <p class="text-sm text-neutral-500">Loading balance…</p>
+        {:else if creditsFailure !== null}
+          <p class="text-sm text-neutral-500">{creditsFailure}</p>
+        {:else if credits !== null}
+          <p class="text-sm">
+            Remaining <strong>{formatUsd(credits.remainingUsd)}</strong> of
+            {formatUsd(credits.totalCreditsUsd)} ({formatUsd(credits.totalUsageUsd)} used)
+          </p>
+          {#if creditsWarning !== null}
+            <p class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              {creditsWarning}
+            </p>
+          {/if}
         {/if}
       </div>
 
