@@ -56,6 +56,14 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
   };
 }
 
+/** Token usage with every component distinct, totalling 435. */
+const USAGE = {
+  input: 100,
+  output: 20,
+  reasoning: 5,
+  cache: { read: 300, write: 10 },
+};
+
 const NOW = new Date('2026-02-01T12:00:00.000Z');
 
 describe('computeProjectStats', () => {
@@ -143,9 +151,66 @@ describe('computeProjectStats', () => {
     );
 
     expect(stats.agents.totalCostCents).toBe(35);
-    expect(stats.costByIssue).toEqual([
-      { issueId: 'api', title: 'Api', costCents: 20 },
-      { issueId: 'schema', title: 'Schema', costCents: 15 },
+    expect(stats.usageByIssue).toEqual([
+      {
+        issueId: 'api',
+        title: 'Api',
+        costCents: 20,
+        tokens: null,
+        measuredRuns: 0,
+        modelRuns: 1,
+      },
+      {
+        issueId: 'schema',
+        title: 'Schema',
+        costCents: 15,
+        tokens: null,
+        measuredRuns: 0,
+        modelRuns: 2,
+      },
+    ]);
+  });
+
+  it('breaks usage down by Issue with cost, tokens and coverage', () => {
+    const stats = computeProjectStats(
+      [issue({ title: 'Schema' }), issue({ title: 'Api' }), issue({ title: 'Docs' })],
+      [
+        run({ id: 'schema-impl', issueId: 'schema', costCents: 10, tokens: USAGE }),
+        run({ id: 'schema-review', issueId: 'schema', kind: 'review', costCents: 5, tokens: null }),
+        run({ id: 'api-impl', issueId: 'api', costCents: 20, tokens: null }),
+        // A deploy neither costs nor invokes a model, so it adds no usage row.
+        run({ id: 'docs-deploy', issueId: 'docs', kind: 'deploy', costCents: 0, tokens: null }),
+        // Zero-cost but measured tokens still belong in the breakdown.
+        run({ id: 'docs-impl', issueId: 'docs', costCents: 0, tokens: USAGE }),
+      ],
+      { now: NOW },
+    );
+
+    expect(stats.usageByIssue).toEqual([
+      {
+        issueId: 'api',
+        title: 'Api',
+        costCents: 20,
+        tokens: null,
+        measuredRuns: 0,
+        modelRuns: 1,
+      },
+      {
+        issueId: 'schema',
+        title: 'Schema',
+        costCents: 15,
+        tokens: 435,
+        measuredRuns: 1,
+        modelRuns: 2,
+      },
+      {
+        issueId: 'docs',
+        title: 'Docs',
+        costCents: 0,
+        tokens: 435,
+        measuredRuns: 1,
+        modelRuns: 1,
+      },
     ]);
   });
 
@@ -169,7 +234,51 @@ describe('computeProjectStats', () => {
     );
 
     expect(stats.agents.totalCostCents).toBe(40);
-    expect(stats.costByIssue).toEqual([{ issueId: 'schema', title: 'Schema', costCents: 40 }]);
+    expect(stats.usageByIssue).toEqual([
+      {
+        issueId: 'schema',
+        title: 'Schema',
+        costCents: 40,
+        tokens: null,
+        measuredRuns: 0,
+        modelRuns: 2,
+      },
+    ]);
+  });
+
+  it('totals measured tokens and counts measured and model runs', () => {
+    const stats = computeProjectStats(
+      [issue({ title: 'Schema' })],
+      [
+        run({ id: 'impl', kind: 'implement-issue', tokens: USAGE }),
+        run({ id: 'review', kind: 'review', tokens: USAGE }),
+        run({ id: 'unmeasured', kind: 'resolve-conflicts', tokens: null }),
+        // Deploy runs never invoke a model, so they neither add tokens nor
+        // count towards coverage.
+        run({ id: 'deploy', kind: 'deploy', tokens: null }),
+      ],
+      { now: NOW },
+    );
+
+    expect(stats.agents).toMatchObject({
+      totalTokens: 870,
+      measuredRuns: 2,
+      modelRuns: 3,
+    });
+  });
+
+  it('reports no token total when no model run was measured', () => {
+    const stats = computeProjectStats(
+      [issue({ title: 'Schema' })],
+      [run({ id: 'impl', tokens: null }), run({ id: 'deploy', kind: 'deploy', tokens: null })],
+      { now: NOW },
+    );
+
+    expect(stats.agents).toMatchObject({
+      totalTokens: null,
+      measuredRuns: 0,
+      modelRuns: 1,
+    });
   });
 
   it('summarises the duration of completed runs in seconds', () => {
@@ -298,6 +407,7 @@ describe('computeProjectStats', () => {
         status: 'success',
         durationSeconds: 90,
         costCents: 9,
+        tokens: null,
         prUrl: 'https://github.com/acme/todo-app/pull/7',
         createdAt: '2026-01-02T00:00:00.000Z',
       },
@@ -309,9 +419,33 @@ describe('computeProjectStats', () => {
         status: 'failed',
         durationSeconds: 120,
         costCents: 5,
+        tokens: null,
         prUrl: null,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+    ]);
+  });
+
+  it("reports each run's measured tokens, or null when unmeasured", () => {
+    const stats = computeProjectStats(
+      [issue({ title: 'Schema' })],
+      [
+        run({ id: 'measured', tokens: USAGE, createdAt: '2026-01-03T00:00:00.000Z' }),
+        run({ id: 'unmeasured', tokens: null, createdAt: '2026-01-02T00:00:00.000Z' }),
+        run({
+          id: 'deploy',
+          kind: 'deploy',
+          tokens: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ],
+      { now: NOW },
+    );
+
+    expect(stats.runs.map((entry) => ({ id: entry.id, tokens: entry.tokens }))).toEqual([
+      { id: 'measured', tokens: 435 },
+      { id: 'unmeasured', tokens: null },
+      { id: 'deploy', tokens: null },
     ]);
   });
 
@@ -319,9 +453,9 @@ describe('computeProjectStats', () => {
     const stats = computeProjectStats(
       [issue({ title: 'Schema' })],
       [
-        run({ id: 'before', costCents: 1, createdAt: '2026-01-01T12:00:00.000Z' }),
-        run({ id: 'inside', costCents: 2, createdAt: '2026-01-15T12:00:00.000Z' }),
-        run({ id: 'after', costCents: 4, createdAt: '2026-02-01T12:00:01.000Z' }),
+        run({ id: 'before', costCents: 1, tokens: USAGE, createdAt: '2026-01-01T12:00:00.000Z' }),
+        run({ id: 'inside', costCents: 2, tokens: USAGE, createdAt: '2026-01-15T12:00:00.000Z' }),
+        run({ id: 'after', costCents: 4, tokens: USAGE, createdAt: '2026-02-01T12:00:01.000Z' }),
       ],
       {
         now: NOW,
@@ -330,9 +464,26 @@ describe('computeProjectStats', () => {
       },
     );
 
-    expect(stats.agents).toMatchObject({ total: 1, totalCostCents: 2 });
-    expect(stats.costByIssue).toEqual([{ issueId: 'schema', title: 'Schema', costCents: 2 }]);
-    expect(stats.runs.map((entry) => entry.id)).toEqual(['inside']);
+    expect(stats.agents).toMatchObject({
+      total: 1,
+      totalCostCents: 2,
+      totalTokens: 435,
+      measuredRuns: 1,
+      modelRuns: 1,
+    });
+    expect(stats.usageByIssue).toEqual([
+      {
+        issueId: 'schema',
+        title: 'Schema',
+        costCents: 2,
+        tokens: 435,
+        measuredRuns: 1,
+        modelRuns: 1,
+      },
+    ]);
+    expect(stats.runs.map((entry) => ({ id: entry.id, tokens: entry.tokens }))).toEqual([
+      { id: 'inside', tokens: 435 },
+    ]);
   });
 
   it('rejects a range that ends before it starts', () => {

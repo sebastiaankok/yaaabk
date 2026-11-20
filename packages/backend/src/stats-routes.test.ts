@@ -55,9 +55,12 @@ describe('GET /api/projects/:id/stats', () => {
         total: 0,
         successRate: null,
         totalCostCents: 0,
+        totalTokens: null,
+        measuredRuns: 0,
+        modelRuns: 0,
         duration: { averageSeconds: null, minSeconds: null, maxSeconds: null },
       },
-      costByIssue: [],
+      usageByIssue: [],
       runs: [],
     });
   });
@@ -76,13 +79,13 @@ describe('GET /api/projects/:id/stats', () => {
     expect(res.status).toBe(200);
     const stats = (await res.json()) as {
       issues: { total: number; open: number };
-      agents: { total: number; active: number };
-      runs: Array<{ issueTitle: string; status: string }>;
+      agents: { total: number; active: number; measuredRuns: number; modelRuns: number };
+      runs: Array<{ issueTitle: string; status: string; tokens: number | null }>;
     };
     expect(stats.issues).toMatchObject({ total: 1, open: 0, inProgress: 1 });
-    expect(stats.agents).toMatchObject({ total: 1, active: 1 });
+    expect(stats.agents).toMatchObject({ total: 1, active: 1, measuredRuns: 0, modelRuns: 1 });
     expect(stats.runs).toEqual([
-      expect.objectContaining({ issueTitle: 'Add login', status: 'running' }),
+      expect.objectContaining({ issueTitle: 'Add login', status: 'running', tokens: null }),
     ]);
   });
 

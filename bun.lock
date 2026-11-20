@@ -279,6 +279,7 @@
         "@yaaabk/issues": "workspace:*",
         "@yaaabk/plans": "workspace:*",
         "@yaaabk/projects": "workspace:*",
+        "@yaaabk/shared": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^24.0.0",

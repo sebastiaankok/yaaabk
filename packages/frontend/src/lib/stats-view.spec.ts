@@ -4,6 +4,7 @@ import {
   chartPoints,
   donutGradient,
   durationByAttempt,
+  formatCoveredTokens,
   formatDollars,
   formatDuration,
   formatPercent,
@@ -25,6 +26,20 @@ describe('formatDollars', () => {
   it('renders whole cents as dollars with two decimals', () => {
     expect(formatDollars(5)).toBe('$0.05');
     expect(formatDollars(12345)).toBe('$123.45');
+  });
+});
+
+describe('formatCoveredTokens', () => {
+  it('compacts a fully measured total', () => {
+    expect(formatCoveredTokens(41_700, 4, 4)).toBe('41.7k');
+  });
+
+  it('marks a total that misses an unmeasured model run', () => {
+    expect(formatCoveredTokens(41_700, 3, 4)).toBe('≥ 41.7k');
+  });
+
+  it('renders an unknown total as a dash', () => {
+    expect(formatCoveredTokens(null, 0, 2)).toBe('—');
   });
 });
 
@@ -82,6 +97,7 @@ function historyRun(overrides: Partial<RunHistoryEntry> & { id: string }): RunHi
     status: 'success',
     durationSeconds: null,
     costCents: 0,
+    tokens: null,
     prUrl: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

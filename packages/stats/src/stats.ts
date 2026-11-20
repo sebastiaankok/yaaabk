@@ -1,5 +1,6 @@
 import type { AgentRun } from '@yaaabk/agents';
 import type { Issue } from '@yaaabk/issues';
+import { tokenUsageTotal } from '@yaaabk/shared';
 
 /** How an Issue's statuses are distributed across a Project. */
 export interface IssueStats {
@@ -23,6 +24,15 @@ export interface RunStats {
   successRate: number | null;
   /** Cost of every run, in cents. */
   totalCostCents: number;
+  /**
+   * Tokens measured across the window's model runs, or `null` when none could
+   * be measured. Unmeasured runs contribute nothing rather than zero.
+   */
+  totalTokens: number | null;
+  /** Model runs whose token usage was measured. */
+  measuredRuns: number;
+  /** Runs that invoked a model; deploy runs are excluded. */
+  modelRuns: number;
   /** Duration of completed runs; every field is `null` before one finishes. */
   duration: RunDuration;
 }
@@ -43,15 +53,23 @@ export interface RunHistoryEntry {
   status: AgentRun['status'];
   durationSeconds: number | null;
   costCents: number;
+  /** Tokens measured for this run, or `null` when it was not measured. */
+  tokens: number | null;
   prUrl: string | null;
   createdAt: string;
 }
 
-/** One Issue's share of the Agent spend. */
-export interface IssueCost {
+/** One Issue's share of the Agent spend and token usage. */
+export interface IssueUsage {
   issueId: string;
   title: string;
   costCents: number;
+  /** Measured tokens, or `null` when none of its model runs were measured. */
+  tokens: number | null;
+  /** Model runs whose token usage was measured. */
+  measuredRuns: number;
+  /** Runs that invoked a model; deploy runs are excluded. */
+  modelRuns: number;
 }
 
 /** How many Issues closed in a rolling window. */
@@ -88,8 +106,11 @@ export interface StatsOptions {
 export interface ProjectStats {
   issues: IssueStats;
   agents: RunStats;
-  /** Agent spend per Issue, most expensive first; Issues with no spend are omitted. */
-  costByIssue: IssueCost[];
+  /**
+   * Agent spend and token usage per Issue, most expensive first. Issues with
+   * neither spend nor measured tokens are omitted, as are pure deploy runs.
+   */
+  usageByIssue: IssueUsage[];
   /** Issues closed per day over the last 7, 14 and 30 days. */
   velocity: VelocityStats;
   /** Issues closed per UTC day across the selected window, gaps included. */
@@ -145,6 +166,16 @@ export function computeProjectStats(
   ).length;
   const finished = succeeded + failed;
   const totalCostCents = selectedRuns.reduce((sum, run) => sum + run.costCents, 0);
+  let totalTokens: number | null = null;
+  let measuredRuns = 0;
+  let modelRuns = 0;
+  for (const run of selectedRuns) {
+    if (run.kind === 'deploy') continue;
+    modelRuns += 1;
+    if (run.tokens === null) continue;
+    measuredRuns += 1;
+    totalTokens = (totalTokens ?? 0) + tokenUsageTotal(run.tokens);
+  }
   const durations = selectedRuns
     .map(runDurationSeconds)
     .filter((seconds): seconds is number => seconds !== null);
@@ -158,16 +189,33 @@ export function computeProjectStats(
         };
 
   const issueTitles = new Map(issues.map((issue) => [issue.id, issue.title]));
-  const costPerIssue = new Map<string, number>();
+  const usagePerIssue = new Map<
+    string,
+    { costCents: number; tokens: number | null; measuredRuns: number; modelRuns: number }
+  >();
   for (const run of selectedRuns) {
-    if (run.costCents === 0) continue;
-    costPerIssue.set(run.issueId, (costPerIssue.get(run.issueId) ?? 0) + run.costCents);
+    const usage = usagePerIssue.get(run.issueId) ?? {
+      costCents: 0,
+      tokens: null,
+      measuredRuns: 0,
+      modelRuns: 0,
+    };
+    usage.costCents += run.costCents;
+    if (run.kind !== 'deploy') {
+      usage.modelRuns += 1;
+      if (run.tokens !== null) {
+        usage.measuredRuns += 1;
+        usage.tokens = (usage.tokens ?? 0) + tokenUsageTotal(run.tokens);
+      }
+    }
+    usagePerIssue.set(run.issueId, usage);
   }
-  const costByIssue = [...costPerIssue.entries()]
-    .map(([issueId, costCents]) => ({
+  const usageByIssue = [...usagePerIssue.entries()]
+    .filter(([, usage]) => usage.costCents > 0 || usage.tokens !== null)
+    .map(([issueId, usage]) => ({
       issueId,
       title: issueTitles.get(issueId) ?? issueId,
-      costCents,
+      ...usage,
     }))
     .sort((a, b) => b.costCents - a.costCents || a.title.localeCompare(b.title));
 
@@ -218,6 +266,7 @@ export function computeProjectStats(
       status: run.status,
       durationSeconds: runDurationSeconds(run),
       costCents: run.costCents,
+      tokens: run.tokens === null ? null : tokenUsageTotal(run.tokens),
       prUrl: run.prUrl,
       createdAt: run.createdAt,
     }))
@@ -232,9 +281,12 @@ export function computeProjectStats(
       active,
       successRate: finished === 0 ? null : succeeded / finished,
       totalCostCents,
+      totalTokens,
+      measuredRuns,
+      modelRuns,
       duration,
     },
-    costByIssue,
+    usageByIssue,
     velocity,
     closedPerDay,
     runs: runHistory,
