@@ -52,9 +52,20 @@
   /** A previous Plan is history; only the active version can change. */
   const readOnly = $derived(selectedPlan !== null && !selectedPlan.isActive);
 
-  /** Only the active, not yet accepted Plan can be accepted. */
+  /** An active, unaccepted Plan that has nothing to accept. */
+  const zeroIssuePlan = $derived(
+    selectedPlan !== null &&
+      selectedPlan.isActive &&
+      selectedPlan.acceptedAt === null &&
+      reviewList.length === 0,
+  );
+
+  /** Only the active, not yet accepted Plan with at least one Issue can be accepted. */
   const canAccept = $derived(
-    selectedPlan !== null && selectedPlan.isActive && selectedPlan.acceptedAt === null,
+    selectedPlan !== null &&
+      selectedPlan.isActive &&
+      selectedPlan.acceptedAt === null &&
+      reviewList.length > 0,
   );
 
   const needsSync = $derived(selectedPlan !== null && pendingGithubSync(selectedPlan, issues));
@@ -320,7 +331,18 @@
           <h2 id="issues-heading" class="text-sm font-semibold">Issues ({reviewList.length})</h2>
         </div>
 
-        {#if reviewList.length === 0}
+        {#if zeroIssuePlan}
+          <p class="text-sm text-neutral-500">
+            This Plan was published without Issues, so it cannot be accepted. A new agent session is
+            needed to publish a revised Plan.
+            <a
+              href={resolve('/projects/[id]/plan', { id: project.id })}
+              class="font-medium underline"
+            >
+              Start a new agent session</a
+            >.
+          </p>
+        {:else if reviewList.length === 0}
           <p class="text-sm text-neutral-500">
             No issues yet. Finish an agent session to publish a Plan and its Issues.
             <a
