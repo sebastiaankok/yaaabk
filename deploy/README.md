@@ -62,8 +62,10 @@ scripts/deploy.sh 0.1.43      # bump the patch
 
 `deploy/VERSION` is written by the script after a successful rollout, so it
 names the release that is actually running and never advances on a failed
-deploy. Commit it with the release. Re-applying the same tag is allowed (a
-retry); deploying an older tag warns, since that is usually a rollback.
+deploy. It is local state (git-ignored), so deploying does not dirty the tree;
+a fresh clone has no record until its first deploy. Re-applying the same tag is
+allowed (a retry); deploying an older tag warns, since that is usually a
+rollback.
 
 The tag is required, so a rollout is always deliberate. `SKIP_BUILD=1` re-applies
 the manifests and pins an already-pushed tag; `KUBE_CONTEXT` overrides the

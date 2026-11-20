@@ -14,9 +14,10 @@
 # not the builder's native platform.
 #
 # After a successful rollout the script writes the tag to deploy/VERSION, so
-# that file always names the release that is actually running and the next
-# release is a patch bump on it. Commit the file with the release; a deploy
-# that re-applies an older tag (a rollback) rewrites it to that tag.
+# that file names the release that is actually running and the next release is
+# a patch bump on it. The file is local, untracked state (git-ignored), so
+# deploying never dirties the tree; a fresh clone starts without a record. A
+# deploy that re-applies an older tag (a rollback) rewrites it to that tag.
 #
 # The checked-in manifests pin 0.1.0 as their local baseline; this script
 # injects <tag> at apply time, so re-applying `kubectl apply -k deploy` by hand
@@ -165,5 +166,4 @@ echo "  recorded $TAG in $VERSION_FILE"
 if is_semver "$TAG"; then
   echo "  next release: $(next_version "$TAG")"
 fi
-echo "  commit $VERSION_FILE with the release"
 
