@@ -208,8 +208,23 @@ restarts, and it is required in production.
 ## Projects
 
 The `@yaaabk/projects` package owns Project provisioning: creating a Project
-records it locally and, in one step, brings up everything it needs. The backend
-exposes it over HTTP:
+records it locally and, in one step, brings up everything it needs. Every Project
+also has a **Project mode** that decides how its agent works. The create wizard
+asks "How should the agent work with you?" on a step after the details, with
+**Guided** preselected:
+
+- **Guided** — "The agent interviews you one question at a time, then checks the
+  module sketch and issue breakdown with you."
+- **Autonomous** — "The agent decides everything itself and only shows you the
+  finished Plan and Issues."
+
+The mode is stored on the Project and snapshotted onto each Plan and Grill-Me
+Session. The project list, project header and Plan page show a `Guided` or
+`Autonomous` badge, and `PATCH /api/projects/:id` changes the mode for future
+sessions. Publishing is the same in both modes: reports stay drafts until the
+Developer clicks **Finish**.
+
+The backend exposes it over HTTP:
 
 | Route | Purpose |
 | --- | --- |
@@ -314,14 +329,16 @@ directly. `YAAABK_SESSION_OPENCODE_CONFIG` scopes the config to sessions, so
 Agent Jobs never register a server they have no token for.
 
 The opening prompt tells the agent to load the image-baked `grill-me` skill
-before anything else. In guided mode the interview hands off automatically:
-`grill-me` confirms the settled plan, `to-prd` synthesises the PRD and checks
-its module sketch with the Developer, and `to-issues` cuts the PRD into vertical
-slices and quizzes the Developer on granularity and dependencies. In autonomous
-mode those three checkpoints are decided by the agent without a question. Both
-modes label AFK slices `ready` and HITL slices `needs-human`, and order them
-with `depends_on`. The Developer can say "write the PRD now" to skip the rest of
-the interview. The skills live in
+before anything else. The prompt prints `Mode: <mode>` and the skill decides how
+many checkpoints the agent asks about. In guided mode the interview hands off
+automatically: `grill-me` confirms the settled plan, `to-prd` synthesises the PRD
+and checks its module sketch with the Developer, and `to-issues` cuts the PRD
+into vertical slices and quizzes the Developer on granularity and dependencies.
+In autonomous mode those three checkpoints are decided by the agent without a
+question. Both modes label AFK slices `ready` and HITL slices `needs-human`, and
+order them with `depends_on`. The Developer can say "write the PRD now" to skip
+the rest of the interview. Finish stays manual in both modes: reports remain
+drafts until the Developer publishes them. The skills live in
 [`packages/grill-me/skills`](./packages/grill-me/skills) and are listed by the
 session OpenCode config's `skills` entry.
 

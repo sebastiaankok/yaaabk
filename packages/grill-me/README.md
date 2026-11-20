@@ -29,6 +29,21 @@ interview.
 There is no marker protocol or stdout parsing: the agent reports through the
 typed MCP tools in `@yaaabk/grill-mcp`, and Finish is the only publish point.
 
+## Project modes
+
+A session starts with the Project's `mode` and persists it on the session. The
+opening prompt prints `Mode: <mode>`, and the skills branch on it:
+
+- `guided` asks one deep question per turn and confirms the settled plan, the
+  module sketch and the Issue breakdown with the Developer.
+- `autonomous` never asks a question: it picks the recommended option at every
+  branch, records the module sketch and reports both drafts without a
+  confirmation gate.
+
+Both modes hand off through `to-prd` and then `to-issues`, and both keep
+**Finish** manual: `report_prd` and `report_issues` write drafts, and only
+`finish` publishes them.
+
 ## Interactive sessions
 
 ```ts

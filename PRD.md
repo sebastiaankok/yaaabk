@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Building and deploying applications on Kubernetes requires navigating a fragmented toolchain: GitHub for code, a CI system for testing, a deploy path, and an LLM provider for AI assistance. Developers spend more time stitching these together than building their actual product. Beginners find the learning curve insurmountable; experts waste time on repetitive boilerplate.
+Building and deploying applications on Kubernetes requires navigating a fragmented toolchain: GitHub for code, a CI system for testing, a deploy path, and an LLM provider for AI assistance. Developers spend more time stitching these together than building their actual product. Teams new to the ecosystem find the learning curve insurmountable; experienced teams waste time on repetitive boilerplate.
 
 An earlier Grill-Me Session spawned an `opencode` child process in the backend and streamed a bespoke chat UI through Server-Sent Events and a hand-rolled marker protocol (`<QUESTION>`, `<PLAN>`, `<ISSUES>`). That could not run the real OpenCode experience, had no repository or cluster context, put an LLM with shell and file tools next to the backend's credentials, produced a thin Plan and a flat issue list, and lost the work when the session ended.
 
@@ -13,8 +13,8 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 - **The browser gets a terminal, not a chat.** The Plan page hosts an xterm.js terminal connected to ttyd running `opencode mini` inside the session Pod. The Developer types, scrolls, resizes and sees tool output exactly as they would locally.
 - **Each session is its own Pod** in the Project's Namespace under the `yaaabk-agent` identity: read-only pods, logs, deployments, configmaps, events and httproutes, plus `pods/exec`, and no Secret reads. The backend never runs OpenCode for a session and never shares its own credentials with one.
 - **The Pod starts with context.** An init container clones the Project repository with a short-lived `contents:read` GitHub App token and removes the credential from the remote. The opening prompt carries the Developer's idea, Project mode, Project identity and active Plan, and tells the agent to load the `grill-me` skill.
-- **Three explicit skills.** `grill-me` interviews one question at a time and stops when the plan is settled; `to-prd` synthesises a PRD; `to-issues` breaks the PRD into vertical slices. The handoff is automatic once the Developer confirms the plan is settled.
-- **Reporting is a typed tool call, not stdout parsing.** A local stdio MCP server exposes `report_prd`, `report_issues` and `session_status`. Reports are stored as drafts on the session and are only published when the Developer clicks **Finish**.
+- **Three explicit skills.** `grill-me` interviews one question at a time in guided mode and decides every checkpoint itself in autonomous mode; `to-prd` synthesises a PRD; `to-issues` breaks the PRD into vertical slices. The handoff is automatic after the guided confirmations, and unconditional in autonomous mode.
+- **Reporting is a typed tool call, not stdout parsing.** A local stdio MCP server exposes `report_prd`, `report_issues` and `session_status`. Reports are stored as drafts on the session and are only published when the Developer clicks **Finish**, in both modes.
 - **The model is a per-session choice** from a live, tool-capable OpenRouter catalogue, with the Project remembering the last-used model. Each session gets its own budget-limited OpenRouter key that is revoked when the session ends.
 - **Failures are explained.** Starting a session waits for the Pod and terminal to become ready; on failure the API returns the Pod's real reason instead of a generic message.
 - **The old paths are gone.** The SSE chat, answer/refine endpoints, marker parser, backend OpenCode spawner, one-shot issue generation and issue refinement are removed. Finish is the only publish point; Cancel discards drafts.
@@ -41,17 +41,17 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 18. As a **Developer**, I want a clear error when the platform has no OpenRouter management credential, so that I know what to fix in Settings.
 19. As a **Developer**, I want the session to load the YAAABK grill-me skill automatically, so that I do not have to paste instructions.
 20. As a **Developer**, I want the session to ask one question at a time, so that the conversation stays focused and each answer resolves one branch.
-21. As a **Developer**, I want choose a guided or autonomous Project mode, so that the agent either interviews me or decides everything itself and only shows me the finished Plan and Issues.
+21. As a **Developer**, I want to choose a guided or autonomous Project mode, so that the agent either interviews me at each checkpoint or decides everything itself and only shows me the finished Plan and Issues.
 22. As a **Developer**, I want the agent to explore the repository or cluster instead of asking questions it can answer, so that I spend my time on real decisions.
-23. As a **Developer**, I want the agent to stop grilling and confirm that the plan is settled, so that the session does not run indefinitely.
+23. As a **Developer**, I want the agent to stop grilling and, in guided mode, confirm that the plan is settled, so that the session does not run indefinitely.
 24. As a **Developer**, I want the agent to synthesise a PRD from the conversation, so that the outcome is a durable document rather than chat history.
 25. As a **Developer**, I want the PRD to follow a consistent template with problem, solution, user stories, implementation decisions, testing decisions, out of scope and notes, so that Plans are comparable across Projects.
-26. As a **Developer**, I want the agent to show me the proposed modules in the PRD and let me correct them, so that the technical shape is reviewed before Issues are written.
+26. As a **Developer**, I want guided sessions to show me the proposed modules in the PRD and let me correct them, so that the technical shape is reviewed before Issues are written.
 27. As a **Developer**, I want the agent to turn the PRD into vertical-slice Issues, so that each Issue cuts end to end through schema, API, UI and tests.
 28. As a **Developer**, I want each Issue to be independently grabbable by an Agent, so that concurrency and ordering are explicit.
 29. As a **Developer**, I want Issues to declare what blocks them, so that Agents do not start work whose dependencies are incomplete.
 30. As a **Developer**, I want HITL slices labelled `needs-human` and AFK slices labelled `ready`, so that the Issue board reflects which work needs me.
-31. As a **Developer**, I want the agent to quiz me on the proposed Issue breakdown and iterate before reporting it, so that granularity and dependencies are right.
+31. As a **Developer**, I want guided sessions to quiz me on the proposed Issue breakdown and iterate before reporting it, so that granularity and dependencies are right.
 32. As a **Developer**, I want to say "write the PRD now" at any point, so that I can skip remaining grilling when I already know what I want.
 33. As a **Developer**, I want the PRD and Issues reported through a typed tool, so that malformed output is rejected with a correction the agent can act on.
 34. As a **Developer**, I want reports stored as drafts until I finish, so that an abandoned session never pollutes my Plan history.
@@ -147,7 +147,7 @@ On reconnect the frontend sends a resize. `opencode mini` runs with replay enabl
 
 ### Skills
 
-- **`grill-me`.** Loads first. Interviews one question at a time in guided mode, decides every checkpoint itself in autonomous mode, adapts to the Project mode, inspects the repository and cluster when useful, confirms when the plan is settled in guided mode, and hands off.
+- **`grill-me`.** Loads first. Interviews one question at a time in guided mode, decides every checkpoint itself in autonomous mode, inspects the repository and cluster when useful, confirms when the plan is settled in guided mode, and hands off.
 - **`to-prd`.** Explores, sketches modules, checks them with the Developer only in guided mode, writes the PRD from the template, and calls `report_prd`.
 - **`to-issues`.** Drafts vertical slices, quizzes the Developer on granularity and dependencies in guided mode and validates them itself in autonomous mode, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`.
 - The handoff is automatic after the guided confirmation gate; autonomous mode has no gate. Finish stays manual in both modes.
