@@ -17,7 +17,7 @@ from idea to report:
 | --- | --- |
 | `grill-me` | Interviews one question at a time in guided mode, decides every checkpoint itself in autonomous mode, follows the Project mode, explores the repository and cluster instead of asking answerable questions, and hands off. |
 | `to-prd` | Synthesises the PRD from the conversation, records the module sketch (checking it with the Developer only in guided mode), writes the PRD template and calls `report_prd`. |
-| `to-issues` | Cuts the PRD into vertical slices, quizzes the Developer on granularity and dependencies in guided mode and validates them itself in autonomous mode, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`. |
+| `to-issues` | Cuts the PRD into vertical slices, quizzes the Developer on granularity and dependencies in guided mode and validates them itself in autonomous mode, labels every slice `ready`, and calls `report_issues`. |
 | `simple-english` | Sets the prose rules the reporting skills load before they write a Plan, an Issue title, a summary, or a body: short sentences, active voice, simple tenses, one word for one meaning, condition before command, defined technical terms, and no AI slop. |
 
 The skills live under [`skills/`](./skills) and are baked into the shared agent

@@ -29,7 +29,7 @@
 | 1. Create Project | User provides a name, description and Project mode (Guided preselected). YAAABK creates a GitHub repo, bootstraps it from a Svelte+Bun template, and provisions a Namespace, RBAC and deploy pipeline. |
 | 2. Grill and Plan | User enters a Grill-Me Session: a real terminal running `opencode mini` behind ttyd, either locally or in a hardened per-session Pod. Project mode decides how the agent works: `guided` interviews the Developer one question at a time and checks the module sketch and issue breakdown with them; `autonomous` decides every checkpoint itself and only shows the finished Plan and Issues. |
 | 3. Publish Plan and Issues | The agent interviews in guided mode or decides itself in autonomous mode, synthesises a PRD, and cuts it into vertical-slice Issues. **Finish**, which stays manual in both modes, publishes them together as one Plan version labelled “Plan (PRD)” and replaces that Plan’s Issues. |
-| 4. Triage Issues | Issues are labeled `ready`, `refinement-needed`, `blocked` or `needs-human`. |
+| 4. Triage Issues | Generated Issues are labeled `ready`; YAAABK moves one to `needs-human` when an Agent or CI run escalates it. |
 | 5. Spawn Agents | `ready` issues get an autonomous K8s Job that implements the feature, creates a PR, and auto-merges after CI passes. |
 | 6. Auto-Fix | If CI fails, a new agent is spawned to fix the issue (max 3 attempts per issue). |
 | 7. Deploy | A merged change triggers the agent-driven Deploy Job. |

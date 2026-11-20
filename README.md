@@ -335,8 +335,8 @@ automatically: `grill-me` confirms the settled plan, `to-prd` synthesises the PR
 and checks its module sketch with the Developer, and `to-issues` cuts the PRD
 into vertical slices and quizzes the Developer on granularity and dependencies.
 In autonomous mode those three checkpoints are decided by the agent without a
-question. Both modes label AFK slices `ready` and HITL slices `needs-human`, and
-order them with `depends_on`. The Developer can say "write the PRD now" to skip
+question. Both modes label every generated slice `ready` and order them with
+`depends_on`; `needs-human` is reserved for an Agent or CI run that gets stuck. The Developer can say "write the PRD now" to skip
 the rest of the interview. Finish stays manual in both modes: reports remain
 drafts until the Developer publishes them. The skills live in
 [`packages/grill-me/skills`](./packages/grill-me/skills) and are listed by the
@@ -378,7 +378,7 @@ explains that accepting records the Plan, creates or updates its Issues on
 GitHub and lets agents start on `ready` Issues while `needs-human` Issues wait
 for the Developer. Acceptance rejects a Plan with no Issues, a dependency cycle
 or an unresolved dependency, and it never relabels anything: the generated
-`ready`, `needs-human` and `blocked` labels stay as they are. It pushes only the
+labels stay as they are. It pushes only the
 selected Plan's Issues and records `acceptedAt` only after that push succeeds; a
 failed push leaves the Plan unaccepted and the page offers **Retry accept**. An
 accepted Plan with Issues that never reached GitHub gets a small **Retry GitHub

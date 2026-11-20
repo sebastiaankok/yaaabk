@@ -181,16 +181,12 @@ export function createReportingServer(options: ReportingServerOptions): Reportin
       if (normalised.value.length === 0) {
         return respond(null, textResult('report_issues needs at least one issue.', true));
       }
-      const relabelled =
-        normalised.relabelled.length === 0
-          ? ''
-          : ` Relabelled as needs-human, because the acceptance check is not executable: ${normalised.relabelled.map((title) => `"${title}"`).join(', ')}. Add a runnable command and its expected result to keep an Issue ready.`;
       try {
         const status = await client.report({ issues: normalised.value });
         return respond(
           null,
           textResult(
-            `${normalised.value.length} issue ${normalised.value.length === 1 ? 'draft' : 'drafts'} stored for session ${status.id}; ${describeDraft(status)}.${relabelled}`,
+            `${normalised.value.length} issue ${normalised.value.length === 1 ? 'draft' : 'drafts'} stored for session ${status.id}; ${describeDraft(status)}.`,
           ),
         );
       } catch (error) {
