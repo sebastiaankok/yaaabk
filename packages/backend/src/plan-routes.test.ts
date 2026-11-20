@@ -317,6 +317,65 @@ describe('POST /api/projects/:id/plans/:planId/accept', () => {
     expect(newIssue?.label).toBe('refinement-needed');
   });
 
+  it('records the accepted Plan before publishing its Issues', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const plan = await newPlan(context, projectId, '# Overview\n\nKeep this verbatim.');
+    await addPlanIssue(context, projectId, plan, { title: 'Schema' });
+    await addPlanIssue(context, projectId, plan, {
+      title: 'API',
+      label: 'refinement-needed',
+      dependsOn: ['Schema'],
+    });
+    let issuesAtWrite = -1;
+    const write = context.contents.writeFile.bind(context.contents);
+    context.contents.writeFile = async (...args) => {
+      issuesAtWrite = context.github.issues('acme/todo-app').length;
+      return write(...args);
+    };
+
+    const res = await request(context, session, `/api/projects/${projectId}/plans/${plan}/accept`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(issuesAtWrite).toBe(0);
+    const files = context.contents.files('acme/todo-app');
+    expect(files.map((file) => file.path)).toEqual(['docs/plans/v1.md']);
+    const document = files[0]?.content ?? '';
+    expect(document).toContain('# Plan v1 — todo-app');
+    expect(document).toContain('# Overview\n\nKeep this verbatim.');
+    expect(document).toContain('- **Schema** (`ready`)');
+    expect(document).toContain('- **API** (`refinement-needed`) — depends on: Schema');
+    expect(document).not.toContain(projectId);
+    expect(document).not.toContain(plan);
+  });
+
+  it('reports a Plan commit failure as sync-failed and leaves the plan unaccepted', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    const plan = await newPlan(context, projectId);
+    await addPlanIssue(context, projectId, plan, { title: 'Schema' });
+    context.contents.failNext('write-file', {
+      kind: 'unauthorized',
+      operation: 'write-file',
+      message: 'Bad credentials',
+    });
+
+    const res = await request(context, session, `/api/projects/${projectId}/plans/${plan}/accept`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'sync-failed',
+      message: 'Bad credentials',
+    });
+    const listed = await context.plans.list(projectId);
+    expect(listed.ok && listed.value[0]?.acceptedAt).toBeNull();
+    expect(context.github.issues('acme/todo-app')).toHaveLength(0);
+  });
+
   it('rejects accepting a plan that is not active', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);

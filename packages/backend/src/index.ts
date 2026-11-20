@@ -31,11 +31,13 @@ import {
 } from '@yaaabk/grill-me';
 import {
   createGitHubCredentialVerifier,
+  createGitHubContentsClient,
   createGitHubIssuesClient,
   createGitHubPullsClient,
   createInstallationTokenProvider,
   type InstallationTokenProviderOptions,
   createIssueSyncModule,
+  type GitHubContents,
   type GitHubIssues,
   type GitHubPulls,
   type InstallationTokenPermissions,
@@ -319,6 +321,34 @@ function resolveGitHubPulls(settingsModule: SettingsModule): GitHubPulls {
     listReviews: async (...args) => {
       const built = await build();
       return built.ok ? built.client.listReviews(...args) : fail('listReviews', built);
+    },
+  };
+}
+
+/**
+ * Resolves the GitHub Contents port the accepted-Plan recorder writes through.
+ * Like the other GitHub ports it reads Settings per call, so a credential
+ * entered there takes effect without a restart.
+ */
+function resolveGitHubContents(settingsModule: SettingsModule): GitHubContents {
+  const build = async () => {
+    const resolved = await resolveGithubToken(settingsModule, {
+      permissions: { contents: 'write' },
+    });
+    return resolved.ok
+      ? { ok: true as const, client: createGitHubContentsClient({ token: resolved.token }) }
+      : resolved;
+  };
+  const fail = (operation: string, resolved: Extract<ResolvedGitHubToken, { ok: false }>) =>
+    Promise.resolve(unconfigured(operation, resolved.message));
+  return {
+    readFile: async (...args) => {
+      const built = await build();
+      return built.ok ? built.client.readFile(...args) : fail('readFile', built);
+    },
+    writeFile: async (...args) => {
+      const built = await build();
+      return built.ok ? built.client.writeFile(...args) : fail('writeFile', built);
     },
   };
 }
@@ -618,6 +648,7 @@ const app = createApp({
   plans,
   issues,
   issueSync,
+  contents: resolveGitHubContents(settings),
   grillSessions,
   upgradeWebSocket,
   agents,
