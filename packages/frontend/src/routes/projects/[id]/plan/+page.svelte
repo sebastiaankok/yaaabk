@@ -20,6 +20,7 @@
     type ModelCatalogueView,
   } from '#lib/api.js';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
+  import { planFilePath, planFileUrl } from '#lib/plan-file.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
   import { projectModeLabel } from '#lib/project-mode.js';
   import Terminal from '#lib/terminal.svelte';
@@ -451,6 +452,21 @@
                     · {progress.failed} failed
                   {/if}
                 </p>
+                {#if version.acceptedAt !== null}
+                  <p class="text-xs text-neutral-500">
+                    Record:
+                    <!-- eslint-disable svelte/no-navigation-without-resolve -->
+                    <a
+                      href={planFileUrl(project.repoFullName, version.version)}
+                      target="_blank"
+                      rel="noreferrer"
+                      class="hover:underline"
+                    >
+                      {planFilePath(version.version)}
+                    </a>
+                    <!-- eslint-enable svelte/no-navigation-without-resolve -->
+                  </p>
+                {/if}
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <!-- eslint-disable svelte/no-navigation-without-resolve -->
