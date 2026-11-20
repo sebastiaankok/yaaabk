@@ -195,14 +195,14 @@ spec:
 2. Clones the repo
 3. Analyzes the codebase and issue description
 4. Proposes changes (with LLM guidance via OpenRouter)
-5. Runs pre-commit hooks (lint, type-check, test)
+5. Runs the project's checks (lint, type-check, test, build)
 6. Creates a branch + PR with `automerge` label
 7. Reports status back to YAAABK API
 8. If CI fails → exits non-zero → YAAABK spawns a new attempt (max 3)
 
 **Agent Image** (`yaaabk/agent`):
 - Based on `oven/bun` (small, fast)
-- Contains: `git`, GitHub CLI, pre-commit hooks config
+- Contains: `git`, GitHub CLI, Bun toolchain
 - Runs a TypeScript script that uses Octokit + OpenRouter SDK
 
 ### 3.5 Template System
@@ -358,7 +358,7 @@ User / Auth (future: multi-tenant)
    │                       │                        │◄── repo ───────────│                   │
    │                       │                        │                    │                   │
    │                       │                        │── Analyze + code ──│                   │
-   │                       │                        │── Run pre-commit ◄─│ (lint + test)     │
+   │                       │                        │── Run checks ◄────│ (lint+test+build) │
    │                       │                        │                    │                   │
    │                       │                        │── Create PR ──────►│                   │
    │                       │                        │── Label automerge ►│                   │

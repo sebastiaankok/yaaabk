@@ -37,7 +37,7 @@ A unit of work derived from a **Plan**. Maps 1:1 to a GitHub Issue on the **Proj
 _Avoid_: Task, ticket, story
 
 **Agent**:
-An autonomous K8s Job that implements a single **Issue**. Runs OpenCode with a YAAABK-specific `implement-issue` skill that explores the codebase, proposes changes, writes code, runs pre-commit hooks, commits, pushes, and opens a PR with an automerge label. Each Agent is scoped to one Issue and has a maximum of 3 attempts before escalation.
+An autonomous K8s Job that implements a single **Issue**. Runs OpenCode with a YAAABK-specific `implement-issue` skill that explores the codebase, proposes changes, writes code, runs the project's checks, commits, pushes, and opens a PR with an automerge label. Each Agent is scoped to one Issue and has a maximum of 3 attempts before escalation.
 _Avoid_: Bot, worker, runner
 
 ## Technology
