@@ -265,6 +265,22 @@ describe('spawn', () => {
     expect(sharedPvc.ok).toBe(false);
   });
 
+  it('gives Agent Jobs a git identity so they can commit without configuring one', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    await manager.spawn('project-1', issue.id);
+
+    const { container } = await readJobContainer(k8s, NS, 'agent-issue-1-attempt-1');
+    expect(container.env).toContainEqual({ name: 'GIT_AUTHOR_NAME', value: 'yaaabk' });
+    expect(container.env).toContainEqual({ name: 'GIT_AUTHOR_EMAIL', value: 'agent@yaaabk.io' });
+    expect(container.env).toContainEqual({ name: 'GIT_COMMITTER_NAME', value: 'yaaabk' });
+    expect(container.env).toContainEqual({
+      name: 'GIT_COMMITTER_EMAIL',
+      value: 'agent@yaaabk.io',
+    });
+  });
+
   it('requests the configured StorageClass for the working PVC', async () => {
     const { manager, issues, k8s } = await harness({ storageClassName: 'local-path' });
     const issue = await readyIssue(issues);

@@ -476,6 +476,13 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         MAX_ATTEMPTS: String(issue.maxAttempts),
         AGENT_RUN_ID: run.id,
         AGENT_RUN_TOKEN: token,
+        // The image has no global git identity, so an Agent that commits its
+        // work would otherwise fail with "Author identity unknown" and have to
+        // configure one itself.
+        GIT_AUTHOR_NAME: 'yaaabk',
+        GIT_AUTHOR_EMAIL: 'agent@yaaabk.io',
+        GIT_COMMITTER_NAME: 'yaaabk',
+        GIT_COMMITTER_EMAIL: 'agent@yaaabk.io',
         ...(isDeploy
           ? {}
           : {

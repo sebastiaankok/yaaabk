@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentConfig } from './config';
 import type { AgentIssue } from './ports';
-import { buildImplementPrompt, buildResolveConflictsPrompt } from './prompt';
+import {
+  buildImplementPrompt,
+  buildResolveConflictsPrompt,
+  buildReviewPrompt,
+  REVIEW_VERDICT_PATH,
+} from './prompt';
 
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
 
@@ -57,6 +62,13 @@ describe('buildImplementPrompt', () => {
     expect(prompt).toContain('kubectl');
     expect(prompt).toContain('yaaabk-agent');
   });
+
+  it('names the checkout and says the harness is not the repository', () => {
+    const prompt = buildImplementPrompt(ISSUE, CONFIG);
+
+    expect(prompt).toContain('/work/repo');
+    expect(prompt).toContain('/app is the harness');
+  });
 });
 
 describe('buildResolveConflictsPrompt', () => {
@@ -86,5 +98,33 @@ describe('buildResolveConflictsPrompt', () => {
 
     expect(prompt).toContain('Do not reimplement the Issue');
     expect(prompt).toContain('Do not push');
+  });
+
+  it('names the checkout and says the harness is not the repository', () => {
+    const prompt = buildResolveConflictsPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      paths: [],
+      mergeOutput: '',
+    });
+
+    expect(prompt).toContain('/work/repo');
+    expect(prompt).toContain('/app is the harness');
+  });
+});
+
+describe('buildReviewPrompt', () => {
+  it('names the checkout, the verdict path and says the harness is not the repository', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain('Review GitHub pull request #7');
+    expect(prompt).toContain('/work/repo');
+    expect(prompt).toContain('/app is the harness');
+    expect(prompt).toContain(REVIEW_VERDICT_PATH);
+    expect(REVIEW_VERDICT_PATH).toBe('/work/repo/.yaaabk/review.json');
   });
 });

@@ -8,9 +8,10 @@ import {
   buildReviewPrompt,
   pullRequestBody,
   pullRequestTitle,
+  REPOSITORY_DIRECTORY,
 } from './prompt';
 
-const DEFAULT_DIRECTORY = '/work/repo';
+const DEFAULT_DIRECTORY = REPOSITORY_DIRECTORY;
 const DEPLOYED_SHA_LABEL = 'yaaabk.io/deployed-sha';
 
 /** Container name the template's Deployment declares. */
