@@ -86,6 +86,8 @@ interface HarnessOptions {
 
 interface Harness {
   tracker: CiTracker;
+  /** A tracker over the same stores and ports, as after a backend restart. */
+  restart: () => CiTracker;
   issues: IssuesModule;
   agents: AgentManager;
   pulls: FakeGitHubPulls;
@@ -161,6 +163,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
 
   return {
     tracker,
+    restart: () => createCiTracker(trackerOptions),
     issues,
     agents,
     pulls,
@@ -318,6 +321,59 @@ describe('poll', () => {
     });
     const issue = await h.issues.get(h.projectId, h.issueId);
     expect(issue.ok && issue.value.status).not.toBe('closed');
+  });
+
+  it('does not spawn a review while one is already in flight', async () => {
+    const h = await harness();
+    watch(h);
+    const spawned = await h.agents.spawn(h.projectId, h.issueId, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: h.branch,
+    });
+    expect(spawned.ok).toBe(true);
+
+    const result = await h.tracker.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { reviewSpawned: 0 } });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value.filter((run) => run.kind === 'review')).toHaveLength(1);
+  });
+
+  it('does not spawn a second review after a restart while the first is still running', async () => {
+    const h = await harness();
+    watch(h);
+    await h.tracker.poll();
+
+    // The backend restarts and loses its in-memory watches.
+    const restarted = h.restart();
+    const result = await restarted.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { reviewSpawned: 0 } });
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value.filter((run) => run.kind === 'review')).toHaveLength(1);
+  });
+
+  it('lets the in-flight review decide the merge after a restart', async () => {
+    const h = await harness();
+    watch(h);
+    await h.tracker.poll();
+
+    const restarted = h.restart();
+    await restarted.poll();
+
+    // The original review finishes and rejects the head commit.
+    await review(h, 'request-changes', 'The helper needs a test.');
+    const result = await restarted.poll();
+
+    expect(result).toMatchObject({ ok: true, value: { merged: 0, fixSpawned: 1 } });
+    expect(h.pulls.merged(REPO, 7)).toBe(false);
+    const runs = await h.agents.runs(h.projectId, h.issueId);
+    expect(runs.ok && runs.value.filter((run) => run.kind === 'review')).toHaveLength(1);
+    expect(runs.ok && runs.value.find((run) => run.kind === 'implement-issue')).toMatchObject({
+      branch: h.branch,
+      reviewFeedback: 'The helper needs a test.',
+    });
   });
 
   it('spawns a fix attempt carrying the reviewer summary when changes are requested', async () => {
