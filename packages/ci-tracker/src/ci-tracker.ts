@@ -1,4 +1,4 @@
-import type { AgentManager } from '@yaaabk/agents';
+import { isActiveRun, type AgentManager } from '@yaaabk/agents';
 import type { GitHubIssues, GitHubMergeMethod, GitHubPulls } from '@yaaabk/github';
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import { DEFAULT_BRANCH, type Project, type ProjectStore } from '@yaaabk/projects';
@@ -61,7 +61,8 @@ const DEFAULT_TIMERS: CiTimers = {
  * Each pass walks every Project, lists the pull requests labelled `automerge`,
  * and reacts to the check state and review verdict of each head commit. Green
  * checks with no review spawn a review Agent; green checks with an approval
- * merge the pull request and close its Issue. A conflicting branch spawns a
+ * merge the pull request and close its Issue. A review already in flight is
+ * found in the run history, so a backend restart cannot spawn a duplicate one. A conflicting branch spawns a
  * conflict-resolution Agent, bounded separately from the Issue's implementation
  * attempts. A request-changes verdict spawns a fix attempt carrying the
  * reviewer's summary until the rejection threshold or the Issue's attempt
@@ -214,6 +215,38 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
   }
 
   /**
+   * Whether a review of this pull request is still in flight.
+   *
+   * `watches` lives in memory, so a restart forgets that a review was already
+   * asked for while `latestReviewForHead` cannot see one until it is posted.
+   * The run history is the durable record: an active review for the same pull
+   * request means its verdict is still coming, and spawning another would do
+   * the work twice and race the duplicate's verdict against the original.
+   *
+   * `undefined` means the history could not be read, so the caller waits rather
+   * than spawning against an unknown state.
+   */
+  async function reviewInFlight(
+    projectId: string,
+    issueId: string,
+    pullNumber: number,
+  ): Promise<boolean | undefined> {
+    const runs = await agents.runs(projectId, issueId);
+    if (!runs.ok) {
+      logger.error('ci review runs failed', {
+        projectId,
+        issueId,
+        pull: pullNumber,
+        kind: runs.error.kind,
+      });
+      return undefined;
+    }
+    return runs.value.some(
+      (run) => run.kind === 'review' && run.pullNumber === pullNumber && isActiveRun(run.status),
+    );
+  }
+
+  /**
    * The latest review, but only when it was made against `headSha`.
    *
    * Returns `ok: false` when the reviews could not be read, so the caller can
@@ -353,32 +386,34 @@ export function createCiTracker(options: CiTrackerOptions): CiTracker {
           switch (decision) {
             case 'wait':
               break;
-            case 'spawn-review':
+            case 'spawn-review': {
               if (action === 'review-spawned') break;
-              {
-                const spawned = await agents.spawn(project.id, issue.id, {
-                  kind: 'review',
-                  pullNumber: pull.number,
-                  branch: pull.headRef,
-                });
-                if (!spawned.ok) {
-                  logger.error('ci spawn review failed', {
-                    projectId: project.id,
-                    issueId: issue.id,
-                    pull: pull.number,
-                    kind: spawned.error.kind,
-                  });
-                  break;
-                }
-                watches.set(key, { ...watch, action: 'review-spawned' });
-                summary.reviewSpawned += 1;
-                logger.info('ci spawned review', {
+              // A restart empties `watches`; the run history still remembers a
+              // review that is already judging this pull request.
+              if (await reviewInFlight(project.id, issue.id, pull.number)) break;
+              const spawned = await agents.spawn(project.id, issue.id, {
+                kind: 'review',
+                pullNumber: pull.number,
+                branch: pull.headRef,
+              });
+              if (!spawned.ok) {
+                logger.error('ci spawn review failed', {
                   projectId: project.id,
                   issueId: issue.id,
                   pull: pull.number,
+                  kind: spawned.error.kind,
                 });
+                break;
               }
+              watches.set(key, { ...watch, action: 'review-spawned' });
+              summary.reviewSpawned += 1;
+              logger.info('ci spawned review', {
+                projectId: project.id,
+                issueId: issue.id,
+                pull: pull.number,
+              });
               break;
+            }
             case 'merge': {
               const readiness = await pulls.mergeability(project.repoFullName, pull.number);
               if (!readiness.ok) {
