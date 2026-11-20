@@ -579,6 +579,14 @@
         The work for <span class="font-medium">{project.name}</span>, grouped by lane and ordered by
         wave.{#if plan !== null && !showEarlierPlans}
           Showing <span class="font-medium">Plan v{plan.version}</span>.{/if}
+        {#if plan !== null && plan.isActive && plan.acceptedAt === null}
+          <a
+            href={resolve('/projects/[id]/issues/review', { id: project.id })}
+            class="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+          >
+            {#if showEarlierPlans}Plan v{plan.version} not accepted{:else}not accepted{/if}
+          </a>
+        {/if}
       </p>
     </header>
 

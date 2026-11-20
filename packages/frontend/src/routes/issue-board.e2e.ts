@@ -119,9 +119,11 @@ const PLAN = {
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
   isActive: true,
+  acceptedAt: null,
 };
 
 interface Mocks {
+  plans: Record<string, unknown>[];
   issues: Record<string, unknown>[];
   graph: IssueGraph;
   runs: Record<string, unknown>[];
@@ -131,6 +133,7 @@ interface Mocks {
 /** Mocks the project and the endpoints the board reads on load. */
 async function mockBoard(page: Page): Promise<Mocks> {
   const state: Mocks = {
+    plans: [PLAN],
     issues: [READY, BLOCKED, ACTIVE, CLOSED, FAILED],
     graph: GRAPH,
     budgets: {
@@ -179,7 +182,9 @@ async function mockBoard(page: Page): Promise<Mocks> {
       ? route.fulfill({ json: { error: 'not-found', message: 'no budget' }, status: 404 })
       : route.fulfill({ json: budget });
   });
-  await page.route('**/api/projects/p1/plans/active', (route) => route.fulfill({ json: PLAN }));
+  await page.route('**/api/projects/p1/plans/active', (route) =>
+    route.fulfill({ json: state.plans[0] }),
+  );
   await page.route('**/api/projects/p1/agent-runs', (route) =>
     route.fulfill({ json: { runs: state.runs } }),
   );
@@ -338,6 +343,33 @@ test('follows the active plan until earlier plans are shown', async ({ page }) =
 
   await expect(card(page, 'Legacy')).toBeVisible();
   await expect(page.getByText('1 open issue belongs to an earlier Plan')).toHaveCount(0);
+});
+
+test('flags the active plan as not accepted and links to review', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues');
+
+  const chip = page.getByRole('link', { name: 'not accepted' });
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute('href', '/projects/p1/issues/review');
+
+  await page.getByLabel('Show earlier plans').check();
+
+  await expect(page.getByRole('link', { name: 'Plan v1 not accepted' })).toHaveAttribute(
+    'href',
+    '/projects/p1/issues/review',
+  );
+});
+
+test('shows no not-accepted chip once the active plan is accepted', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.plans = [{ ...PLAN, acceptedAt: '2026-01-02T00:00:00.000Z' }];
+
+  await page.goto('/projects/p1/issues');
+
+  await expect(page.getByText('Showing Plan v1.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /not accepted/ })).toHaveCount(0);
 });
 
 test('draws dependency arrows between cards', async ({ page }) => {

@@ -346,9 +346,10 @@ The browser surface is `/projects/:id/issues/review`: every Plan version with it
 lifecycle status (`Not accepted`, `In progress`, `Completed`), accepted date and
 closed/total and failed counts, then the selected Plan's summary, full Markdown
 and **all** of its Issues including closed ones, grouped by wave. It defaults to
-the active Plan; selecting a previous version shows it read-only. When the Plan
-has no Issues the page points at the Plan page for the next idea. It offers no
-one-shot generation or prompt refinement; changing a Plan or its Issues means
+the active Plan; selecting a previous version shows it read-only. When an active,
+unaccepted Plan has no Issues, the page explains that it was published without
+Issues, hides **Accept** and points at the Plan page for a revised Plan. It
+offers no one-shot generation or prompt refinement; changing a Plan or its Issues means
 starting another Grill-Me session, and the page links back to the Plan page for
 that. Finish is the only endpoint that publishes a Plan or replaces its Issues.
 
@@ -370,9 +371,11 @@ Plan page's version history shows the same status and links each version to its
 review view.
 
 The issue board follows the active Plan too and hides closed Issues by default;
-**Show closed** and **Show earlier plans** bring back the history, and an open
-Issue from an earlier Plan is called out because the Agent Manager still works
-every ready Issue in the Project.
+an amber **not accepted** chip next to the shown Plan links to review, and names
+the active Plan when earlier Plans are on screen. **Show closed** and **Show
+earlier plans** bring back the history, and an open Issue from an earlier Plan is
+called out because the Agent Manager still works every ready Issue in the
+Project.
 
 `buildIssueGraph` resolves each Issue's `depends_on` titles to Issue ids, assigns
 wave 0 to the Issues with no dependencies and one past their highest dependency

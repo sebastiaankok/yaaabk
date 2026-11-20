@@ -377,15 +377,17 @@ test('defaults to the active plan and shows a previous plan read-only', async ({
   expect(state.plans).toHaveLength(2);
 });
 
-test('offers a route back to a new grill session when there are no issues', async ({ page }) => {
+test('explains a Plan published without Issues and offers no Accept', async ({ page }) => {
   await mockReview(page, { issues: [], graph: { nodes: [], cycles: [] } });
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByText('No issues yet.')).toBeVisible();
   await expect(
-    page.getByText('Finish an agent session to publish a Plan and its Issues.'),
+    page.getByText(
+      'This Plan was published without Issues, so it cannot be accepted. A new agent session is needed to publish a revised Plan.',
+    ),
   ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toHaveCount(0);
   await expect(
     page
       .locator('section[aria-labelledby="issues-heading"]')
