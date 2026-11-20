@@ -10,7 +10,6 @@
     cancelGrill,
     finishGrill,
     getActiveGrillSession,
-    getActivePlan,
     getProject,
     listIssues,
     listModels,
@@ -20,11 +19,9 @@
     type GrillSessionView,
     type ModelCatalogueView,
   } from '#lib/api.js';
-  import Markdown from '#lib/markdown.svelte';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
   import { projectModeLabel } from '#lib/project-mode.js';
-  import { summaryForPlan } from '#lib/summary.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
 
@@ -32,7 +29,6 @@
 
   let project = $state<Project | null>(null);
   let plans = $state<Plan[]>([]);
-  let activePlan = $state<Plan | null>(null);
   let issues = $state<Issue[]>([]);
   let session = $state<GrillSessionView | null>(null);
   let loading = $state(true);
@@ -71,25 +67,13 @@
     return planProgress(version, issues);
   }
 
-  /** The active Plan's Issues; earlier Plans' work belongs to their own review. */
-  const planIssues = $derived.by(() => {
-    const active = activePlan;
-    if (active === null) return [];
-    return issues.filter((issue) => issue.planId === active.id);
-  });
-
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
   }
 
   async function refreshPlans(id: string): Promise<void> {
-    const [nextPlans, nextActive, nextIssues] = await Promise.all([
-      listPlans(id),
-      getActivePlan(id),
-      listIssues(id),
-    ]);
+    const [nextPlans, nextIssues] = await Promise.all([listPlans(id), listIssues(id)]);
     plans = nextPlans;
-    activePlan = nextActive;
     issues = nextIssues;
   }
 
@@ -103,16 +87,14 @@
     Promise.all([
       getProject(id),
       listPlans(id),
-      getActivePlan(id),
       listIssues(id),
       getActiveGrillSession(id),
       listModels().catch(() => null),
     ])
-      .then(([nextProject, nextPlans, nextActive, nextIssues, nextSession, nextCatalogue]) => {
+      .then(([nextProject, nextPlans, nextIssues, nextSession, nextCatalogue]) => {
         if (cancelled) return;
         project = nextProject;
         plans = nextPlans;
-        activePlan = nextActive;
         issues = nextIssues;
         session = nextSession;
         catalogue = nextCatalogue;
@@ -182,8 +164,6 @@
       session = null;
       terminalStatus = 'closed';
       terminalError = null;
-      activePlan = published.plan;
-      issues = published.issues;
       await refreshPlans(projectId);
       notice = `Published Plan v${published.plan.version} and ${published.issues.length} ${published.issues.length === 1 ? 'issue' : 'issues'}.`;
     } catch (cause) {
@@ -232,7 +212,7 @@
     error = null;
     busy = true;
     try {
-      activePlan = await activatePlan(projectId, planId);
+      await activatePlan(projectId, planId);
       await refreshPlans(projectId);
     } catch (cause) {
       error = describe(cause);
@@ -294,51 +274,6 @@
       <p class="rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-700" role="status">
         {notice}
       </p>
-    {/if}
-
-    {#if activePlan !== null}
-      <section
-        class="rounded-lg border border-neutral-200 p-4"
-        aria-labelledby="active-plan-heading"
-      >
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <h2 id="active-plan-heading" class="text-sm font-semibold">Plan</h2>
-          <span class="text-xs text-neutral-500">v{activePlan.version} · {activePlan.source}</span>
-        </div>
-        <p class="text-sm text-neutral-700">{summaryForPlan(activePlan)}</p>
-        <details class="mt-2">
-          <summary class="cursor-pointer text-sm text-neutral-600">Show full plan</summary>
-          <div class="mt-2"><Markdown markdown={activePlan.contentMarkdown} /></div>
-        </details>
-      </section>
-
-      {#if planIssues.length > 0}
-        <section
-          class="rounded-lg border border-neutral-200 p-4"
-          aria-labelledby="plan-issues-heading"
-        >
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h2 id="plan-issues-heading" class="text-sm font-semibold">Issues</h2>
-            <span class="text-xs text-neutral-500"
-              >{planIssues.length} {planIssues.length === 1 ? 'issue' : 'issues'}</span
-            >
-          </div>
-          <ul class="flex flex-col gap-1 text-sm">
-            {#each planIssues as issue (issue.id)}
-              <li class="flex items-center justify-between gap-2">
-                <span>{issue.title}</span>
-                <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600"
-                  >{issue.status === 'closed' ? 'closed' : issue.label}</span
-                >
-              </li>
-            {/each}
-          </ul>
-          <a
-            href={resolve('/projects/[id]/issues', { id: activePlan.projectId })}
-            class="mt-3 inline-block text-sm text-neutral-600 hover:underline">Review issues →</a
-          >
-        </section>
-      {/if}
     {/if}
 
     <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="grill-heading">
