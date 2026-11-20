@@ -506,10 +506,13 @@ bun run --filter '@yaaabk/agents' test:integration
 ```
 
 The `@yaaabk/agent` package is what the Job runs: it fetches the Issue, clones
-the repository, runs OpenCode with the bundled `implement-issue` skill (which
-can inspect and debug the Project's running workloads in its own namespace via
-`kubectl` using the mounted `yaaabk-agent` ServiceAccount token), runs the
-project's checks, and opens a pull request labelled `automerge`. OpenCode is
+the repository, runs OpenCode with the bundled `implement-issue` skill, runs the
+project's checks, and opens a pull request labelled `automerge`. The Job's
+OpenCode config registers `/app/skills`, so the prompt's skill name loads
+through the `skill` tool instead of the Agent reading the Markdown by hand. The
+skill can inspect and debug the Project's running workloads in its own
+namespace via `kubectl` using the mounted `yaaabk-agent` ServiceAccount token.
+OpenCode is
 invoked with the Agent Manager's configured model and automatic approvals, so a
 Job never waits on a permission prompt no human can answer; a missing model or
 OpenRouter key fails the run with the setting to configure. The clone →

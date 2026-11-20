@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "skills": ["/app/grill-skills"],
+  "skills": ["/app/skills", "/app/grill-skills"],
   "mcp": {
     "servers": {
       "yaaabk": {

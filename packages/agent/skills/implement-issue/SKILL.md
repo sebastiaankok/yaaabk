@@ -1,5 +1,5 @@
 ---
-name: yaaabk-implement-issue
+name: implement-issue
 description: YAAABK implement-issue agent. Use inside an agent Job to implement one GitHub Issue in a checked-out repository — explore, change code, run the project's checks, and leave the work committed on a branch for YAAABK to open a pull request.
 ---
 
