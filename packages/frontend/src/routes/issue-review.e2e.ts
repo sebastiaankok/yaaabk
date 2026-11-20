@@ -31,6 +31,11 @@ const PLAN = {
 
 const ACCEPTED_AT = '2026-01-02T00:00:00.000Z';
 
+const MODELS = {
+  models: [{ id: 'openrouter/default-model', name: 'Default model' }],
+  defaultModel: 'openrouter/default-model',
+};
+
 function issue(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
     id: 'i1',
@@ -107,6 +112,14 @@ async function mockReview(page: Page, overrides: Partial<Mocks> = {}): Promise<M
   await page.route('**/api/projects/p1/issues/graph', (route) =>
     route.fulfill({ json: state.graph }),
   );
+  // Endpoints the issue board reads after a successful accept lands there.
+  await page.route('**/api/projects/p1/plans/active', (route) =>
+    route.fulfill({ json: state.plans.find((plan) => plan.isActive) ?? null }),
+  );
+  await page.route('**/api/projects/p1/agent-runs', (route) =>
+    route.fulfill({ json: { runs: [] } }),
+  );
+  await page.route('**/api/models', (route) => route.fulfill({ json: MODELS }));
   return state;
 }
 
@@ -236,7 +249,7 @@ test('offers no one-shot generation or prompt refinement', async ({ page }) => {
   await expect(page.getByLabel('Refinement feedback')).toHaveCount(0);
 });
 
-test('accepts the plan through a modal that explains the GitHub sync', async ({ page }) => {
+test('lands on the issue board after accepting the plan', async ({ page }) => {
   const state = await mockReview(page);
   await page.route('**/api/projects/p1/plans/v1/accept', (route) => {
     state.plans = state.plans.map((plan) => ({ ...plan, acceptedAt: ACCEPTED_AT }));
@@ -256,11 +269,9 @@ test('accepts the plan through a modal that explains the GitHub sync', async ({ 
 
   await dialog.getByRole('button', { name: 'Accept Plan v1' }).click();
 
-  await expect(page.getByText('Plan v1 accepted and synced to GitHub.')).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /v1.*Active.*In progress.*0\/2 closed/ }),
-  ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Retry GitHub sync' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Issue board' })).toBeVisible();
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review plan' })).toHaveCount(0);
 });
 
 test('offers Retry accept with the failure reason and keeps the plan unaccepted', async ({
@@ -295,7 +306,8 @@ test('offers Retry accept with the failure reason and keeps the plan unaccepted'
 
   await page.getByRole('button', { name: 'Retry accept' }).click();
 
-  await expect(page.getByText('Plan v1 accepted and synced to GitHub.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Issue board' })).toBeVisible();
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry accept' })).toHaveCount(0);
 });
 
