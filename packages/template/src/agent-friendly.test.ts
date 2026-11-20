@@ -88,4 +88,12 @@ describe('the scaffolded project is agent-friendly', () => {
       expect(readme, `README.md is missing ${command}`).toContain(command);
     }
   });
+
+  it('says accepted Plans live in docs/plans and the Issue-named version is binding', async () => {
+    const agents = await read('AGENTS.md').catch(() => '');
+
+    expect(agents).toContain('docs/plans/');
+    expect(agents).toMatch(/accepted Plans/i);
+    expect(agents).toContain('binding');
+  });
 });

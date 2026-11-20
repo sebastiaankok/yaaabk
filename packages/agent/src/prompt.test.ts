@@ -10,6 +10,11 @@ import {
 
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
 
+const PLANNED_ISSUE: AgentIssue = {
+  ...ISSUE,
+  body: 'Plan: docs/plans/v2.md\n\nWith OAuth.',
+};
+
 const CONFIG: AgentConfig = {
   kind: 'implement-issue',
   issueNumber: 42,
@@ -75,6 +80,23 @@ describe('buildImplementPrompt', () => {
 
     expect(prompt).toContain('bun run check');
     expect(prompt).not.toContain('pre-commit');
+  });
+
+  it('names the accepted Plan and tells the Agent to read it before editing', () => {
+    const prompt = buildImplementPrompt(PLANNED_ISSUE, CONFIG);
+
+    expect(prompt).toContain('docs/plans/v2.md');
+    expect(prompt).toContain('Read the accepted Plan');
+    expect(prompt).toContain('module boundaries');
+    expect(prompt).toContain('data decisions');
+    expect(prompt).toContain('out-of-scope');
+  });
+
+  it('omits the Plan section when the Issue body names no accepted Plan', () => {
+    const prompt = buildImplementPrompt(ISSUE, CONFIG);
+
+    expect(prompt).not.toContain('accepted Plan');
+    expect(prompt).not.toContain('docs/plans/');
   });
 });
 
@@ -198,5 +220,30 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain(
       'Only run extra commands when a specific concern in the diff requires it',
     );
+  });
+
+  it('names the accepted Plan and tells the reviewer to read it', () => {
+    const prompt = buildReviewPrompt(PLANNED_ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain('docs/plans/v2.md');
+    expect(prompt).toContain('Read the accepted Plan');
+    expect(prompt).toContain('module boundaries');
+    expect(prompt).toContain('data decisions');
+    expect(prompt).toContain('out-of-scope');
+  });
+
+  it('omits the Plan section when the Issue body names no accepted Plan', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).not.toContain('accepted Plan');
+    expect(prompt).not.toContain('docs/plans/');
   });
 });
