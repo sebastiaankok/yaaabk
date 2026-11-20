@@ -42,6 +42,35 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toContain('A recipe box');
   });
 
+  it('tells an autonomous agent never to ask a question and to decide every branch itself', () => {
+    const prompt = buildGrillSessionPrompt({ ...INPUT, mode: 'autonomous' });
+
+    expect(prompt).toMatch(/autonomous/i);
+    expect(prompt).toMatch(
+      /never ask (the Developer )?a question|do not ask (the Developer )?a question/i,
+    );
+    expect(prompt).toMatch(/recommended option/i);
+    expect(prompt).toMatch(/treat .*settled|as settled/i);
+    expect(prompt).toMatch(/module sketch/i);
+    expect(prompt).toMatch(/issue breakdown/i);
+    expect(prompt).toMatch(/inspect/i);
+    expect(prompt).toMatch(/instruction the Developer types/i);
+    expect(prompt).toMatch(/hand off automatically|hand off without asking/i);
+  });
+
+  it('tells a guided agent to ask one trade-off-aware question at a time and confirm every checkpoint', () => {
+    const prompt = buildGrillSessionPrompt(INPUT);
+
+    expect(prompt).toMatch(/guided/i);
+    expect(prompt).toMatch(/one .*question at a time/i);
+    expect(prompt).toMatch(/trade-off/i);
+    expect(prompt).toMatch(/recommended option/i);
+    expect(prompt).toMatch(/jargon/i);
+    expect(prompt).toMatch(/confirm the settled plan/i);
+    expect(prompt).toMatch(/module sketch/i);
+    expect(prompt).toMatch(/issue breakdown/i);
+  });
+
   it('uses an existing active Plan as context', () => {
     const prompt = buildGrillSessionPrompt({ ...INPUT, activePlan: '# Existing PRD' });
 

@@ -33,6 +33,50 @@ describe('grill-me skill', () => {
     expect(skill).not.toContain('expert');
   });
 
+  it('has a Mode section for both Project modes', () => {
+    expect(skill).toMatch(/^## Mode$/m);
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/guided/i);
+  });
+
+  it('skips the interview entirely in autonomous mode', () => {
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/never ask|do not ask/i);
+    expect(skill).toMatch(/recommended option/i);
+    expect(skill).toMatch(/settled/i);
+    expect(skill).toMatch(/hand off automatically|hand off without asking/i);
+    expect(skill).toMatch(/module sketch/i);
+    expect(skill).toMatch(/issue breakdown/i);
+  });
+
+  it('keeps the one-question loop and all three confirmations in guided mode', () => {
+    expect(skill).toMatch(/guided/i);
+    expect(skill).toMatch(/one (deep )?question at a time/i);
+    expect(skill).toMatch(/recommended option/i);
+    expect(skill).toMatch(/jargon/i);
+    expect(skill).toMatch(/plan/i);
+    expect(skill).toMatch(/module sketch/i);
+    expect(skill).toMatch(/issue breakdown/i);
+    expect(skill).toMatch(/confirm/i);
+  });
+
+  it('treats a missing mode as guided', () => {
+    expect(skill).toMatch(/missing mode|mode is missing|no mode/i);
+    expect(skill).toMatch(/behaves? as guided|treat .* as guided/i);
+  });
+
+  it('adopts instructions the Developer types in autonomous mode without follow-ups', () => {
+    expect(skill).toMatch(/instruction the Developer types/i);
+    expect(skill).toMatch(/without asking follow-ups|without a follow-up/i);
+  });
+
+  it('keeps Finish manual in both modes', () => {
+    expect(skill).toMatch(/finish/i);
+    expect(skill).toMatch(/guided/i);
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/draft/i);
+  });
+
   it('answers its own questions from the repository and cluster when it can', () => {
     expect(skill).toMatch(/repository|codebase/i);
     expect(skill).toMatch(/kubectl|cluster|workloads/i);
@@ -122,10 +166,25 @@ describe('to-prd skill', () => {
     }
   });
 
-  it('checks its module sketch with the Developer before writing', () => {
+  it('checks its module sketch with the Developer before writing in guided mode', () => {
+    expect(skill).toMatch(/guided/i);
     expect(skill).toMatch(/module/i);
     expect(skill).toMatch(/check|confirm|review/i);
     expect(skill).toMatch(/before writing|before you write/i);
+  });
+
+  it('records the module sketch without waiting in autonomous mode', () => {
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/module/i);
+    expect(skill).toMatch(/without waiting|without a question|no question|never ask/i);
+    expect(skill).toMatch(/record|write|state/i);
+  });
+
+  it('keeps the manual Finish invariant in both modes', () => {
+    expect(skill).toMatch(/finish/i);
+    expect(skill).toMatch(/guided/i);
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/draft/i);
   });
 
   it('reports through the typed reporting tool and hands off to to-issues', () => {
@@ -181,11 +240,27 @@ describe('to-issues skill', () => {
     expect(skill).toMatch(/dependenc/i);
   });
 
-  it('quizzes the Developer on granularity and dependencies before reporting', () => {
+  it('quizzes the Developer on granularity and dependencies before reporting in guided mode', () => {
+    expect(skill).toMatch(/guided/i);
     expect(skill).toMatch(/quiz|ask/i);
     expect(skill).toMatch(/granularit/i);
     expect(skill).toMatch(/feedback/i);
     expect(skill).toMatch(/before reporting|then report|report_issues/i);
+  });
+
+  it('validates dependencies and reports without quizzing in autonomous mode', () => {
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/validat/i);
+    expect(skill).toMatch(/dependenc/i);
+    expect(skill).toMatch(/without .*quiz|no question|never ask|without waiting/i);
+    expect(skill).toContain('report_issues');
+  });
+
+  it('keeps the manual Finish invariant in both modes', () => {
+    expect(skill).toMatch(/finish/i);
+    expect(skill).toMatch(/guided/i);
+    expect(skill).toMatch(/autonomous/i);
+    expect(skill).toMatch(/draft/i);
   });
 
   it('reports the list through the typed reporting tool and explains Finish', () => {
