@@ -64,41 +64,41 @@ async function gotoHydrated(page: Page, path: string): Promise<void> {
   await hydrated;
 }
 
-test('shows the provisioned project with links to its tooling', async ({ page }) => {
+test('shows the provisioned project with one primary action', async ({ page }) => {
   await mockProject(page);
 
   await gotoHydrated(page, '/projects/p1');
 
   await expect(page.getByRole('heading', { level: 1, name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
-  await expect(page.getByText('Guided')).toBeVisible();
+  const status = page.getByRole('list', { name: 'Project status' });
+  await expect(status.getByText('Guided mode')).toBeVisible();
   await expect(page.getByRole('link', { name: 'acme/todo-app' })).toHaveAttribute(
     'href',
     'https://github.com/acme/todo-app',
   );
-  await expect(page.getByText('yaaabk-a1b2c3d4')).toBeVisible();
+  await expect(status.getByText('yaaabk-a1b2c3d4')).toBeVisible();
   await expect(page.getByText('Deployed commit')).toBeVisible();
   await expect(page.getByText('abc1234')).toBeVisible();
-  await expect(page.getByText('Last deploy')).toBeVisible();
-  await expect(page.getByText('Succeeded')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Agent' })).toHaveAttribute(
-    'href',
-    '/projects/p1/plan',
-  );
+  await expect(status.getByText('Deploy succeeded')).toBeVisible();
+  await expect(page.getByTestId('primary-action')).toHaveText('Start a Plan');
+  await expect(page.getByTestId('primary-action')).toHaveAttribute('href', '/projects/p1/plan');
   await expect(
     page.getByTestId('project-tabs').getByRole('link', { name: 'Stats' }),
   ).toHaveAttribute('href', '/projects/p1/stats');
 });
 
-test('banners an unaccepted active plan and links to review', async ({ page }) => {
+test('asks for a review while the active Plan is unaccepted', async ({ page }) => {
   await mockProject(page, overview({ activePlan: { id: 'plan-1', version: 2, acceptedAt: null } }));
 
   await gotoHydrated(page, '/projects/p1');
 
-  await expect(page.getByRole('link', { name: 'Plan v2 not accepted' })).toHaveAttribute(
-    'href',
-    '/projects/p1/issues/review',
-  );
+  const action = page.getByTestId('primary-action');
+  await expect(action).toHaveText('Review Plan v2');
+  await expect(action).toHaveAttribute('href', '/projects/p1/issues/review');
+  await expect(
+    page.getByText('Plan v2 is waiting for review. Accept it to publish its Issues to GitHub.'),
+  ).toBeVisible();
 });
 
 test('lists active work and links each row to its issue', async ({ page }) => {
@@ -170,6 +170,7 @@ test('polls active work and the plan banner without clobbering unsaved forms', a
 
   await gotoHydrated(page, '/projects/p1');
   await expect(page.getByText('Idle — no agent runs in flight.')).toBeVisible();
+  await page.getByTestId('advanced').locator('summary').click();
   await page.getByLabel('GitHub username').fill('dev');
   await page.getByLabel('Default agent model').fill('openrouter/unsaved');
 
@@ -190,9 +191,13 @@ test('polls active work and the plan banner without clobbering unsaved forms', a
     ],
   });
 
-  await expect(page.getByRole('link', { name: 'Plan v2 not accepted' })).toBeVisible({
+  await expect(page.getByTestId('primary-action')).toHaveText('Review Plan v2', {
     timeout: 15_000,
   });
+  await expect(page.getByTestId('primary-action')).toHaveAttribute(
+    'href',
+    '/projects/p1/issues/review',
+  );
   await expect(page.getByRole('link', { name: /Auth/ })).toHaveAttribute(
     'href',
     '/projects/p1/issues?issue=i3',
@@ -202,7 +207,7 @@ test('polls active work and the plan banner without clobbering unsaved forms', a
   expect(patches).toHaveLength(0);
 });
 
-test('shows no plan banner when the active plan is accepted', async ({ page }) => {
+test('opens the issue board when the active plan is accepted', async ({ page }) => {
   await mockProject(
     page,
     overview({
@@ -212,7 +217,9 @@ test('shows no plan banner when the active plan is accepted', async ({ page }) =
 
   await gotoHydrated(page, '/projects/p1');
 
-  await expect(page.getByRole('heading', { level: 1, name: 'todo-app' })).toBeVisible();
+  const action = page.getByTestId('primary-action');
+  await expect(action).toHaveText('Open the issue board');
+  await expect(action).toHaveAttribute('href', '/projects/p1/issues');
   await expect(page.getByText(/not accepted/)).toHaveCount(0);
 });
 
@@ -223,6 +230,7 @@ test('saves the project agent model and clears it', async ({ page }) => {
   await page.route('**/api/projects/p1', async (route) => {
     if (route.request().method() === 'PATCH') {
       patches.push(route.request().postDataJSON());
+      await new Promise((resolve) => setTimeout(resolve, 300));
       state = { ...state, ...(route.request().postDataJSON() as Record<string, unknown>) };
       await route.fulfill({ json: state });
       return;
@@ -237,6 +245,7 @@ test('saves the project agent model and clears it', async ({ page }) => {
   await expect(page.getByText('openrouter/default-model', { exact: false })).toBeVisible();
   await input.fill('openrouter/chosen');
   await input.press('Tab');
+  await expect(page.getByText('Saving…')).toBeVisible();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
   await input.fill('');
@@ -244,6 +253,79 @@ test('saves the project agent model and clears it', async ({ page }) => {
   await expect
     .poll(() => patches)
     .toEqual([{ agentModel: 'openrouter/chosen' }, { agentModel: null }]);
+});
+
+test('reports a failed agent model save in place', async ({ page }) => {
+  await mockProject(page);
+  await page.route('**/api/projects/p1', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      await route.fulfill({
+        status: 500,
+        json: { error: 'internal', message: 'Could not save the agent model.' },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await gotoHydrated(page, '/projects/p1');
+
+  const input = page.getByLabel('Default agent model');
+  await input.fill('openrouter/chosen');
+  await input.press('Tab');
+
+  await expect(page.getByRole('alert')).toHaveText('Could not save the agent model.');
+  await expect(input).toHaveValue('');
+  await expect(
+    page.getByTestId('agent-model-card').getByText('Could not save the agent model.'),
+  ).toBeVisible();
+});
+
+test('places resources beside the agent model on wide screens', async ({ page }, testInfo) => {
+  await mockProject(page);
+  await gotoHydrated(page, '/projects/p1');
+
+  const resources = page.getByTestId('provisioned-resources');
+  const model = page.getByTestId('agent-model-card');
+  await expect(resources).toBeVisible();
+  await expect(model).toBeVisible();
+
+  const resourcesBox = await resources.boundingBox();
+  const modelBox = await model.boundingBox();
+  expect(resourcesBox).not.toBeNull();
+  expect(modelBox).not.toBeNull();
+
+  if (testInfo.project.name === 'desktop') {
+    expect(Math.abs((resourcesBox?.y ?? 0) - (modelBox?.y ?? 0))).toBeLessThan(8);
+    expect(modelBox?.x ?? 0).toBeGreaterThanOrEqual(
+      (resourcesBox?.x ?? 0) + (resourcesBox?.width ?? 0),
+    );
+  } else {
+    expect(modelBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (resourcesBox?.y ?? 0) + (resourcesBox?.height ?? 0),
+    );
+  }
+});
+
+test('fits a 360px phone without horizontal scrolling', async ({ page }) => {
+  await mockProject(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByTestId('primary-action')).toBeVisible();
+  await page.getByTestId('advanced').locator('summary').click();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  await page.getByRole('button', { name: 'Delete project' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  const dialogOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(dialogOverflow).toBeLessThanOrEqual(0);
 });
 
 test('shows a failed last deploy to the developer', async ({ page }) => {
@@ -257,11 +339,16 @@ test('shows a failed last deploy to the developer', async ({ page }) => {
   await gotoHydrated(page, '/projects/p1');
 
   await expect(page.getByText('Last deploy')).toBeVisible();
-  await expect(page.getByText('Failed')).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Project status' }).getByText('Deploy failed'),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId('provisioned-resources').getByText('Failed', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText('Not yet deployed')).toBeVisible();
 });
 
-test('deletes the project after confirmation', async ({ page }) => {
+test('confirms deletion in an accessible dialog', async ({ page }) => {
   await mockProject(page);
   await page.route('**/api/overview', (route) => route.fulfill({ json: { overviews: [] } }));
   const deletes: string[] = [];
@@ -275,7 +362,32 @@ test('deletes the project after confirmation', async ({ page }) => {
   });
 
   await gotoHydrated(page, '/projects/p1');
-  await page.getByRole('button', { name: 'Delete project' }).click();
+
+  // Advanced starts collapsed, and opens from the keyboard.
+  await expect(page.getByRole('button', { name: 'Delete project' })).toBeHidden();
+  const summary = page.getByTestId('advanced').locator('summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+
+  const trigger = page.getByRole('button', { name: 'Delete project' });
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('todo-app');
+  await expect(dialog).toContainText('acme/todo-app');
+  await expect(dialog).toContainText('yaaabk-a1b2c3d4');
+  await expect(dialog).toContainText('cannot be undone');
+
+  // Focus is trapped in the dialog; Escape closes and restores the trigger.
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
   await page.getByRole('button', { name: 'Confirm delete' }).click();
 
   await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
@@ -293,6 +405,7 @@ test('exports the project to the developer github account', async ({ page }) => 
   });
 
   await gotoHydrated(page, '/projects/p1');
+  await page.getByTestId('advanced').locator('summary').click();
   await page.getByLabel('GitHub username').fill('dev');
   await page.getByLabel('Repository name', { exact: false }).fill('todo');
   await page.getByRole('button', { name: 'Transfer' }).click();
