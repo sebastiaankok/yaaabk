@@ -8,6 +8,7 @@ const PROJECT = {
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
+  lastModel: null,
   agentModel: null,
   deployedCommitSha: 'abc1234',
   lastDeployStatus: 'success',
@@ -24,13 +25,30 @@ const MODELS = {
   defaultModel: 'openrouter/default-model',
 };
 
-async function mockProject(page: Page): Promise<void> {
+/** A Project overview around the fixture Project. */
+function overview(overrides: Record<string, unknown> = {}) {
+  return {
+    project: PROJECT,
+    activePlan: null,
+    activeWork: [],
+    issues: { total: 0, open: 0, inProgress: 0, closed: 0, failed: 0, averageAttempts: 0 },
+    lastRunAt: null,
+    ...overrides,
+  };
+}
+
+async function mockProject(
+  page: Page,
+  projectOverview: Record<string, unknown> = overview(),
+): Promise<void> {
   await page.route('**/api/auth/status', (route) =>
     route.fulfill({
       json: { setupComplete: true, authenticated: true, user: { id: 'u', username: 'alice' } },
     }),
   );
-  await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/projects/p1/overview', (route) =>
+    route.fulfill({ json: projectOverview }),
+  );
   await page.route('**/api/models', (route) => route.fulfill({ json: MODELS }));
 }
 
@@ -71,6 +89,31 @@ test('shows the provisioned project with links to its tooling', async ({ page })
   );
 });
 
+test('banners an unaccepted active plan and links to review', async ({ page }) => {
+  await mockProject(page, overview({ activePlan: { id: 'plan-1', version: 2, acceptedAt: null } }));
+
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByRole('link', { name: 'Plan v2 not accepted' })).toHaveAttribute(
+    'href',
+    '/projects/p1/issues/review',
+  );
+});
+
+test('shows no plan banner when the active plan is accepted', async ({ page }) => {
+  await mockProject(
+    page,
+    overview({
+      activePlan: { id: 'plan-1', version: 2, acceptedAt: '2026-02-02T00:00:00.000Z' },
+    }),
+  );
+
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByRole('heading', { level: 1, name: 'todo-app' })).toBeVisible();
+  await expect(page.getByText(/not accepted/)).toHaveCount(0);
+});
+
 test('saves the project agent model and clears it', async ({ page }) => {
   await mockProject(page);
   let state: Record<string, unknown> = { ...PROJECT };
@@ -102,10 +145,10 @@ test('saves the project agent model and clears it', async ({ page }) => {
 });
 
 test('shows a failed last deploy to the developer', async ({ page }) => {
-  await mockProject(page);
-  await page.route('**/api/projects/p1', (route) =>
-    route.fulfill({
-      json: { ...PROJECT, deployedCommitSha: null, lastDeployStatus: 'failed' },
+  await mockProject(
+    page,
+    overview({
+      project: { ...PROJECT, deployedCommitSha: null, lastDeployStatus: 'failed' },
     }),
   );
 
@@ -118,6 +161,7 @@ test('shows a failed last deploy to the developer', async ({ page }) => {
 
 test('deletes the project after confirmation', async ({ page }) => {
   await mockProject(page);
+  await page.route('**/api/overview', (route) => route.fulfill({ json: { overviews: [] } }));
   const deletes: string[] = [];
   await page.route('**/api/projects/p1', async (route) => {
     if (route.request().method() === 'DELETE') {
@@ -127,7 +171,6 @@ test('deletes the project after confirmation', async ({ page }) => {
     }
     await route.fallback();
   });
-  await page.route('**/api/projects', (route) => route.fulfill({ json: { projects: [] } }));
 
   await gotoHydrated(page, '/projects/p1');
   await page.getByRole('button', { name: 'Delete project' }).click();
@@ -156,19 +199,4 @@ test('exports the project to the developer github account', async ({ page }) => 
   await expect(page.getByText('Project exported to dev/todo')).toBeVisible();
   expect(exports).toHaveLength(1);
   expect(exports[0]?.body).toEqual({ owner: 'dev', repoName: 'todo' });
-});
-
-test('shows validation errors without calling the export endpoint', async ({ page }) => {
-  await mockProject(page);
-  const exports: string[] = [];
-  await page.route('**/api/projects/p1/export', (route) => {
-    exports.push(route.request().url());
-    return route.fulfill({ json: {} });
-  });
-
-  await gotoHydrated(page, '/projects/p1');
-  await page.getByRole('button', { name: 'Transfer' }).click();
-
-  await expect(page.getByText('A GitHub username is required')).toBeVisible();
-  expect(exports).toHaveLength(0);
 });

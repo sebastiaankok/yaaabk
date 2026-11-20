@@ -69,7 +69,17 @@ test('creates a project and follows it to its dashboard', async ({ page }) => {
       body: frames,
     });
   });
-  await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/projects/p1/overview', (route) =>
+    route.fulfill({
+      json: {
+        project: PROJECT,
+        activePlan: null,
+        activeWork: [],
+        issues: { total: 0, open: 0, inProgress: 0, closed: 0, failed: 0, averageAttempts: 0 },
+        lastRunAt: null,
+      },
+    }),
+  );
 
   await gotoHydrated(page, '/projects/new');
   await page.getByLabel('Project name').fill('todo-app');

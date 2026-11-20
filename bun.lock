@@ -277,6 +277,8 @@
       "dependencies": {
         "@yaaabk/agents": "workspace:*",
         "@yaaabk/issues": "workspace:*",
+        "@yaaabk/plans": "workspace:*",
+        "@yaaabk/projects": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^24.0.0",

@@ -6,6 +6,8 @@ import {
   exportProject,
   finishGrill,
   getIssueSyncStatus,
+  getOverview,
+  getProjectOverview,
   getProjectStats,
   getStatus,
   listIssueRuns,
@@ -372,6 +374,34 @@ describe('agent runs', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p1\/agent-runs$/),
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+});
+
+describe('project overviews', () => {
+  it('loads every project overview in one request', async () => {
+    const overviews = [{ project: { id: 'p1' }, activePlan: null, activeWork: [] }];
+    const fetchMock = vi.fn(async () => jsonResponse({ overviews }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getOverview()).resolves.toEqual(overviews);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/overview$/),
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
+  it('loads one project overview by its encoded id', async () => {
+    const overview = { project: { id: 'p 1' }, activePlan: null, activeWork: [] };
+    const fetchMock = vi.fn(async () => jsonResponse(overview));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getProjectOverview('p 1')).resolves.toEqual(overview);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p%201\/overview$/),
       expect.objectContaining({ credentials: 'include' }),
     );
   });

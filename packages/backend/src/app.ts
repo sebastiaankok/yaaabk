@@ -19,6 +19,7 @@ import { grillRoutes, type GrillRoutesOptions } from './grill-routes';
 import { issueRoutes } from './issue-routes';
 import { issueSyncRoutes } from './issue-sync-routes';
 import { modelRoutes } from './model-routes';
+import { overviewRoutes } from './overview-routes';
 import { planRoutes } from './plan-routes';
 import { projectRoutes } from './project-routes';
 import { settingsRoutes } from './settings-routes';
@@ -103,6 +104,7 @@ export function createApp(options: AppOptions): Hono {
   app.route('/', issueSyncRoutes(options.issueSync, options.projects));
   app.route('/', agentRoutes(options.agents, options.projects));
   app.route('/', statsRoutes(options.issues, options.agents, options.projects));
+  app.route('/', overviewRoutes(options.projects, options.plans, options.issues, options.agents));
   app.route(
     '/',
     grillRoutes(options.grillSessions, options.projects, options.plans, {

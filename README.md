@@ -565,16 +565,25 @@ bun run --filter '@yaaabk/ci-tracker' test:unit
 dashboard shows. `computeProjectStats` is pure: the backend fetches the Issues
 and runs, then aggregates them in one pass.
 
+`composeProjectOverview` combines a Project, its active Plan, its Issues and its
+Agent runs into the read model behind the home list and the project page: the
+Project itself, the active Plan's `id`, `version` and `acceptedAt`, the queued
+and running runs with their Issue titles, Issue counts and the last run time.
+
 | Route | Purpose |
 | --- | --- |
+| `GET /api/overview` | One `ProjectOverview` per Project, for the home list |
+| `GET /api/projects/:id/overview` | One Project's overview; an unknown id is a 404 |
 | `GET /api/projects/:id/stats` | Issue counts, close velocity, Agent success rate, cost breakdown, run durations and history |
 | `GET /api/projects/:id/stats?from=&to=` | The same, with Agent runs and the close timeline filtered to the range |
 
 The browser surface is `/projects/:id/stats`: summary cards, a 7/14/30-day close
 chart, a status donut, per-Issue cost bars, run duration by attempt, and a
-sortable/filterable run history. The project list also shows each Project's
-open/closed counts and last Agent run. Charts are hand-rolled SVG/CSS, so no
-chart library is added.
+sortable/filterable run history. The project list loads one overview request and
+shows each Project's open/closed counts, last Agent run, active/idle state and an
+amber "Plan vN not accepted" link when the active Plan still needs acceptance.
+The project page shows the same plan banner. Charts are hand-rolled SVG/CSS, so
+no chart library is added.
 
 ```sh
 bun run --filter '@yaaabk/stats' test:unit

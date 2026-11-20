@@ -2,12 +2,12 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
-  import type { Project } from '@yaaabk/projects';
+  import type { ProjectOverview } from '@yaaabk/stats';
   import {
     ApiError,
     deleteProject,
     exportProject,
-    getProject,
+    getProjectOverview,
     listModels,
     updateProject,
     type ModelCatalogueView,
@@ -16,7 +16,8 @@
 
   const projectId = $derived(page.params.id);
 
-  let project = $state<Project | null>(null);
+  let overview = $state<ProjectOverview | null>(null);
+  const project = $derived(overview?.project ?? null);
   let error = $state<string | null>(null);
   let confirming = $state(false);
   let busy = $state(false);
@@ -50,11 +51,11 @@
     if (id === undefined) return;
     let cancelled = false;
     error = null;
-    Promise.all([getProject(id), listModels().catch(() => null)])
+    Promise.all([getProjectOverview(id), listModels().catch(() => null)])
       .then(([next, models]) => {
         if (cancelled) return;
-        project = next;
-        agentModel = next.agentModel ?? '';
+        overview = next;
+        agentModel = next.project.agentModel ?? '';
         catalogue = models;
         catalogueError =
           models === null
@@ -79,7 +80,7 @@
       const updated = await updateProject(projectId, {
         agentModel: agentModel.trim() === '' ? null : agentModel.trim(),
       });
-      project = updated;
+      if (overview !== null) overview = { ...overview, project: updated };
       agentModel = updated.agentModel ?? '';
       modelStatus = 'Saved';
     } catch (cause) {
@@ -100,7 +101,7 @@
     exportSuccess = null;
     try {
       const updated = await exportProject(projectId, target);
-      project = updated;
+      if (overview !== null) overview = { ...overview, project: updated };
       exportSuccess = `Project exported to ${updated.repoFullName}`;
       exportOwner = '';
       exportRepoName = '';
@@ -146,6 +147,15 @@
       </div>
       <p class="text-neutral-600">{project.description}</p>
     </header>
+
+    {#if overview !== null && overview.activePlan !== null && overview.activePlan.acceptedAt === null}
+      <a
+        href={resolve('/projects/[id]/issues/review', { id: project.id })}
+        class="rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+      >
+        Plan v{overview.activePlan.version} not accepted
+      </a>
+    {/if}
 
     {#if error !== null}
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
