@@ -1,0 +1,15 @@
+<script lang="ts">
+  let { class: className = '' }: { class?: string } = $props();
+</script>
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+  class={className}
+  aria-hidden="true"
+  focusable="false"
+>
+  <rect width="64" height="64" rx="14" fill="#1A73E8" />
+  <path d="M17 17h7.4l7.6 11.1L39.6 17H47L35.4 33.7V47h-6.8V33.7L17 17Z" fill="#FFFFFF" />
+  <circle cx="46" cy="44" r="4" fill="#FFFFFF" />
+</svg>

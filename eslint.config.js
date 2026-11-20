@@ -32,4 +32,10 @@ export default tseslint.config(
       parserOptions: { parser: tseslint.parser },
     },
   },
+  {
+    // Vendored shadcn-svelte primitives are generic: link callers resolve their
+    // own hrefs, so the primitive itself cannot know about SvelteKit routes.
+    files: ['packages/frontend/src/lib/components/ui/**/*.svelte'],
+    rules: { 'svelte/no-navigation-without-resolve': 'off' },
+  },
 );

@@ -6,6 +6,7 @@
   import { getStatus, logout, type AuthStatus } from '#lib/api.js';
   import { isAuthRoute, redirectTarget } from '#lib/auth-guard.js';
   import favicon from '#lib/assets/favicon.svg';
+  import { Toaster } from '#lib/components/ui/sonner/index.js';
   import './layout.css';
 
   let { children } = $props();
@@ -71,3 +72,5 @@
 {/if}
 
 {@render children()}
+
+<Toaster position="bottom-right" richColors closeButton />
