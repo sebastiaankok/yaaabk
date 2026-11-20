@@ -1,3 +1,4 @@
+import { isTokenUsage } from '@yaaabk/shared';
 import { agentsError } from './errors';
 import {
   isAgentRunKind,
@@ -46,6 +47,11 @@ interface AgentRunRow {
   review_body: string | null;
   logs: string | null;
   cost_cents: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
   token_hash: string;
   created_at: string;
   started_at: string | null;
@@ -73,6 +79,11 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   review_body    TEXT,
   logs           TEXT,
   cost_cents     INTEGER NOT NULL,
+  input_tokens   INTEGER,
+  output_tokens  INTEGER,
+  reasoning_tokens INTEGER,
+  cache_read_tokens INTEGER,
+  cache_write_tokens INTEGER,
   token_hash     TEXT NOT NULL,
   created_at     TEXT NOT NULL,
   started_at     TEXT,
@@ -90,6 +101,12 @@ function isReviewVerdict(value: unknown): value is AgentReviewVerdict {
 }
 
 function toRun(row: AgentRunRow): StoredAgentRun {
+  const tokens = {
+    input: row.input_tokens,
+    output: row.output_tokens,
+    reasoning: row.reasoning_tokens,
+    cache: { read: row.cache_read_tokens, write: row.cache_write_tokens },
+  };
   return {
     id: row.id,
     projectId: row.project_id,
@@ -110,6 +127,7 @@ function toRun(row: AgentRunRow): StoredAgentRun {
     reviewBody: row.review_body ?? null,
     logs: row.logs,
     costCents: row.cost_cents,
+    tokens: isTokenUsage(tokens) ? tokens : null,
     tokenHash: row.token_hash,
     createdAt: row.created_at,
     startedAt: row.started_at,
@@ -150,6 +168,11 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
   ensureColumn(database, 'agent_runs', 'model', 'TEXT');
   ensureColumn(database, 'agent_runs', 'review_verdict', 'TEXT');
   ensureColumn(database, 'agent_runs', 'review_body', 'TEXT');
+  ensureColumn(database, 'agent_runs', 'input_tokens', 'INTEGER');
+  ensureColumn(database, 'agent_runs', 'output_tokens', 'INTEGER');
+  ensureColumn(database, 'agent_runs', 'reasoning_tokens', 'INTEGER');
+  ensureColumn(database, 'agent_runs', 'cache_read_tokens', 'INTEGER');
+  ensureColumn(database, 'agent_runs', 'cache_write_tokens', 'INTEGER');
 
   function requireRow(runId: string): AgentRunRow {
     const row = database.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId) as
@@ -168,8 +191,9 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
              (id, project_id, issue_id, kind, attempt_number, pull_number, commit_sha, job_name, pvc_name,
               openrouter_secret_name, branch, review_feedback, status, model, pr_url,
               review_verdict, review_body, logs, cost_cents,
+              input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
               token_hash, created_at, started_at, finished_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.id,
@@ -191,6 +215,11 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.reviewBody,
           run.logs,
           run.costCents,
+          run.tokens?.input ?? null,
+          run.tokens?.output ?? null,
+          run.tokens?.reasoning ?? null,
+          run.tokens?.cache.read ?? null,
+          run.tokens?.cache.write ?? null,
           run.tokenHash,
           run.createdAt,
           run.startedAt,
@@ -242,7 +271,9 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
              commit_sha = ?, job_name = ?, pvc_name = ?,
              openrouter_secret_name = ?, branch = ?, review_feedback = ?, status = ?, model = ?,
              pr_url = ?, review_verdict = ?, review_body = ?, logs = ?,
-             cost_cents = ?, token_hash = ?, started_at = ?, finished_at = ?
+             cost_cents = ?, input_tokens = ?, output_tokens = ?, reasoning_tokens = ?,
+             cache_read_tokens = ?, cache_write_tokens = ?,
+             token_hash = ?, started_at = ?, finished_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -264,6 +295,11 @@ export function createSqliteAgentStore(database: SqliteDatabase): AgentStore {
           run.reviewBody,
           run.logs,
           run.costCents,
+          run.tokens?.input ?? null,
+          run.tokens?.output ?? null,
+          run.tokens?.reasoning ?? null,
+          run.tokens?.cache.read ?? null,
+          run.tokens?.cache.write ?? null,
           run.tokenHash,
           run.startedAt,
           run.finishedAt,

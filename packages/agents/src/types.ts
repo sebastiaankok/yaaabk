@@ -11,6 +11,8 @@
  * stores them as TEXT and they sort lexicographically.
  */
 
+import type { TokenUsage } from '@yaaabk/shared';
+
 /** Where an Agent run is in its lifecycle. */
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed';
 
@@ -119,6 +121,11 @@ export interface AgentRun {
   logs: string | null;
   /** LLM spend attributed to the attempt, in whole cents. */
   costCents: number;
+  /**
+   * Token usage the attempt's model calls consumed, or `null` when no attempt
+   * could be measured. Deploy runs never invoke a model and stay `null`.
+   */
+  tokens: TokenUsage | null;
   createdAt: string;
   /** When the Job was created, if it has been dispatched. */
   startedAt: string | null;
@@ -212,6 +219,8 @@ export interface AgentReport {
   prUrl?: string;
   /** LLM spend attributed to the attempt, in whole cents. */
   costCents?: number;
+  /** Token usage measured for the attempt; omitted when unmeasured. */
+  tokens?: TokenUsage;
   /** Captured agent output. */
   logs?: string;
   /** The verdict a review run reached. Omitted by other kinds. */

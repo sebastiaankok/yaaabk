@@ -1,3 +1,4 @@
+import type { TokenUsage } from '@yaaabk/shared';
 import { parseRepoUrl } from './adapters';
 import type { AgentConfig } from './config';
 import { AUTOMERGE_LABEL, defaultBranch, type AgentDependencies, type AgentOutcome } from './ports';
@@ -40,6 +41,11 @@ function progress(message: string): void {
 /** Converts a USD amount to whole cents, rounding to the nearest cent. */
 function centsFromUsd(usd: number): number {
   return Math.round(usd * 100);
+}
+
+/** The report field for measured token usage, omitted when unmeasured. */
+function tokenReport(tokens: TokenUsage | null): { tokens?: TokenUsage } {
+  return tokens === null ? {} : { tokens };
 }
 
 /**
@@ -137,6 +143,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     }),
   );
   const { result, costCents } = implemented;
+  const tokens = result.tokens;
   logs.push(result.output);
   if (result.exitCode !== 0) {
     progress(`OpenCode failed with exit code ${result.exitCode}; reporting`);
@@ -144,6 +151,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
       prUrl: null,
       logs: logs.join('\n'),
       ...(costCents === undefined ? {} : { costCents }),
+      ...tokenReport(tokens),
     });
     return {
       ok: false,
@@ -162,6 +170,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
       prUrl: null,
       logs: logs.join('\n'),
       ...(costCents === undefined ? {} : { costCents }),
+      ...tokenReport(tokens),
     });
     return { ok: false, reason: 'checks-failed', output: checks.output, branch };
   }
@@ -181,6 +190,7 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     prUrl: pullRequest.url,
     logs: logs.join('\n'),
     ...(costCents === undefined ? {} : { costCents }),
+    ...tokenReport(tokens),
   });
   return { ok: true, prUrl: pullRequest.url, branch };
 }
@@ -211,12 +221,14 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
     }),
   );
   const { result, costCents } = reviewed;
+  const tokens = result.tokens;
   logs.push(result.output);
   if (result.exitCode !== 0) {
     await deps.reporter.report({
       prUrl: null,
       logs: logs.join('\n'),
       ...(costCents === undefined ? {} : { costCents }),
+      ...tokenReport(tokens),
     });
     return {
       ok: false,
@@ -241,6 +253,7 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
     reviewVerdict: result.verdict.event,
     reviewBody: result.verdict.body,
     ...(costCents === undefined ? {} : { costCents }),
+    ...tokenReport(tokens),
   });
   return { ok: true, prUrl, branch };
 }
@@ -276,6 +289,7 @@ async function runResolveConflicts(
 
   const conflicts = await deps.git.unmergedPaths(directory);
   let costCents: number | undefined;
+  let tokens: TokenUsage | null = null;
   if (conflicts.length > 0 || merged.conflicted) {
     progress(`OpenCode resolving ${conflicts.length} conflicted file(s)`);
     const resolved = await measureSpend(deps.spend, () =>
@@ -291,12 +305,14 @@ async function runResolveConflicts(
     );
     logs.push(resolved.result.output);
     costCents = resolved.costCents;
+    tokens = resolved.result.tokens;
     if (resolved.result.exitCode !== 0) {
       const output = logs.join('\n');
       await deps.reporter.report({
         prUrl: null,
         logs: output,
         ...(costCents === undefined ? {} : { costCents }),
+        ...tokenReport(tokens),
       });
       return { ok: false, reason: 'conflict-resolution-failed', output, branch };
     }
@@ -309,6 +325,7 @@ async function runResolveConflicts(
         prUrl: null,
         logs: output,
         ...(costCents === undefined ? {} : { costCents }),
+        ...tokenReport(tokens),
       });
       return { ok: false, reason: 'conflict-resolution-failed', output, branch };
     }
@@ -325,6 +342,7 @@ async function runResolveConflicts(
       prUrl: null,
       logs: output,
       ...(costCents === undefined ? {} : { costCents }),
+      ...tokenReport(tokens),
     });
     return { ok: false, reason: 'checks-failed', output, branch };
   }
@@ -338,6 +356,7 @@ async function runResolveConflicts(
     prUrl,
     logs: logs.join('\n'),
     ...(costCents === undefined ? {} : { costCents }),
+    ...tokenReport(tokens),
   });
   return { ok: true, prUrl, branch };
 }
