@@ -286,6 +286,28 @@ describe('to-issues skill', () => {
   });
 });
 
+describe('visual acceptance policy', () => {
+  it('records that visual checks are human-in-the-loop', () => {
+    const adr = readRepoFile('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
+
+    expect(adr).toMatch(/^# 0002:/m);
+    expect(adr).toMatch(/\*\*Status:\*\* Accepted/);
+    expect(adr).toMatch(/option A|policy A/i);
+    expect(adr).toContain('`needs-human`');
+    expect(adr).toContain('baidu/ernie-5.5-flash-preview:free');
+    expect(adr).toMatch(/no browser|without a browser|image has no browser/i);
+  });
+
+  it('requires an executable check for ready Issues in the to-issues skill', () => {
+    const skill = readSkill('to-issues');
+
+    expect(skill).toMatch(/executable acceptance check/i);
+    expect(skill).toMatch(/visual|look at the page|screenshot/i);
+    expect(skill).toContain('`needs-human`');
+    expect(skill).toContain('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
+  });
+});
+
 describe('skill packaging', () => {
   it('copies the simple-english skill into the backend and agent images', () => {
     for (const dockerfile of ['packages/backend/Dockerfile', 'packages/agent/Dockerfile']) {
