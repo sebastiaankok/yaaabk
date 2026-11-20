@@ -14,7 +14,7 @@ import type { Plan } from '@yaaabk/plans';
 import type { Project, ProjectPatch, ProvisioningEvent } from '@yaaabk/projects';
 import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
 import type { SkillLevel } from '@yaaabk/shared';
-import type { ProjectStats } from '@yaaabk/stats';
+import type { ProjectStats, ProjectOverview } from '@yaaabk/stats';
 import type { OpenRouterCreditsView } from './openrouter-balance';
 
 export interface AuthUser {
@@ -337,6 +337,16 @@ export function getProjectStats(projectId: string, range: StatsRange = {}): Prom
   return request<ProjectStats>(
     `/api/projects/${encodeURIComponent(projectId)}/stats${query === '' ? '' : `?${query}`}`,
   );
+}
+
+/** Reads the overview of every Project in one request. */
+export function getOverview(): Promise<ProjectOverview[]> {
+  return request<{ overviews: ProjectOverview[] }>('/api/overview').then((body) => body.overviews);
+}
+
+/** Reads one Project's overview: its Project, active Plan, work and Issue counts. */
+export function getProjectOverview(projectId: string): Promise<ProjectOverview> {
+  return request<ProjectOverview>(`/api/projects/${encodeURIComponent(projectId)}/overview`);
 }
 
 export function listPlans(projectId: string): Promise<Plan[]> {

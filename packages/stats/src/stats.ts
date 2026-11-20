@@ -104,6 +104,23 @@ function runDurationSeconds(run: AgentRun): number | null {
   return (Date.parse(run.finishedAt) - Date.parse(run.startedAt)) / 1000;
 }
 
+/** Counts Issues by status and averages their Agent attempts. */
+export function countIssues(issues: readonly Issue[]): IssueStats {
+  const counts = { open: 0, in_progress: 0, closed: 0, failed: 0 };
+  for (const issue of issues) {
+    counts[issue.status] += 1;
+  }
+  const totalAttempts = issues.reduce((sum, issue) => sum + issue.attemptCount, 0);
+  return {
+    total: issues.length,
+    open: counts.open,
+    inProgress: counts.in_progress,
+    closed: counts.closed,
+    failed: counts.failed,
+    averageAttempts: issues.length === 0 ? 0 : totalAttempts / issues.length,
+  };
+}
+
 /** Computes a Project's dashboard statistics from its Issues and Agent runs. */
 export function computeProjectStats(
   issues: readonly Issue[],
@@ -120,10 +137,6 @@ export function computeProjectStats(
         return createdAt >= rangeFromMs && createdAt <= rangeToMs;
       })
     : runs;
-  const issuesByStatus = { open: 0, in_progress: 0, closed: 0, failed: 0 };
-  for (const issue of issues) {
-    issuesByStatus[issue.status] += 1;
-  }
 
   const succeeded = selectedRuns.filter((run) => run.status === 'success').length;
   const failed = selectedRuns.filter((run) => run.status === 'failed').length;
@@ -131,7 +144,6 @@ export function computeProjectStats(
     (run) => run.status === 'queued' || run.status === 'running',
   ).length;
   const finished = succeeded + failed;
-  const totalAttempts = issues.reduce((sum, issue) => sum + issue.attemptCount, 0);
   const totalCostCents = selectedRuns.reduce((sum, run) => sum + run.costCents, 0);
   const durations = selectedRuns
     .map(runDurationSeconds)
@@ -212,14 +224,7 @@ export function computeProjectStats(
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
 
   return {
-    issues: {
-      total: issues.length,
-      open: issuesByStatus.open,
-      inProgress: issuesByStatus.in_progress,
-      closed: issuesByStatus.closed,
-      failed: issuesByStatus.failed,
-      averageAttempts: issues.length === 0 ? 0 : totalAttempts / issues.length,
-    },
+    issues: countIssues(issues),
     agents: {
       total: selectedRuns.length,
       succeeded,

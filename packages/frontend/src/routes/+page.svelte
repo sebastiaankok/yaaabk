@@ -1,33 +1,18 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import type { Project } from '@yaaabk/projects';
-  import type { ProjectStats } from '@yaaabk/stats';
-  import { ApiError, getProjectStats, listProjects } from '#lib/api.js';
+  import type { ProjectOverview } from '@yaaabk/stats';
+  import { ApiError, getOverview } from '#lib/api.js';
 
-  let projects = $state<Project[] | null>(null);
-  let statsById = $state<Record<string, ProjectStats>>({});
+  let overviews = $state<ProjectOverview[] | null>(null);
   let error = $state<string | null>(null);
 
-  // Load the Project list once when the page mounts, then enrich each card with
-  // its stats. A stats failure only leaves that card's summary blank.
+  // One request loads every card's Project, active Plan, Issue counts and
+  // in-flight work. A failure leaves the whole page in its error state.
   $effect(() => {
     let cancelled = false;
-    listProjects()
-      .then(async (next) => {
-        if (cancelled) return;
-        projects = next;
-        const results = await Promise.allSettled(
-          next.map(async (project) => ({
-            id: project.id,
-            stats: await getProjectStats(project.id),
-          })),
-        );
-        if (cancelled) return;
-        const loaded: Record<string, ProjectStats> = {};
-        for (const result of results) {
-          if (result.status === 'fulfilled') loaded[result.value.id] = result.value.stats;
-        }
-        statsById = loaded;
+    getOverview()
+      .then((next) => {
+        if (!cancelled) overviews = next;
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -57,9 +42,9 @@
 
   {#if error !== null}
     <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
-  {:else if projects === null}
+  {:else if overviews === null}
     <p class="text-sm text-neutral-500">Loading projects…</p>
-  {:else if projects.length === 0}
+  {:else if overviews.length === 0}
     <div class="rounded-lg border border-dashed border-neutral-300 p-8 text-center">
       <p class="text-neutral-600">No projects yet</p>
       <a
@@ -71,10 +56,9 @@
     </div>
   {:else}
     <ul class="grid gap-3 sm:grid-cols-2">
-      {#each projects as project (project.id)}
-        {@const stats = statsById[project.id]}
-        {@const active = (stats?.agents.active ?? 0) > 0}
-        {@const lastRun = stats?.runs[0]}
+      {#each overviews as overview (overview.project.id)}
+        {@const project = overview.project}
+        {@const active = overview.activeWork.length > 0}
         <li class="flex flex-col rounded-lg border border-neutral-200 p-4">
           <div class="flex items-start justify-between gap-2">
             <a
@@ -88,26 +72,28 @@
                 ? 'bg-emerald-100 text-emerald-800'
                 : 'bg-neutral-100 text-neutral-600'}"
             >
-              {active ? 'Active' : 'Idle'}
+              {active ? `Active · ${overview.activeWork.length} running` : 'Idle'}
             </span>
           </div>
           <p class="mt-1 text-sm text-neutral-600">{project.description}</p>
+          {#if overview.activePlan !== null && overview.activePlan.acceptedAt === null}
+            <a
+              href={resolve('/projects/[id]/issues/review', { id: project.id })}
+              class="mt-2 inline-block text-sm font-medium text-amber-700 hover:underline"
+            >
+              Plan v{overview.activePlan.version} not accepted
+            </a>
+          {/if}
           <dl class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
             <div class="flex gap-1">
               <dt class="font-medium">Issues</dt>
-              <dd>
-                {#if stats}
-                  {stats.issues.open} open · {stats.issues.closed} closed
-                {:else}
-                  —
-                {/if}
-              </dd>
+              <dd>{overview.issues.open} open · {overview.issues.closed} closed</dd>
             </div>
             <div class="flex gap-1">
               <dt class="font-medium">Last run</dt>
               <dd>
-                {#if lastRun}
-                  <time datetime={lastRun.createdAt}>{lastRun.createdAt.slice(0, 10)}</time>
+                {#if overview.lastRunAt}
+                  <time datetime={overview.lastRunAt}>{overview.lastRunAt.slice(0, 10)}</time>
                 {:else}
                   —
                 {/if}
