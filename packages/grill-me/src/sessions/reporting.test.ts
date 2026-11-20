@@ -12,7 +12,7 @@ const INPUT: StartGrillSessionInput = {
   projectId: 'p1',
   projectName: 'todo-app',
   idea: 'A todo app',
-  skillLevel: 'expert',
+  mode: 'guided',
 };
 
 interface Setup {

@@ -6,7 +6,7 @@ import type {
   ProjectsModule,
   ProvisioningEvent,
 } from '@yaaabk/projects';
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { invalidModelField, parseAgentModel, validateAgentModel } from './model-validation';
@@ -38,9 +38,9 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Reads the skill level from either the camelCase or the documented snake_case key. */
-function asSkillLevel(input: Record<string, unknown>): SkillLevel {
-  return (input.skillLevel ?? input.skill_level) as SkillLevel;
+/** Reads the project mode from the request body. */
+function asMode(input: Record<string, unknown>): ProjectMode {
+  return input.mode as ProjectMode;
 }
 
 function fail(c: Context, error: ProjectError) {
@@ -68,7 +68,7 @@ const SSE_HEADERS = {
  */
 function streamCreate(
   projects: ProjectsModule,
-  input: { name: string; description: string; skillLevel: SkillLevel },
+  input: { name: string; description: string; mode: ProjectMode },
 ): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -103,7 +103,7 @@ export function projectRoutes(projects: ProjectsModule, catalogue?: ModelCatalog
     const createInput = {
       name: asString(input.name),
       description: asString(input.description),
-      skillLevel: asSkillLevel(input),
+      mode: asMode(input),
     };
     if ((c.req.header('accept') ?? '').includes('text/event-stream')) {
       return streamCreate(projects, createInput);
@@ -128,8 +128,8 @@ export function projectRoutes(projects: ProjectsModule, catalogue?: ModelCatalog
     if (input.description !== undefined) {
       patch.description = asString(input.description);
     }
-    if (input.skillLevel !== undefined || input.skill_level !== undefined) {
-      patch.skillLevel = asSkillLevel(input);
+    if (input.mode !== undefined) {
+      patch.mode = asMode(input);
     }
     const agentModel = parseAgentModel(input);
     if (agentModel !== undefined) {

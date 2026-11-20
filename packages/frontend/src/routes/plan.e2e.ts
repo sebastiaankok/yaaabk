@@ -4,7 +4,7 @@ const PROJECT = {
   id: 'p1',
   name: 'todo-app',
   description: 'A todo list',
-  skillLevel: 'expert',
+  mode: 'guided',
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
@@ -22,7 +22,7 @@ const PLAN = {
   version: 1,
   contentMarkdown: '# Plan',
   summary: 'A plan for saving bookmarks.',
-  skillLevel: 'expert',
+  mode: 'guided',
   source: 'grill-me',
   createdAt: '2026-01-01T00:00:00.000Z',
   isActive: true,
@@ -33,7 +33,7 @@ const SESSION = {
   id: 's1',
   projectId: 'p1',
   status: 'active',
-  skillLevel: 'expert',
+  mode: 'guided',
   model: 'openrouter/default-model',
   startedAt: '2026-01-01T00:00:00.000Z',
   lastActivityAt: '2026-01-01T00:00:00.000Z',
@@ -219,6 +219,7 @@ test('shows the project and its active plan', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
+  await expect(page.getByText('Guided', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
   await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();

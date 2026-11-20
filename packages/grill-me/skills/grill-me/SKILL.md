@@ -1,6 +1,6 @@
 ---
 name: YAAABK Grill-Me
-description: YAAABK grill-me session. Load this first when a Developer's idea must be refined into a settled plan. Asks exactly one question at a time, adapts to the Developer's Skill Level, then hands off to the to-prd and to-issues skills.
+description: YAAABK grill-me session. Load this first when a Developer's idea must be refined into a settled plan. Asks exactly one question at a time, reads the Project mode from the opening prompt, then hands off to the to-prd and to-issues skills.
 ---
 
 # YAAABK Grill-Me
@@ -9,7 +9,7 @@ You are running a YAAABK Grill-Me Session in a live terminal. Your job is to tur
 a Developer's rough idea into a plan both of you agree is settled, then hand the
 work to the `to-prd` and `to-issues` skills.
 
-The opening prompt gave you the Developer's idea, their Skill Level, the Project
+The opening prompt gave you the Developer's idea, their Project mode, the Project
 identity and, when one exists, the active Plan. Treat an active Plan as context
 for the next iteration, not as a specification you must keep.
 
@@ -34,24 +34,10 @@ Interview the Developer until every branch of the design tree is resolved.
   mutate the cluster: no apply, delete or patch, no `git push`, no writes
   outside the workspace.
 
-## Skill Level
+## Project mode
 
-Adapt every question to the Skill Level in the opening prompt. Both levels ask
-exactly one question per turn.
-
-### `beginner`
-
-Ask simple, concrete questions in plain language. Prefer questions about
-observed behaviour ("what should happen when the list is empty?") over
-architectural ones. Briefly explain any jargon you introduce, and offer a
-sensible default so the Developer can simply agree.
-
-### `expert`
-
-Ask deep architectural questions. Name the trade-offs explicitly, state the
-option you recommend and why, and assume the Developer knows the domain. Push on
-non-functional concerns: data model, failure modes, scaling, security,
-observability and deployment.
+The opening prompt gives you the Project's mode: `guided` or `autonomous`.
+Follow the interview below.
 
 ## Stop and confirm
 

@@ -7,7 +7,7 @@ const NOW = new Date('2026-01-01T12:00:00.000Z');
 const INPUT: NewPlan = {
   projectId: 'project-1',
   contentMarkdown: '# Plan',
-  skillLevel: 'expert',
+  mode: 'guided',
   source: 'grill-me',
 };
 
@@ -38,7 +38,7 @@ describe('create', () => {
     const result = await plans.create({
       projectId: 'project-1',
       contentMarkdown: '# Plan',
-      skillLevel: 'expert',
+      mode: 'guided',
       source: 'grill-me',
     });
 
@@ -49,7 +49,7 @@ describe('create', () => {
       projectId: 'project-1',
       version: 1,
       contentMarkdown: '# Plan',
-      skillLevel: 'expert',
+      mode: 'guided',
       source: 'grill-me',
       createdAt: NOW.toISOString(),
       isActive: true,
@@ -107,7 +107,7 @@ describe('create', () => {
   it.each([
     ['an empty project id', { projectId: '   ' }],
     ['empty content', { contentMarkdown: '   ' }],
-    ['an unknown skill level', { skillLevel: 'wizard' }],
+    ['an unknown project mode', { mode: 'wizard' }],
     ['an unknown source', { source: 'api' }],
   ])('rejects %s', async (_label, overrides) => {
     const { plans } = setup();

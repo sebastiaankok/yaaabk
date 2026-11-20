@@ -3,7 +3,7 @@ import { createFakeRepositoryProvider } from '@yaaabk/projects';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
-const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
+const PROJECT = { name: 'todo-app', description: 'A todo list', mode: 'guided' } as const;
 
 async function request(
   context: TestContext,
@@ -52,7 +52,7 @@ describe('POST /api/projects', () => {
     await expect(res.json()).resolves.toMatchObject({
       name: 'todo-app',
       description: 'A todo list',
-      skillLevel: 'expert',
+      mode: 'guided',
     });
     await expect(context.projects.list()).resolves.toMatchObject({
       ok: true,
@@ -66,6 +66,18 @@ describe('POST /api/projects', () => {
     const res = await request(context, session, '/api/projects', {
       method: 'POST',
       body: JSON.stringify({ ...PROJECT, name: 'Not Valid' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
+  });
+
+  it('requires a project mode', async () => {
+    const { context, session } = await signedIn();
+
+    const res = await request(context, session, '/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'todo-app', description: 'A todo list' }),
     });
 
     expect(res.status).toBe(400);
@@ -215,6 +227,20 @@ describe('PATCH /api/projects/:id', () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ description: 'Updated' });
+  });
+
+  it('updates the project mode', async () => {
+    const { context, session } = await signedIn();
+    const created = await context.projects.create(PROJECT);
+    if (!created.ok) throw new Error('create failed');
+
+    const res = await request(context, session, `/api/projects/${created.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ mode: 'autonomous' }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ mode: 'autonomous' });
   });
 
   it('returns 404 for an unknown id', async () => {

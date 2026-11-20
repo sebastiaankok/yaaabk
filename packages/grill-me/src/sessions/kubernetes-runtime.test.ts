@@ -111,7 +111,7 @@ function createHarness(overrides: Partial<KubernetesSessionRuntimeOptions> = {})
       repoFullName: REPO,
       gitToken: 'ghs_clone_token',
       idea: 'A todo app',
-      skillLevel: 'expert',
+      mode: 'guided',
       prompt: 'Build a todo app',
       model: 'openrouter/test-model',
       reportToken: 'report-token',
@@ -299,7 +299,7 @@ describe('Kubernetes session Pods', () => {
     expect(env).toMatchObject({
       YAAABK_PROJECT_ID: spec.projectId,
       YAAABK_SESSION_ID: spec.sessionId,
-      YAAABK_SKILL_LEVEL: spec.skillLevel,
+      YAAABK_MODE: spec.mode,
       [SESSION_PROMPT_ENV]: 'Build a recipe box',
       OPENCODE_CONFIG: '/app/opencode-session.json',
     });

@@ -2,11 +2,11 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { Issue, IssuesModule } from '@yaaabk/issues';
 import type { Plan, PlansModule } from '@yaaabk/plans';
 import {
-  isSkillLevel,
+  isProjectMode,
   normaliseGeneratedIssues,
   normaliseSummary,
   type GeneratedIssueReport,
-  type SkillLevel,
+  type ProjectMode,
 } from '@yaaabk/shared';
 import type { SessionKeyIssuer } from './keys';
 import { buildGrillSessionPrompt, resolveSessionModel } from './prompt';
@@ -42,7 +42,7 @@ export interface GrillSessionView {
   id: string;
   projectId: string;
   status: GrillSessionStatus;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   model: string;
   startedAt: string;
   lastActivityAt: string;
@@ -96,7 +96,7 @@ export interface StartGrillSessionInput {
   projectId: string;
   projectName: string;
   idea: string;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   /** The selected model; defaults to the Project's last-used or environment model. */
   model?: string | null;
   /** The model the Project last used, if any. */
@@ -217,7 +217,7 @@ export interface GrillSessionRecord {
   projectId: string;
   projectName: string;
   status: GrillSessionStatus;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   model: string;
   startedAt: string;
   lastActivityAt: string;
@@ -259,8 +259,8 @@ function invalidReason(input: StartGrillSessionInput): string | undefined {
   if (typeof input.idea !== 'string' || input.idea.trim() === '') {
     return 'An idea is required';
   }
-  if (!isSkillLevel(input.skillLevel)) {
-    return `"${String(input.skillLevel)}" is not a valid skill level`;
+  if (!isProjectMode(input.mode)) {
+    return `"${String(input.mode)}" is not a valid project mode`;
   }
   return undefined;
 }
@@ -317,7 +317,7 @@ export function createGrillSessionsModule(
       id: session.id,
       projectId: session.projectId,
       status: session.status,
-      skillLevel: session.skillLevel,
+      mode: session.mode,
       model: session.model,
       startedAt: session.startedAt,
       lastActivityAt: session.lastActivityAt,
@@ -483,7 +483,7 @@ export function createGrillSessionsModule(
         projectId: input.projectId,
         projectName: input.projectName,
         idea: input.idea,
-        skillLevel: input.skillLevel,
+        mode: input.mode,
         model,
         activePlan: input.activePlan ?? null,
         repoFullName: input.repoFullName ?? null,
@@ -525,7 +525,7 @@ export function createGrillSessionsModule(
         // Persisted before the runtime exists, so a backend that dies mid-start
         // can still fail the session and reap any Pod the start created.
         status: 'starting',
-        skillLevel: input.skillLevel,
+        mode: input.mode,
         model,
         startedAt,
         lastActivityAt: startedAt,
@@ -553,7 +553,7 @@ export function createGrillSessionsModule(
           : { repoFullName: input.repoFullName }),
         ...(gitToken === undefined ? {} : { gitToken }),
         idea: input.idea,
-        skillLevel: input.skillLevel,
+        mode: input.mode,
         prompt,
         model,
         ...(openRouterKey === undefined ? {} : { openRouterKey }),
@@ -707,7 +707,7 @@ export function createGrillSessionsModule(
             projectId,
             contentMarkdown: prd,
             summary: session.draft.summary,
-            skillLevel: session.skillLevel,
+            mode: session.mode,
             source: 'grill-me',
           });
           if (!created.ok) {

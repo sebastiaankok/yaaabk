@@ -7,7 +7,7 @@
  * orchestration logic is testable without a cluster or a real terminal.
  */
 
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 
 /** Where a runtime currently is. */
 export type SessionRuntimeState = 'starting' | 'ready' | 'failed' | 'stopped';
@@ -55,7 +55,7 @@ export interface SessionRuntimeSpec {
    */
   gitToken?: string;
   idea: string;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   /** The opening prompt, already built by the orchestrator. */
   prompt: string;
   /** The OpenCode model in `provider/model` form. */

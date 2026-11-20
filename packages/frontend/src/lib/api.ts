@@ -13,7 +13,7 @@ import type { Issue, IssueGraph, IssuePatch } from '@yaaabk/issues';
 import type { Plan } from '@yaaabk/plans';
 import type { Project, ProjectPatch, ProvisioningEvent } from '@yaaabk/projects';
 import type { SettingsUpdate, SettingsView } from '@yaaabk/settings';
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 import type { ProjectStats, ProjectOverview } from '@yaaabk/stats';
 import type { OpenRouterCreditsView } from './openrouter-balance';
 
@@ -191,7 +191,7 @@ export function listProjects(): Promise<Project[]> {
 export function createProject(input: {
   name: string;
   description: string;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
 }): Promise<Project> {
   return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(input) });
 }
@@ -206,7 +206,7 @@ export function createProject(input: {
  * `ApiError` on `error` or on a non-stream response (e.g. an auth rejection).
  */
 export async function createProjectStream(
-  input: { name: string; description: string; skillLevel: SkillLevel },
+  input: { name: string; description: string; mode: ProjectMode },
   onProgress: (event: ProvisioningEvent) => void,
 ): Promise<Project> {
   const response = await fetch(`${API_BASE}/api/projects`, {
@@ -455,7 +455,7 @@ export interface GrillSessionView {
   id: string;
   projectId: string;
   status: 'starting' | 'active' | 'finished' | 'cancelled' | 'failed';
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   model: string;
   startedAt: string;
   lastActivityAt: string;

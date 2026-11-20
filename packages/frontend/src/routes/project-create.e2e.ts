@@ -4,7 +4,7 @@ const PROJECT = {
   id: 'p1',
   name: 'todo-app',
   description: 'A todo list',
-  skillLevel: 'expert',
+  mode: 'guided',
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',
@@ -43,7 +43,9 @@ test('rejects an invalid name before advancing', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByText(/lowercase letters/)).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Skill level' })).toBeHidden();
+  await expect(
+    page.getByRole('heading', { name: 'How should the agent work with you?' }),
+  ).toBeHidden();
 });
 
 test('creates a project and follows it to its dashboard', async ({ page }) => {
@@ -86,12 +88,23 @@ test('creates a project and follows it to its dashboard', async ({ page }) => {
   await page.getByLabel('Description').fill('A todo list');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await page.getByRole('radio', { name: 'Expert' }).check();
+  await expect(page.getByRole('radio', { name: 'Guided' })).toBeChecked();
+  await expect(
+    page.getByText(
+      'The agent interviews you one question at a time, then checks the module sketch and issue breakdown with you.',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'The agent decides everything itself and only shows you the finished Plan and Issues.',
+    ),
+  ).toBeVisible();
+  await page.getByRole('radio', { name: 'Autonomous' }).check();
   await page.getByRole('button', { name: 'Create project' }).click();
 
   await expect(page.getByText('Creating GitHub repository')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: 'todo-app' })).toBeVisible();
-  expect(posted).toEqual({ name: 'todo-app', description: 'A todo list', skillLevel: 'expert' });
+  expect(posted).toEqual({ name: 'todo-app', description: 'A todo list', mode: 'autonomous' });
 });
 
 test('reports a provisioning failure and lets the Developer go back', async ({ page }) => {
@@ -104,7 +117,6 @@ test('reports a provisioning failure and lets the Developer go back', async ({ p
   await page.getByLabel('Project name').fill('todo-app');
   await page.getByLabel('Description').fill('A todo list');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('radio', { name: 'Beginner' }).check();
   await page.getByRole('button', { name: 'Create project' }).click();
 
   await expect(page.getByRole('alert')).toHaveText('repo name is taken');

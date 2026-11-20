@@ -1,4 +1,4 @@
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 import { plansError } from './errors';
 import type { Plan, PlanStore } from './types';
 
@@ -26,7 +26,7 @@ interface PlanRow {
   version: number;
   content_markdown: string;
   summary: string | null;
-  skill_level: string;
+  mode: string;
   source: string;
   created_at: string;
   is_active: number;
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS plans (
   version          INTEGER NOT NULL,
   content_markdown TEXT NOT NULL,
   summary          TEXT,
-  skill_level      TEXT NOT NULL,
+  mode             TEXT NOT NULL,
   source           TEXT NOT NULL,
   created_at       TEXT NOT NULL,
   is_active        INTEGER NOT NULL,
@@ -59,7 +59,7 @@ function toPlan(row: PlanRow): Plan {
     version: row.version,
     contentMarkdown: row.content_markdown,
     summary: row.summary,
-    skillLevel: row.skill_level as SkillLevel,
+    mode: row.mode as ProjectMode,
     source: row.source as Plan['source'],
     createdAt: row.created_at,
     isActive: row.is_active === 1,
@@ -113,7 +113,7 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
         database
           .prepare(
             `INSERT INTO plans
-               (id, project_id, version, content_markdown, summary, skill_level, source, created_at,
+               (id, project_id, version, content_markdown, summary, mode, source, created_at,
                 is_active, accepted_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
@@ -123,7 +123,7 @@ export function createSqlitePlanStore(database: SqliteDatabase): PlanStore {
             plan.version,
             plan.contentMarkdown,
             plan.summary,
-            plan.skillLevel,
+            plan.mode,
             plan.source,
             plan.createdAt,
             plan.isActive ? 1 : 0,

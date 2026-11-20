@@ -8,7 +8,7 @@ function record(overrides: Partial<GrillSessionRecord> = {}): GrillSessionRecord
     projectId: 'p1',
     projectName: 'todo-app',
     status: 'active',
-    skillLevel: 'expert',
+    mode: 'guided',
     model: 'openrouter/default-model',
     startedAt: '2026-01-01T12:00:00.000Z',
     lastActivityAt: '2026-01-01T12:00:00.000Z',

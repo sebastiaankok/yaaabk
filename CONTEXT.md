@@ -9,7 +9,7 @@ A person who installs YAAABK on a Kubernetes cluster and configures cluster-leve
 _Avoid_: Operator, cluster admin, sysadmin
 
 **Developer**:
-A person who uses the YAAABK browser UI to create projects, brainstorm features, and manage agent-driven development. Brings their own OpenRouter API key and GitHub App credentials. May be an expert or a beginner.
+A person who uses the YAAABK browser UI to create projects, brainstorm features, and manage agent-driven development. Brings their own OpenRouter API key and GitHub App credentials. Works with the agent in a guided or autonomous Project mode.
 _Avoid_: End-user, customer, user
 
 **Project**:
@@ -20,9 +20,9 @@ _Avoid_: App, workspace, application
 A Kubernetes namespace that hosts a **Project**'s deployed application and agent infrastructure. Named `yaaabk-<short-uuid>` where the short UUID is derived from the Project's internal ID. The namespace has a label `yaaabk.io/project-name: <project-name>` for human readability. Never renamed after creation.
 _Avoid_: project-<name>, <user>-<project>
 
-**Skill Level**:
-A per-Developer setting that controls the prompt depth of the YAAABK-specific grill-me skill. `beginner` receives simpler, step-by-step questions. `expert` receives deeper architectural questions and opinionated defaults.
-_Avoid_: Experience level, difficulty
+**Project mode**:
+A per-Project setting that decides how the agent works. `guided` interviews the Developer one question at a time and checks the module sketch and issue breakdown with them. `autonomous` decides everything itself and only shows the finished **Plan** and **Issues**.
+_Avoid_: Skill level, experience level, difficulty
 
 **Grill-Me Session**:
 An interactive AI-driven conversation where a **Developer** refines an idea into a structured **Plan**. Runs `opencode mini` behind ttyd as a real terminal session, either locally or in a hardened per-session Pod in the **Namespace (K8s)**, so the Developer sees the agent's output and types answers directly.

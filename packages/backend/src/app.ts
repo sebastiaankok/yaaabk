@@ -8,7 +8,6 @@ import type { IssuesModule } from '@yaaabk/issues';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import type { SettingsModule } from '@yaaabk/settings';
-import { SKILL_LEVELS } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { UpgradeWebSocket } from 'hono/ws';
@@ -94,7 +93,6 @@ export function createApp(options: AppOptions): Hono {
   app.use('/api/*', requireAuth(options.auth));
 
   app.route('/', authRoutes(options.auth, options.authRoutesOptions));
-  app.get('/api/skill-levels', (c) => c.json({ skillLevels: SKILL_LEVELS }));
   app.route('/', projectRoutes(options.projects, options.models));
   app.route('/', planRoutes(options.projects, options.plans, options.issues, options.issueSync));
   app.route(

@@ -73,7 +73,7 @@ describe('local SessionRuntime contract', () => {
     expect(request?.env).toMatchObject({
       YAAABK_PROJECT_ID: spec.projectId,
       YAAABK_SESSION_ID: spec.sessionId,
-      YAAABK_SKILL_LEVEL: spec.skillLevel,
+      YAAABK_MODE: spec.mode,
       [SESSION_PROMPT_ENV]: spec.prompt,
       YAAABK_REPORT_TOKEN: 'report-token',
       YAAABK_API_URL: 'http://backend:3000',

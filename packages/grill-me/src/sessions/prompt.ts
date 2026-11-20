@@ -1,4 +1,4 @@
-import { DEFAULT_OPENCODE_MODEL, resolveOpenCodeModel, type SkillLevel } from '@yaaabk/shared';
+import { DEFAULT_OPENCODE_MODEL, resolveOpenCodeModel, type ProjectMode } from '@yaaabk/shared';
 
 /** Default OpenCode model when neither the request nor the Project chooses one. */
 export const DEFAULT_GRILL_MODEL = DEFAULT_OPENCODE_MODEL;
@@ -11,14 +11,6 @@ export function resolveSessionModel(
   return resolveOpenCodeModel(requested, fallback);
 }
 
-/** How question depth changes with the Developer's skill level. */
-const DEPTH_GUIDANCE: Record<SkillLevel, string> = {
-  beginner:
-    'The Developer is a beginner. Ask one simple, concrete question at a time and briefly explain any jargon you use.',
-  expert:
-    'The Developer is an expert. Ask one deep question at a time, name trade-offs, and state opinionated defaults you would recommend.',
-};
-
 /** The skill the agent must load before it talks to the Developer. */
 export const GRILL_SKILL_ID = 'grill-me';
 
@@ -26,7 +18,7 @@ export interface GrillSessionPromptInput {
   projectId: string;
   projectName: string;
   idea: string;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   model: string;
   activePlan?: string | null;
   repoFullName?: string | null;
@@ -42,9 +34,8 @@ export function buildGrillSessionPrompt(input: GrillSessionPromptInput): string 
     'This prompt can be replayed when the terminal reconnects. If the conversation already contains earlier turns, resume it and continue from the last question. Do not restart the interview, re-ask settled questions or repeat your opening summary.',
     '',
     `Project: ${input.projectName} (${input.projectId})`,
-    `Developer skill level: ${input.skillLevel}`,
+    `Mode: ${input.mode}`,
     `Model: ${input.model}`,
-    DEPTH_GUIDANCE[input.skillLevel],
   ];
   if (input.repoFullName !== undefined && input.repoFullName !== null) {
     lines.push(`Repository: ${input.repoFullName}`);

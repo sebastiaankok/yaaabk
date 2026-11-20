@@ -213,10 +213,10 @@ exposes it over HTTP:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/projects` | Create a Project (`name`, `description`, `skillLevel`) |
+| `POST /api/projects` | Create a Project (`name`, `description`, `mode`) |
 | `GET /api/projects` | List Projects, newest first |
 | `GET /api/projects/:id` | Get a Project |
-| `PATCH /api/projects/:id` | Update its `description`, `skillLevel` and/or `agentModel` |
+| `PATCH /api/projects/:id` | Update its `description`, `mode` and/or `agentModel` |
 | `DELETE /api/projects/:id` | Tear down its repository, cluster resources, Plans and Issues |
 
 Project repositories are created **public**: the scaffold is AI-generated, and a

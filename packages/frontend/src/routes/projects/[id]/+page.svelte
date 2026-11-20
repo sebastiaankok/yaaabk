@@ -15,6 +15,7 @@
   import { runLabel } from '#lib/agent-run.js';
   import { hasErrors, validateExportTarget, type ExportTargetErrors } from '#lib/export-project.js';
   import { pollWhileVisible } from '#lib/polling.js';
+  import { projectModeLabel } from '#lib/project-mode.js';
 
   const projectId = $derived(page.params.id);
 
@@ -177,7 +178,7 @@
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h1 class="text-2xl font-bold tracking-tight">{project.name}</h1>
         <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-          {project.skillLevel}
+          {projectModeLabel(project.mode)}
         </span>
       </div>
       <p class="text-neutral-600">{project.description}</p>

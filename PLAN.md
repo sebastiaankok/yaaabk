@@ -27,7 +27,7 @@
 | Step | What Happens |
 |---|---|
 | 1. Create Project | User provides name + description. YAAABK creates a GitHub repo, bootstraps it from a Svelte+Bun template, and provisions a Namespace, RBAC and deploy pipeline. |
-| 2. Grill and Plan | User enters a Grill-Me Session: a real terminal running `opencode mini` behind ttyd, either locally or in a hardened per-session Pod. Skill level (expert/beginner) controls the prompt depth. |
+| 2. Grill and Plan | User enters a Grill-Me Session: a real terminal running `opencode mini` behind ttyd, either locally or in a hardened per-session Pod. Project mode (guided/autonomous) controls how the agent works. |
 | 3. Publish Plan and Issues | The agent interviews, synthesises a PRD, and cuts it into vertical-slice Issues. Finish publishes them together as one Plan version labelled “Plan (PRD)” and replaces that Plan’s Issues. |
 | 4. Triage Issues | Issues are labeled `ready`, `refinement-needed`, `blocked` or `needs-human`. |
 | 5. Spawn Agents | `ready` issues get an autonomous K8s Job that implements the feature, creates a PR, and auto-merges after CI passes. |
@@ -228,7 +228,7 @@ Project
 ├── description: string
 ├── github_repo_url: string
 ├── k8s_namespace: string (yaaabk-<short-uuid>)
-├── skill_level: "beginner" | "expert"
+├── mode: "autonomous" | "guided"
 ├── last_grill_model: string (nullable)
 ├── deployed_commit_sha: string (nullable)
 ├── last_deploy_status: string (nullable)
@@ -240,7 +240,7 @@ Project
 │   ├── project_id: uuid FK
 │   ├── version: int
 │   ├── content_markdown: text
-│   ├── skill_level: string
+│   ├── mode: string
 │   ├── source: "grill-me" | "upload"
 │   ├── created_at: timestamp
 │   └── is_active: boolean
@@ -265,7 +265,7 @@ Project
 │   ├── id: uuid
 │   ├── project_id: uuid FK
 │   ├── status: "starting" | "active" | "finishing" | "finished" | "cancelled" | "failed"
-│   ├── skill_level: "beginner" | "expert"
+│   ├── mode: "autonomous" | "guided"
 │   ├── model: string
 │   ├── runtime_ref: (provider, handle, terminal URL)
 │   ├── report_token_hash: string
@@ -537,7 +537,7 @@ resources:
 
 - [x] **Session runtime**: Per-session Pods in Kubernetes, local ttyd + OpenCode for development
 - [x] **Grill-Me Session UI**: xterm.js terminal behind the backend proxy, with reconnect and resize
-- [x] **Skill level prompts**: Expert vs beginner prompt depth in the image-baked skills
+- [x] **Project mode vocabulary**: Guided and autonomous modes in the image-baked skills
 - [x] **PRD handoff**: `grill-me` → `to-prd` → `to-issues` with typed draft reports
 - [x] **Publishing**: Finish creates one Plan (PRD) and replaces that Plan's Issues
 - [ ] **Issue board UI**: Kanban view, labels, status filtering

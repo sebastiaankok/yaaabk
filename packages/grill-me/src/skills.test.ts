@@ -26,12 +26,11 @@ describe('grill-me skill', () => {
     expect(skill).toMatch(/do not batch|never batch/i);
   });
 
-  it('adapts question depth to the Skill Level', () => {
-    expect(skill).toMatch(/skill level/i);
-    expect(skill).toContain('beginner');
-    expect(skill).toContain('expert');
-    expect(skill).toMatch(/trade-off/i);
-    expect(skill).toMatch(/jargon/i);
+  it('reads the Project mode from the opening prompt', () => {
+    expect(skill).toMatch(/project mode/i);
+    expect(skill).not.toMatch(/skill level/i);
+    expect(skill).not.toContain('beginner');
+    expect(skill).not.toContain('expert');
   });
 
   it('answers its own questions from the repository and cluster when it can', () => {

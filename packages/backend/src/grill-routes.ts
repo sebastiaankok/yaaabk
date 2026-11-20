@@ -179,7 +179,7 @@ export function grillRoutes(
       projectId: project.id,
       projectName: project.name,
       idea: asString(input.idea ?? input.message),
-      skillLevel: project.skillLevel,
+      mode: project.mode,
       model: model === '' ? null : model,
       lastModel: project.lastModel,
       activePlan: active.value?.contentMarkdown ?? null,

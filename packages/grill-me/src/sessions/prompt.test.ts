@@ -5,7 +5,7 @@ const INPUT: GrillSessionPromptInput = {
   projectId: 'p1',
   projectName: 'todo-app',
   idea: 'A recipe box',
-  skillLevel: 'expert',
+  mode: 'guided',
   model: 'openrouter/anthropic/claude-sonnet-4.5',
 };
 
@@ -31,12 +31,13 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toContain('skill');
   });
 
-  it('carries the Project, Skill Level, model and idea', () => {
-    const prompt = buildGrillSessionPrompt({ ...INPUT, skillLevel: 'beginner' });
+  it('carries the Project, Project Mode, model and idea', () => {
+    const prompt = buildGrillSessionPrompt({ ...INPUT, mode: 'autonomous' });
 
     expect(prompt).toContain('todo-app');
     expect(prompt).toContain('p1');
-    expect(prompt).toContain('beginner');
+    expect(prompt).toContain('Mode: autonomous');
+    expect(prompt).not.toContain('Developer skill level');
     expect(prompt).toContain(INPUT.model);
     expect(prompt).toContain('A recipe box');
   });

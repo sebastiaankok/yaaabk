@@ -27,7 +27,7 @@ function project(overrides: Partial<Project> = {}): Project {
     id: 'project-1',
     name: 'todo-app',
     description: 'A todo app',
-    skillLevel: 'expert',
+    mode: 'guided',
     repoUrl: `https://github.com/${REPO}`,
     repoFullName: REPO,
     namespace: 'yaaabk-a1b2c3d4',
