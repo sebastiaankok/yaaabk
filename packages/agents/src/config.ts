@@ -23,6 +23,14 @@ export const DEFAULT_AGENT_IMAGE = 'yaaabk/agent:0.1.0';
 export const DEFAULT_ACTIVE_DEADLINE_SECONDS = 30 * 60;
 
 /**
+ * Seconds a review attempt may run before Kubernetes kills its pod.
+ *
+ * A review judges a diff CI already checked; anything beyond ten minutes is
+ * the reviewer re-running the pipeline instead of reading the change.
+ */
+export const REVIEW_ACTIVE_DEADLINE_SECONDS = 10 * 60;
+
+/**
  * Pod-level security context every Agent Job runs with. Project Namespaces
  * enforce Pod Security `restricted`, and the agent image runs as the non-root
  * `bun` user (uid 1000), so these match a Session Pod rather than widening the

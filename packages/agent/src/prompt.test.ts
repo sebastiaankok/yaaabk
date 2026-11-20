@@ -127,4 +127,57 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain(REVIEW_VERDICT_PATH);
     expect(REVIEW_VERDICT_PATH).toBe('/work/repo/.yaaabk/review.json');
   });
+
+  it('trusts CI and runs the project checks at most once', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain('CI has already run lint, typecheck, tests and build');
+    expect(prompt).toContain('Run `bun run check` at most once');
+  });
+
+  it('forbids browser, Playwright, Chromium and screenshot work', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain('Do not start a browser');
+    expect(prompt).toContain('Playwright');
+    expect(prompt).toContain('Chromium');
+    expect(prompt).toContain('screenshots');
+  });
+
+  it('sets a tool-call budget and asks for a verdict once it is exhausted', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain('Aim for 20–30 tool calls');
+    expect(prompt).toContain('write the verdict with the evidence you have gathered');
+  });
+
+  it('forbids build output and compiled CSS work unless the Issue requires it', () => {
+    const prompt = buildReviewPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      diff: 'diff --git a/src/a.ts b/src/a.ts',
+    });
+
+    expect(prompt).toContain(
+      'Do not run `bun run build` unless the diff changes build configuration',
+    );
+    expect(prompt).toContain(
+      'Do not inspect compiled CSS unless the Issue is specifically about build output',
+    );
+    expect(prompt).toContain(
+      'Only run extra commands when a specific concern in the diff requires it',
+    );
+  });
 });
