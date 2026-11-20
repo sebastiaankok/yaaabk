@@ -2,6 +2,21 @@ import type { AgentConfig } from './config';
 import type { AgentIssue } from './ports';
 
 /**
+ * The directory the Job clones the repository into and the Agent works in.
+ *
+ * `/app` is the harness (the agent runtime and its skills), never the checkout,
+ * so every prompt names this absolute path instead of relying on the Agent's
+ * working directory.
+ */
+export const REPOSITORY_DIRECTORY = '/work/repo';
+
+/** Where the review Agent writes its verdict, relative to the checkout. */
+export const REVIEW_VERDICT_FILE = '.yaaabk/review.json';
+
+/** The absolute verdict path the review prompt names. */
+export const REVIEW_VERDICT_PATH = `${REPOSITORY_DIRECTORY}/${REVIEW_VERDICT_FILE}`;
+
+/**
  * Builds the prompt handed to OpenCode for one Issue.
  *
  * Kept pure and small so the wording can be asserted in tests; the actual
@@ -13,11 +28,14 @@ export function buildImplementPrompt(issue: AgentIssue, config: AgentConfig): st
   return [
     `Implement GitHub issue #${issue.number}: ${issue.title}`,
     '',
-    'Use the implement-issue skill. Work in the checked-out repository:',
+    `Use the implement-issue skill. Work in ${REPOSITORY_DIRECTORY}, the checked-out repository:`,
     '- Explore the codebase and implement the change the Issue describes.',
     '- Run the pre-commit hooks (lint, type-check, test) and fix any failures.',
     "- Debug the Project's running workloads with `kubectl` if needed (as the `yaaabk-agent` ServiceAccount via the auto-mounted token; never read Secret values or touch other namespaces).",
     '- Do not open a pull request yourself; YAAABK does that once you finish.',
+    '',
+    `The repository is at ${REPOSITORY_DIRECTORY}. /app is the harness, not the checkout:`,
+    'never look for the repository in /app or search the filesystem for it.',
     '',
     `Repository: ${config.repoUrl}`,
     '',
@@ -39,9 +57,6 @@ export function pullRequestBody(issue: AgentIssue): string {
   return `Implements #${issue.number}.\n\nOpened automatically by YAAABK.`;
 }
 
-/** Where the review Agent writes its verdict for the runner to post. */
-export const REVIEW_VERDICT_PATH = '.yaaabk/review.json';
-
 /**
  * Builds the prompt handed to OpenCode when a pull request branch conflicts
  * with the base branch.
@@ -57,7 +72,7 @@ export function buildResolveConflictsPrompt(
   return [
     `Resolve the merge conflicts on pull request #${conflict.pullNumber}: ${issue.title}`,
     '',
-    'Use the resolve-conflicts skill. Work in the checked-out pull request branch:',
+    `Use the resolve-conflicts skill. Work in ${REPOSITORY_DIRECTORY}, the checked-out pull request branch:`,
     '- The default branch has already been merged into this branch and left conflicts.',
     '- Resolve every conflict by preserving the intent of both sides, not by discarding one.',
     `- Conflicted files:\n${conflict.paths.map((path) => `  - ${path}`).join('\n') || '  (none reported)'}`,
@@ -65,6 +80,9 @@ export function buildResolveConflictsPrompt(
     '- Run the pre-commit hooks (lint, type-check, test) and fix any failures.',
     '- Stage the resolved files so no unmerged path remains; YAAABK commits and force-pushes once you finish.',
     '- Do not push or open a pull request.',
+    '',
+    `The repository is at ${REPOSITORY_DIRECTORY}. /app is the harness, not the checkout:`,
+    'never look for the repository in /app or search the filesystem for it.',
     '',
     `Repository: pull request branch ${conflict.branch}`,
     '',
@@ -89,10 +107,13 @@ export function buildReviewPrompt(
   return [
     `Review GitHub pull request #${review.pullNumber}: ${issue.title}`,
     '',
-    'Use the review-pr skill. Work in the checked-out pull request branch:',
+    `Use the review-pr skill. Work in ${REPOSITORY_DIRECTORY}, the checked-out pull request branch:`,
     '- Explore the codebase and judge whether the change delivers the Issue.',
     '- Reference the specific files and lines you are concerned about.',
     '- Do not modify, commit or push anything; you are reviewing, not implementing.',
+    '',
+    `The repository is at ${REPOSITORY_DIRECTORY}. /app is the harness, not the checkout:`,
+    'never look for the repository in /app or search the filesystem for it.',
     '',
     `Repository: pull request branch ${review.branch}`,
     '',
@@ -103,7 +124,7 @@ export function buildReviewPrompt(
     review.diff.trim() === '' ? '(no diff)' : review.diff,
     '',
     'When you have decided, write your verdict to',
-    `\`${REVIEW_VERDICT_PATH}\` in the working directory as JSON:`,
+    `\`${REVIEW_VERDICT_PATH}\` as JSON:`,
     '{"event": "approve" | "request-changes", "body": "<your written summary>"}',
     '',
     'Approve only when the change is correct, complete and consistent with the',

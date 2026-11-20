@@ -24,7 +24,7 @@ import type {
   ReviewVerdict,
   SpendMeter,
 } from './ports';
-import { REVIEW_VERDICT_PATH } from './prompt';
+import { REVIEW_VERDICT_FILE } from './prompt';
 
 /** Splits an HTTPS or SCP-like git remote into its owner and repository. */
 export function parseRepoUrl(repoUrl: string): { owner: string; repo: string } {
@@ -334,7 +334,11 @@ export function newOpenCodeSessionId(): string {
 
 /** Runs `opencode session export <id>` quietly, capturing the JSON. */
 const exportSessionWithBun: OpenCodeSessionExporter = async ({ directory, sessionId }) => {
-  const result = await Bun.$`opencode session export ${sessionId}`.cwd(directory).quiet().nothrow();
+  const result = await Bun.$`opencode session export ${sessionId}`
+    .cwd(directory)
+    .env({ ...process.env, PWD: directory })
+    .quiet()
+    .nothrow();
   return { exitCode: result.exitCode ?? 1, stdout: result.stdout.toString() };
 };
 
@@ -409,6 +413,40 @@ async function pump(
 }
 
 /**
+ * The command and spawn options for one OpenCode invocation.
+ *
+ * OpenCode resolves its project from `PWD` when that variable is set, and the
+ * Job process inherits `/app` from the image. Changing only the child's `cwd`
+ * therefore leaves the Agent's shell in the harness: point `PWD` at the
+ * checkout as well so `pwd` and every relative tool path use the repository.
+ */
+export function openCodeSpawn(
+  directory: string,
+  args: readonly string[],
+  baseEnv: Record<string, string | undefined> = process.env,
+): {
+  cmd: string[];
+  options: {
+    cwd: string;
+    env: Record<string, string | undefined>;
+    stdin: 'ignore';
+    stdout: 'pipe';
+    stderr: 'pipe';
+  };
+} {
+  return {
+    cmd: ['opencode', ...args],
+    options: {
+      cwd: directory,
+      env: { ...baseEnv, PWD: directory },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  };
+}
+
+/**
  * Runs OpenCode through Bun's process API, streaming its output live.
  *
  * The Job's own stdout is what `kubectl logs` and the YAAABK UI read, so the
@@ -417,12 +455,8 @@ async function pump(
  * is what gets reported back when the run ends.
  */
 const runWithBun: OpenCodeRunner = async ({ directory, args }) => {
-  const child = Bun.spawn(['opencode', ...args], {
-    cwd: directory,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const spawned = openCodeSpawn(directory, args);
+  const child = Bun.spawn(spawned.cmd, spawned.options);
   const stdout = new BoundedOutput();
   const stderr = new BoundedOutput();
   await Promise.all([
@@ -437,11 +471,17 @@ const runWithBun: OpenCodeRunner = async ({ directory, args }) => {
   };
 };
 
-/** Reads and validates the verdict the review skill writes to the workspace. */
+/** The file the review skill writes its verdict to, inside `directory`. */
+export function reviewVerdictPath(directory: string): string {
+  return join(directory, REVIEW_VERDICT_FILE);
+}
+
+/** Reads and validates the verdict the review skill writes to the checkout. */
 async function readVerdictFile(directory: string): Promise<ReviewVerdict> {
-  const verdictFile = Bun.file(join(directory, REVIEW_VERDICT_PATH));
+  const verdictPath = reviewVerdictPath(directory);
+  const verdictFile = Bun.file(verdictPath);
   if (!(await verdictFile.exists())) {
-    throw new Error(`The review agent did not write ${REVIEW_VERDICT_PATH}`);
+    throw new Error(`The review agent did not write ${verdictPath}`);
   }
   const raw = (await verdictFile.json()) as { event?: unknown; body?: unknown };
   if (
@@ -450,7 +490,7 @@ async function readVerdictFile(directory: string): Promise<ReviewVerdict> {
     raw.body.trim() === ''
   ) {
     throw new Error(
-      `${REVIEW_VERDICT_PATH} must contain {"event": "approve" | "request-changes", "body": "…"}`,
+      `${verdictPath} must contain {"event": "approve" | "request-changes", "body": "…"}`,
     );
   }
   return { event: raw.event, body: raw.body };

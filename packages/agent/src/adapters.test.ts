@@ -12,8 +12,10 @@ import {
   createRegistry,
   createReporter,
   newOpenCodeSessionId,
+  openCodeSpawn,
   parseExportedSessionTokens,
   parseImage,
+  reviewVerdictPath,
 } from './adapters';
 import type { AgentConfig } from './config';
 
@@ -312,6 +314,25 @@ describe('createOpenCode', () => {
     await expect(
       openCode.implement({ directory: '/work/repo', prompt: 'Implement issue #42' }),
     ).rejects.toThrow(/AGENT_MODEL/);
+  });
+});
+
+describe('openCodeSpawn', () => {
+  it('runs OpenCode in the checkout and points PWD there too', () => {
+    const spawned = openCodeSpawn('/work/repo', ['run', 'Implement issue #42'], {
+      PWD: '/app',
+      HOME: '/home/bun',
+    });
+
+    expect(spawned.cmd).toEqual(['opencode', 'run', 'Implement issue #42']);
+    expect(spawned.options.cwd).toBe('/work/repo');
+    // OpenCode resolves its project from PWD, so a stale /app would make every
+    // shell command run in the harness instead of the checkout.
+    expect(spawned.options.env).toMatchObject({ PWD: '/work/repo', HOME: '/home/bun' });
+  });
+
+  it('reads the review verdict from the checkout path the prompt names', () => {
+    expect(reviewVerdictPath('/work/repo')).toBe('/work/repo/.yaaabk/review.json');
   });
 });
 
