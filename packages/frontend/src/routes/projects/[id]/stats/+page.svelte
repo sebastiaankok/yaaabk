@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import type { Project } from '@yaaabk/projects';
   import type { ProjectStats } from '@yaaabk/stats';
   import { compactTokens } from '#lib/agent-run.js';
   import { ApiError, getProject, getProjectStats } from '#lib/api.js';
+  import PageHeader from '#lib/components/page-header.svelte';
+  import ProjectTabs from '#lib/components/project-tabs.svelte';
+  import { resolveShell } from '#lib/shell.js';
   import {
     chartPoints,
     donutGradient,
@@ -24,6 +26,7 @@
   const STATUS_FILTERS = ['all', 'success', 'failed', 'running', 'queued'] as const;
 
   let project = $state<Project | null>(null);
+  const shell = $derived(resolveShell(page.url.pathname, project?.name));
   let stats = $state<ProjectStats | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -103,39 +106,40 @@
   <title>{project ? `${project.name} · Stats` : 'Stats'} · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-5xl flex-col gap-6 p-6">
-  <a
-    href={projectId === undefined ? resolve('/') : resolve('/projects/[id]', { id: projectId })}
-    class="text-sm text-neutral-500 hover:underline"
-  >
-    ← Back to project
-  </a>
-
+<div class="mx-auto flex w-full max-w-5xl flex-col gap-6">
   {#if error !== null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+      {error}
+    </p>
   {:else if loading && stats === null}
-    <p class="text-sm text-neutral-500">Loading stats…</p>
+    <p class="text-sm text-muted-foreground">Loading stats…</p>
   {:else if project !== null && stats !== null}
-    <header class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">{project.name} stats</h1>
-        <p class="text-sm text-neutral-600">Issue throughput, agent reliability and spend.</p>
-      </div>
-      <div class="flex items-center gap-1" role="group" aria-label="Date range">
-        {#each RANGES as option (option)}
-          <button
-            type="button"
-            onclick={() => (days = option)}
-            aria-pressed={days === option}
-            class="rounded-md border px-3 py-1.5 text-sm {days === option
-              ? 'border-neutral-900 bg-neutral-900 text-white'
-              : 'border-neutral-300 hover:bg-neutral-100'}"
-          >
-            {option} days
-          </button>
-        {/each}
-      </div>
-    </header>
+    {@const currentProjectId = project.id}
+    <PageHeader
+      title={`${project.name} stats`}
+      purpose="Issue throughput, agent reliability and spend."
+      breadcrumbs={shell.breadcrumbs}
+    >
+      {#snippet actions()}
+        <div class="flex items-center gap-1" role="group" aria-label="Date range">
+          {#each RANGES as option (option)}
+            <button
+              type="button"
+              onclick={() => (days = option)}
+              aria-pressed={days === option}
+              class="rounded-md border px-3 py-1.5 text-sm {days === option
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border-subtle hover:bg-muted'}"
+            >
+              {option} days
+            </button>
+          {/each}
+        </div>
+      {/snippet}
+      {#snippet tabs()}
+        <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
+      {/snippet}
+    </PageHeader>
 
     {#if loading}
       <p class="text-xs text-neutral-500" role="status">Refreshing…</p>
@@ -372,4 +376,4 @@
   {:else}
     <p class="text-sm text-neutral-500">Project not found.</p>
   {/if}
-</main>
+</div>

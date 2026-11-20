@@ -1,8 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
+  import { page } from '$app/state';
   import { PROJECT_MODES, type ProjectMode } from '@yaaabk/shared';
   import { ApiError, createProjectStream } from '#lib/api.js';
+  import PageHeader from '#lib/components/page-header.svelte';
   import {
     applyProvisioningEvent,
     completeCreation,
@@ -16,6 +18,7 @@
     validateProjectDetails,
     type ProjectDetailsErrors,
   } from '#lib/project-form.js';
+  import { resolveShell } from '#lib/shell.js';
 
   type Step = 'details' | 'mode' | 'creating';
 
@@ -25,6 +28,8 @@
     autonomous:
       'The agent decides everything itself and only shows you the finished Plan and Issues.',
   };
+
+  const shell = $derived(resolveShell(page.url.pathname));
 
   let step = $state<Step>('details');
   let name = $state('');
@@ -80,8 +85,12 @@
   <title>New project · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 p-6">
-  <a href={resolve('/')} class="text-sm text-neutral-500 hover:underline">← Back to projects</a>
+<div class="mx-auto flex w-full max-w-2xl flex-col gap-6">
+  <PageHeader
+    title="New project"
+    purpose="Name the Project, describe what it should do, then choose how the agent works with you."
+    breadcrumbs={shell.breadcrumbs}
+  />
 
   {#if step === 'details'}
     <section class="flex flex-col gap-4">
@@ -207,4 +216,4 @@
       {/if}
     </section>
   {/if}
-</main>
+</div>

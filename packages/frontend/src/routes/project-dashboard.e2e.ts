@@ -85,10 +85,9 @@ test('shows the provisioned project with links to its tooling', async ({ page })
     'href',
     '/projects/p1/plan',
   );
-  await expect(page.getByRole('link', { name: 'Stats' })).toHaveAttribute(
-    'href',
-    '/projects/p1/stats',
-  );
+  await expect(
+    page.getByTestId('project-tabs').getByRole('link', { name: 'Stats' }),
+  ).toHaveAttribute('href', '/projects/p1/stats');
 });
 
 test('banners an unaccepted active plan and links to review', async ({ page }) => {

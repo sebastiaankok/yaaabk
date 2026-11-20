@@ -17,6 +17,9 @@
   import { groupByWave, reviewItems, type WaveGroup } from '#lib/issue-review.js';
   import { describePush } from '#lib/issue-sync.js';
   import Markdown from '#lib/markdown.svelte';
+  import PageHeader from '#lib/components/page-header.svelte';
+  import ProjectTabs from '#lib/components/project-tabs.svelte';
+  import { resolveShell } from '#lib/shell.js';
   import {
     pendingGithubSync,
     planProgress,
@@ -28,6 +31,7 @@
   const projectId = $derived(page.params.id);
 
   let project = $state<Project | null>(null);
+  const shell = $derived(resolveShell(page.url.pathname, project?.name));
   let plans = $state<Plan[]>([]);
   let issues = $state<Issue[]>([]);
   let graph = $state<IssueGraph | null>(null);
@@ -191,28 +195,24 @@
   <title>{project ? `${project.name} · Review plan` : 'Review plan'} · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-4xl flex-col gap-6 p-6">
-  <a
-    href={projectId === undefined ? resolve('/') : resolve('/projects/[id]', { id: projectId })}
-    class="text-sm text-neutral-500 hover:underline"
-  >
-    ← Back to project
-  </a>
-
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
   {#if loading}
-    <p class="text-sm text-neutral-500">Loading plans…</p>
+    <p class="text-sm text-muted-foreground">Loading plans…</p>
   {:else if error !== null && project === null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+      {error}
+    </p>
   {:else if project !== null}
-    <header class="space-y-2">
-      <h1 class="text-2xl font-bold tracking-tight">Review plan</h1>
-      <p class="text-neutral-600">
-        Review the Plan versions of <span class="font-medium">{project.name}</span>. Accept the
-        active Plan to record it, create or update its Issues on GitHub, and let agents start on its
-        <span class="font-medium">ready</span> Issues. To change a Plan or its Issues, start another agent
-        session.
-      </p>
-    </header>
+    {@const currentProjectId = project.id}
+    <PageHeader
+      title="Review plan"
+      purpose={`Read the Plan versions of ${project.name}, then accept the active one to record it and sync its Issues to GitHub.`}
+      breadcrumbs={shell.breadcrumbs}
+    >
+      {#snippet tabs()}
+        <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
+      {/snippet}
+    </PageHeader>
 
     {#if error !== null}
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
@@ -491,7 +491,7 @@
 
     {#if confirmOpen && selectedPlan !== null}
       <div
-        class="fixed inset-0 z-10 flex items-center justify-center bg-black/30 p-4"
+        class="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4"
         role="presentation"
         onclick={(event) => {
           if (event.target === event.currentTarget) confirmOpen = false;
@@ -540,4 +540,4 @@
       </div>
     {/if}
   {/if}
-</main>
+</div>
