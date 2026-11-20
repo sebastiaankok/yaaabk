@@ -111,6 +111,15 @@ export function createGit(): Git {
         .map((line) => line.trim())
         .filter((line) => line !== '');
     },
+    async isAncestor(directory, ancestor, descendant) {
+      // `merge-base --is-ancestor` exits 0 for a yes, 1 for a no, and 128 when
+      // either commit is unknown to the clone — all of which mean "not newer".
+      const result =
+        await Bun.$`git -C ${directory} merge-base --is-ancestor ${ancestor} ${descendant}`
+          .quiet()
+          .nothrow();
+      return result.exitCode === 0;
+    },
   };
 }
 
@@ -216,6 +225,26 @@ export function createKubectl(): Kubectl {
       const stdout = result.stdout.toString();
       const stderr = result.stderr.toString();
       return [stdout, stderr].filter((part) => part.trim() !== '').join('\n');
+    },
+    async deployedSha({ namespace, deploymentName }) {
+      // Read the whole object rather than a jsonpath: the label key contains
+      // both dots and a slash, which jsonpath needs escaping for. A missing
+      // Deployment (a Project's first deploy) or an unreadable one yields
+      // `undefined`, leaving the stale-target check to the first deployment.
+      const result =
+        await Bun.$`kubectl get deployment ${deploymentName} --namespace ${namespace} -o json`
+          .quiet()
+          .nothrow();
+      if (result.exitCode !== 0) return undefined;
+      try {
+        const parsed = JSON.parse(result.stdout.toString()) as {
+          metadata?: { labels?: Record<string, string> };
+        };
+        const value = parsed.metadata?.labels?.['yaaabk.io/deployed-sha'];
+        return value === undefined || value === '' ? undefined : value;
+      } catch {
+        return undefined;
+      }
     },
   };
 }

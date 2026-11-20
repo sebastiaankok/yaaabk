@@ -231,9 +231,11 @@ export interface AgentReport {
   commitSha?: string;
   /**
    * How a deploy run ended. Omitted by runs that are not deploys; a failed
-   * deploy is recorded on the Project and surfaced to the Developer.
+   * deploy is recorded on the Project and surfaced to the Developer. A
+   * `skipped` deploy found a newer revision already live, so it changed
+   * nothing and leaves the Project's deploy state untouched.
    */
-  deployOutcome?: 'success' | 'failed';
+  deployOutcome?: 'success' | 'failed' | 'skipped';
 }
 
 /** How much output to stream from a run, and whether to wait for more. */

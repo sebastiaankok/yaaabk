@@ -70,6 +70,11 @@ export interface Git {
   }>;
   /** Paths with unresolved merge conflicts in the working tree. */
   unmergedPaths(directory: string): Promise<string[]>;
+  /**
+   * Whether `ancestor` is reachable from `descendant` in the working tree's
+   * history. A deploy uses it to tell a stale target from a newer deployment.
+   */
+  isAncestor(directory: string, ancestor: string, descendant: string): Promise<boolean>;
 }
 
 export interface Kubectl {
@@ -119,6 +124,11 @@ export interface Kubectl {
   }): Promise<{ rolledBack: boolean; error?: string }>;
   /** Captures the current logs of the Deployment's pods, for a failure report. */
   podLogs(input: { namespace: string; deploymentName: string }): Promise<string>;
+  /**
+   * The commit SHA the Deployment's `yaaabk.io/deployed-sha` label names, or
+   * `undefined` when it has never been deployed (or cannot be read).
+   */
+  deployedSha(input: { namespace: string; deploymentName: string }): Promise<string | undefined>;
 }
 
 export interface OpenCode {
@@ -210,8 +220,10 @@ export interface Reporter {
     /**
      * How a deploy run ended. A failed deploy is reported so YAAABK can record
      * the failure and surface it; a successful one records the deployed SHA.
+     * `skipped` means the target was already superseded on the cluster, so
+     * nothing was applied.
      */
-    deployOutcome?: 'success' | 'failed';
+    deployOutcome?: 'success' | 'failed' | 'skipped';
   }): Promise<void>;
 }
 
