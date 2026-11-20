@@ -3,11 +3,13 @@
   import { page } from '$app/state';
   import type { Project } from '@yaaabk/projects';
   import type { ProjectStats } from '@yaaabk/stats';
+  import { compactTokens } from '#lib/agent-run.js';
   import { ApiError, getProject, getProjectStats } from '#lib/api.js';
   import {
     chartPoints,
     donutGradient,
     durationByAttempt,
+    formatCoveredTokens,
     formatDollars,
     formatDuration,
     formatPercent,
@@ -55,8 +57,8 @@
   );
   const donutStyle = $derived(donutGradient(statusSegments));
 
-  const topCosts = $derived(stats === null ? [] : stats.costByIssue.slice(0, 10));
-  const maxCost = $derived(Math.max(1, ...topCosts.map((cost) => cost.costCents)));
+  const topUsage = $derived(stats === null ? [] : stats.usageByIssue.slice(0, 10));
+  const maxIssueCost = $derived(Math.max(1, ...topUsage.map((usage) => usage.costCents)));
 
   const durationBars = $derived(durationByAttempt(stats?.runs ?? []));
   const maxDuration = $derived(Math.max(1, ...durationBars.map((bar) => bar.averageSeconds)));
@@ -162,7 +164,14 @@
         <div class="rounded-lg border border-neutral-200 p-4">
           <dt class="text-xs font-medium uppercase tracking-wide text-neutral-500">Total cost</dt>
           <dd class="mt-1 text-2xl font-semibold">{formatDollars(stats.agents.totalCostCents)}</dd>
-          <dd class="text-xs text-neutral-500">{stats.agents.total} agent runs</dd>
+          <dd class="text-xs text-neutral-500">
+            {formatDollars(stats.agents.totalCostCents)} total ·
+            {formatCoveredTokens(
+              stats.agents.totalTokens,
+              stats.agents.measuredRuns,
+              stats.agents.modelRuns,
+            )} tokens across {stats.agents.modelRuns} runs
+          </dd>
         </div>
         <div class="rounded-lg border border-neutral-200 p-4">
           <dt class="text-xs font-medium uppercase tracking-wide text-neutral-500">
@@ -226,21 +235,24 @@
       </section>
 
       <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="cost-heading">
-        <h2 id="cost-heading" class="text-sm font-semibold">Cost per issue</h2>
-        {#if topCosts.length === 0}
-          <p class="mt-3 text-sm text-neutral-500">No agent spend in this range.</p>
+        <h2 id="cost-heading" class="text-sm font-semibold">Cost and tokens per issue</h2>
+        {#if topUsage.length === 0}
+          <p class="mt-3 text-sm text-neutral-500">No agent spend or token usage in this range.</p>
         {:else}
           <ul class="mt-3 space-y-2 text-sm">
-            {#each topCosts as cost (cost.issueId)}
+            {#each topUsage as usage (usage.issueId)}
               <li class="flex items-center gap-2">
-                <span class="w-40 shrink-0 truncate" title={cost.title}>{cost.title}</span>
+                <span class="w-40 shrink-0 truncate" title={usage.title}>{usage.title}</span>
                 <div class="h-2 flex-1 rounded bg-neutral-100">
                   <div
                     class="h-2 rounded bg-neutral-800"
-                    style:width={`${(cost.costCents / maxCost) * 100}%`}
+                    style:width={`${(usage.costCents / maxIssueCost) * 100}%`}
                   ></div>
                 </div>
-                <span class="w-16 text-right tabular-nums">{formatDollars(cost.costCents)}</span>
+                <span class="w-40 text-right tabular-nums">
+                  {formatDollars(usage.costCents)} ·
+                  {formatCoveredTokens(usage.tokens, usage.measuredRuns, usage.modelRuns)} tokens
+                </span>
               </li>
             {/each}
           </ul>
@@ -313,6 +325,7 @@
                 <th class="px-4 py-2 font-medium">Status</th>
                 <th class="px-4 py-2 font-medium">Duration</th>
                 <th class="px-4 py-2 font-medium">Cost</th>
+                <th class="px-4 py-2 font-medium">Tokens</th>
                 <th class="px-4 py-2 font-medium">PR</th>
                 <th class="px-4 py-2 font-medium">Started</th>
               </tr>
@@ -335,6 +348,7 @@
                   </td>
                   <td class="px-4 py-2 tabular-nums">{formatDuration(run.durationSeconds)}</td>
                   <td class="px-4 py-2 tabular-nums">{formatDollars(run.costCents)}</td>
+                  <td class="px-4 py-2 tabular-nums">{compactTokens(run.tokens)}</td>
                   <td class="px-4 py-2">
                     {#if run.prUrl !== null}
                       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->

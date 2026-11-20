@@ -1,4 +1,5 @@
 import type { RunHistoryEntry } from '@yaaabk/stats';
+import { compactTokens } from './agent-run.js';
 
 /** Formats a `0..1` ratio as a whole percentage, or an em dash when unknown. */
 export function formatPercent(value: number | null): string {
@@ -8,6 +9,19 @@ export function formatPercent(value: number | null): string {
 /** Formats whole cents as dollars, e.g. `12345` becomes `$123.45`. */
 export function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Formats measured tokens compactly, prefixing `≥` when some model runs could
+ * not be measured. Unknown usage is an em dash, never zero.
+ */
+export function formatCoveredTokens(
+  tokens: number | null,
+  measuredRuns: number,
+  modelRuns: number,
+): string {
+  if (tokens === null) return '—';
+  return `${measuredRuns < modelRuns ? '≥ ' : ''}${compactTokens(tokens)}`;
 }
 
 /** Formats a duration in seconds as `45s`, `1m 30s` or `1h 1m`. */

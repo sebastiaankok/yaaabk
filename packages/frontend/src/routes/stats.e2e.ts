@@ -24,11 +24,36 @@ const STATS = {
     active: 1,
     successRate: 2 / 3,
     totalCostCents: 1234,
+    totalTokens: 41_700,
+    measuredRuns: 3,
+    modelRuns: 4,
     duration: { averageSeconds: 150, minSeconds: 60, maxSeconds: 300 },
   },
-  costByIssue: [
-    { issueId: 'i2', title: 'Api', costCents: 900 },
-    { issueId: 'i1', title: 'Schema', costCents: 334 },
+  usageByIssue: [
+    {
+      issueId: 'i2',
+      title: 'Api',
+      costCents: 900,
+      tokens: 41_700,
+      measuredRuns: 3,
+      modelRuns: 4,
+    },
+    {
+      issueId: 'i1',
+      title: 'Schema',
+      costCents: 334,
+      tokens: null,
+      measuredRuns: 0,
+      modelRuns: 1,
+    },
+    {
+      issueId: 'i3',
+      title: 'Docs',
+      costCents: 0,
+      tokens: 1_200,
+      measuredRuns: 1,
+      modelRuns: 1,
+    },
   ],
   velocity: {
     last7Days: { closed: 2, perDay: 2 / 7 },
@@ -49,6 +74,7 @@ const STATS = {
       status: 'success',
       durationSeconds: 90,
       costCents: 900,
+      tokens: 41_700,
       prUrl: 'https://github.com/acme/todo-app/pull/7',
       createdAt: '2026-02-01T00:00:00.000Z',
     },
@@ -60,6 +86,7 @@ const STATS = {
       status: 'failed',
       durationSeconds: 120,
       costCents: 334,
+      tokens: null,
       prUrl: null,
       createdAt: '2026-01-31T00:00:00.000Z',
     },
@@ -92,11 +119,22 @@ test('shows summary cards, charts and the run history', async ({ page }) => {
 
   await expect(page.getByRole('heading', { level: 1, name: 'todo-app stats' })).toBeVisible();
   await expect(page.getByText('67%')).toBeVisible();
-  await expect(page.getByText('$12.34')).toBeVisible();
+  await expect(page.getByText('$12.34', { exact: true })).toBeVisible();
   await expect(page.getByText('2m 30s').first()).toBeVisible();
   await expect(page.getByText('5', { exact: true })).toBeVisible();
   await expect(page.getByText('1 open · 1 in progress · 2 closed · 1 failed')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Issue status breakdown' })).toBeVisible();
+  await expect(
+    page.getByText('$12.34 total · ≥ 41.7k tokens across 4 runs', { exact: true }),
+  ).toBeVisible();
+
+  await expect(page.getByRole('heading', { name: 'Cost and tokens per issue' })).toBeVisible();
+  const usageRows = page.locator('section[aria-labelledby="cost-heading"] li');
+  await expect(usageRows).toHaveCount(3);
+  await expect(usageRows.first()).toContainText('Api');
+  await expect(usageRows.first()).toContainText('$9.00 · ≥ 41.7k tokens');
+  await expect(usageRows.last()).toContainText('Docs');
+  await expect(usageRows.last()).toContainText('$0.00 · 1.2k tokens');
 
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(2);
@@ -104,6 +142,8 @@ test('shows summary cards, charts and the run history', async ({ page }) => {
   await expect(rows.first()).toContainText('success');
   await expect(rows.first()).toContainText('1m 30s');
   await expect(rows.first()).toContainText('$9.00');
+  await expect(rows.first().locator('td').nth(5)).toHaveText('41.7k');
+  await expect(rows.nth(1).locator('td').nth(5)).toHaveText('—');
   await expect(page.getByRole('link', { name: 'Open PR' })).toHaveAttribute(
     'href',
     'https://github.com/acme/todo-app/pull/7',
