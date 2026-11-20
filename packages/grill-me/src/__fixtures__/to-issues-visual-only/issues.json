@@ -1,0 +1,37 @@
+[
+  {
+    "title": "Centre the bookmark card",
+    "summary": "Show the bookmark card centred at desktop and mobile widths.",
+    "body": "## What to build\n\nRender the bookmark card on the home page.\n\n## Acceptance criteria\n\n- [ ] Read the page at 1280px and 375px wide. Confirm that the card centres and the header reads clearly.",
+    "labels": ["ready"],
+    "depends_on": []
+  },
+  {
+    "title": "Show a focus ring on every control",
+    "summary": "Make every control show a focus ring when tabbed to.",
+    "body": "## What to build\n\nStyle the interactive elements.\n\n## Acceptance criteria\n\n- [ ] Tab through the page and confirm that every control shows a focus ring.",
+    "labels": ["ready"],
+    "depends_on": ["Centre the bookmark card"]
+  },
+  {
+    "title": "Follow the browser theme in the tab title",
+    "summary": "Show the page title in the tab in light and dark mode.",
+    "body": "## What to build\n\nSet the document title.\n\n## Acceptance criteria\n\n- [ ] Open the page in light mode and in dark mode. Confirm that the page title shows in the tab.",
+    "labels": ["ready"],
+    "depends_on": []
+  },
+  {
+    "title": "Show an alert when the API fails",
+    "summary": "Show an alert when the bookmark API returns an error.",
+    "body": "## What to build\n\nHandle API errors in the bookmark list.\n\n## Acceptance criteria\n\n- [ ] Force an API failure and confirm that the alert appears.",
+    "labels": ["ready"],
+    "depends_on": []
+  },
+  {
+    "title": "Persist a bookmark",
+    "summary": "Save a bookmark and read it back from the API.",
+    "body": "## What to build\n\nAdd the bookmarks table, repository and API route.\n\n## Acceptance criteria\n\n- [ ] `bun test packages/bookmarks` passes and reports the new bookmark test.",
+    "labels": ["ready"],
+    "depends_on": []
+  }
+]

@@ -157,6 +157,7 @@ describe('reporting tools', () => {
           {
             title: ' Save a bookmark ',
             summary: '  Save   a link for later. ',
+            body: '## Acceptance criteria\n\n- [ ] `bun test` passes and reports the new test.',
             labels: ['ready'],
             depends_on: [],
           },
@@ -171,9 +172,44 @@ describe('reporting tools', () => {
         issues: [
           {
             title: 'Save a bookmark',
-            body: '',
+            body: '## Acceptance criteria\n\n- [ ] `bun test` passes and reports the new test.',
             summary: 'Save a link for later.',
             labels: ['ready'],
+            depends_on: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('relabels a ready issue with only a visual acceptance check', async () => {
+    const { server, reports } = setup();
+
+    const response = await server.handle(
+      call(15, 'report_issues', {
+        issues: [
+          {
+            title: 'Centre the card',
+            summary: 'Centre the card on the page.',
+            body: '## Acceptance criteria\n\n- [ ] Open the page and confirm that the card is centred.',
+            labels: ['ready'],
+            depends_on: [],
+          },
+        ],
+      }),
+    );
+
+    const result = response?.result as TextResult;
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain('needs-human');
+    expect(reports).toEqual([
+      {
+        issues: [
+          {
+            title: 'Centre the card',
+            body: '## Acceptance criteria\n\n- [ ] Open the page and confirm that the card is centred.',
+            summary: 'Centre the card on the page.',
+            labels: ['needs-human'],
             depends_on: [],
           },
         ],
