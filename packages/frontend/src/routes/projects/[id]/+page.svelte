@@ -13,14 +13,18 @@
     type ModelCatalogueView,
   } from '#lib/api.js';
   import { runLabel } from '#lib/agent-run.js';
+  import PageHeader from '#lib/components/page-header.svelte';
+  import ProjectTabs from '#lib/components/project-tabs.svelte';
   import { hasErrors, validateExportTarget, type ExportTargetErrors } from '#lib/export-project.js';
   import { pollWhileVisible } from '#lib/polling.js';
   import { projectModeLabel } from '#lib/project-mode.js';
+  import { resolveShell } from '#lib/shell.js';
 
   const projectId = $derived(page.params.id);
 
   let overview = $state<ProjectOverview | null>(null);
   const project = $derived(overview?.project ?? null);
+  const shell = $derived(resolveShell(page.url.pathname, project?.name));
   let error = $state<string | null>(null);
   let confirming = $state(false);
   let busy = $state(false);
@@ -166,23 +170,24 @@
   <title>{project ? `${project.name} · Project` : 'Project'} · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-4xl flex-col gap-6 p-6">
-  <a href={resolve('/')} class="text-sm text-neutral-500 hover:underline">← Back to projects</a>
-
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
   {#if error !== null && project === null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+      {error}
+    </p>
   {:else if project === null}
-    <p class="text-sm text-neutral-500">Loading project…</p>
+    <p class="text-sm text-muted-foreground">Loading project…</p>
   {:else}
-    <header class="space-y-2">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 class="text-2xl font-bold tracking-tight">{project.name}</h1>
-        <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+    <PageHeader title={project.name} purpose={project.description} breadcrumbs={shell.breadcrumbs}>
+      {#snippet actions()}
+        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {projectModeLabel(project.mode)}
         </span>
-      </div>
-      <p class="text-neutral-600">{project.description}</p>
-    </header>
+      {/snippet}
+      {#snippet tabs()}
+        <ProjectTabs projectId={project.id} activeTab={shell.activeProjectTab} />
+      {/snippet}
+    </PageHeader>
 
     {#if overview !== null && overview.activePlan !== null && overview.activePlan.acceptedAt === null}
       <a
@@ -433,4 +438,4 @@
       {/if}
     </section>
   {/if}
-</main>
+</div>

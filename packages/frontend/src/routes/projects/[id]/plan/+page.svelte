@@ -20,15 +20,19 @@
     type ModelCatalogueView,
   } from '#lib/api.js';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
+  import PageHeader from '#lib/components/page-header.svelte';
+  import ProjectTabs from '#lib/components/project-tabs.svelte';
   import { planFilePath, planFileUrl } from '#lib/plan-file.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
   import { projectModeLabel } from '#lib/project-mode.js';
+  import { resolveShell } from '#lib/shell.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
 
   const projectId = $derived(page.params.id);
 
   let project = $state<Project | null>(null);
+  const shell = $derived(resolveShell(page.url.pathname, project?.name));
   let plans = $state<Plan[]>([]);
   let issues = $state<Issue[]>([]);
   let session = $state<GrillSessionView | null>(null);
@@ -227,46 +231,50 @@
   <title>{project ? `${project.name} · Plan` : 'Plan'} · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-4xl flex-col gap-6 p-6">
-  <a href={resolve('/')} class="text-sm text-neutral-500 hover:underline">← Back to projects</a>
-
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
   {#if loading}
-    <p class="text-sm text-neutral-500">Loading project…</p>
+    <p class="text-sm text-muted-foreground">Loading project…</p>
   {:else if error !== null && project === null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+      {error}
+    </p>
   {:else if project !== null}
-    <header class="space-y-2">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 class="text-2xl font-bold tracking-tight">{project.name}</h1>
-        <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-          {projectModeLabel(project.mode)}
+    {@const currentProjectId = project.id}
+    {@const currentMode = projectModeLabel(project.mode)}
+    <PageHeader title={project.name} purpose={project.description} breadcrumbs={shell.breadcrumbs}>
+      {#snippet actions()}
+        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          {currentMode}
         </span>
+      {/snippet}
+      {#snippet tabs()}
+        <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
+      {/snippet}
+    </PageHeader>
+
+    <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+      <div class="flex gap-1">
+        <dt class="font-medium">Repository</dt>
+        <dd>
+          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+          <a href={project.repoUrl} target="_blank" rel="noreferrer" class="hover:underline">
+            {project.repoFullName}
+          </a>
+        </dd>
       </div>
-      <p class="text-neutral-600">{project.description}</p>
-      <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-500">
-        <div class="flex gap-1">
-          <dt class="font-medium">Repository</dt>
-          <dd>
-            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-            <a href={project.repoUrl} target="_blank" rel="noreferrer" class="hover:underline">
-              {project.repoFullName}
-            </a>
-          </dd>
-        </div>
-        <div class="flex gap-1">
-          <dt class="font-medium">Namespace</dt>
-          <dd><code>{project.namespace}</code></dd>
-        </div>
-        <div class="flex gap-1">
-          <dt class="font-medium">Deployed</dt>
-          <dd>
-            {#if project.deployedCommitSha}<code>{project.deployedCommitSha}</code>{:else}<span
-                >Not yet deployed</span
-              >{/if}
-          </dd>
-        </div>
-      </dl>
-    </header>
+      <div class="flex gap-1">
+        <dt class="font-medium">Namespace</dt>
+        <dd><code>{project.namespace}</code></dd>
+      </div>
+      <div class="flex gap-1">
+        <dt class="font-medium">Deployed</dt>
+        <dd>
+          {#if project.deployedCommitSha}<code>{project.deployedCommitSha}</code>{:else}<span
+              >Not yet deployed</span
+            >{/if}
+        </dd>
+      </div>
+    </dl>
 
     {#if error !== null}
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
@@ -494,4 +502,4 @@
       </section>
     {/if}
   {/if}
-</main>
+</div>

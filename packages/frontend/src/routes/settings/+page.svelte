@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { page } from '$app/state';
   import {
     ApiError,
     getOpenRouterCredits,
@@ -11,7 +11,9 @@
     type OpenRouterCreditsView,
     type OpenRouterVerifyOk,
   } from '#lib/api.js';
+  import PageHeader from '#lib/components/page-header.svelte';
   import { affordabilityWarning, formatUsd } from '#lib/openrouter-balance.js';
+  import { resolveShell } from '#lib/shell.js';
   import {
     toSettingsUpdate,
     validateBudgetDollars,
@@ -19,6 +21,7 @@
   } from '#lib/settings-form.js';
   import type { SettingsView } from '@yaaabk/settings';
 
+  const shell = $derived(resolveShell(page.url.pathname));
   let settings = $state<SettingsView | null>(null);
   let loadFailure = $state<string | null>(null);
 
@@ -145,10 +148,12 @@
   <title>Settings · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 p-6">
-  <a href={resolve('/')} class="text-sm text-neutral-500 hover:underline">← Back to projects</a>
-
-  <h1 class="text-xl font-semibold tracking-tight">Settings</h1>
+<div class="mx-auto flex w-full max-w-2xl flex-col gap-6">
+  <PageHeader
+    title="Settings"
+    purpose="Connect GitHub and OpenRouter, and set the default budget every Issue starts with."
+    breadcrumbs={shell.breadcrumbs}
+  />
 
   {#if loadFailure !== null}
     <p class="text-sm text-red-600">{loadFailure}</p>
@@ -361,4 +366,4 @@
       {/if}
     </div>
   {/if}
-</main>
+</div>

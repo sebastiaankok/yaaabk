@@ -32,7 +32,10 @@
   } from '#lib/agent-run.js';
   import Markdown from '#lib/markdown.svelte';
   import { isAtBottom } from '#lib/scroll.js';
+  import PageHeader from '#lib/components/page-header.svelte';
+  import ProjectTabs from '#lib/components/project-tabs.svelte';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
+  import { resolveShell } from '#lib/shell.js';
   import { SUMMARY_MAX_LENGTH, summaryForIssue, validateSummary } from '#lib/summary.js';
   import {
     BOARD_COLUMNS,
@@ -52,6 +55,7 @@
   const projectId = $derived(page.params.id);
 
   let project = $state<Project | null>(null);
+  const shell = $derived(resolveShell(page.url.pathname, project?.name));
   let plan = $state<Plan | null>(null);
   let issues = $state<Issue[]>([]);
   let graph = $state<IssueGraph | null>(null);
@@ -622,35 +626,38 @@
   <title>{project ? `${project.name} · Issues` : 'Issues'} · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-6xl flex-col gap-6 p-6">
-  <a
-    href={projectId === undefined ? resolve('/') : resolve('/projects/[id]', { id: projectId })}
-    class="text-sm text-neutral-500 hover:underline"
-  >
-    ← Back to project
-  </a>
-
+<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
   {#if loading}
-    <p class="text-sm text-neutral-500">Loading the board…</p>
+    <p class="text-sm text-muted-foreground">Loading the board…</p>
   {:else if error !== null && project === null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+      {error}
+    </p>
   {:else if project !== null}
-    <header class="space-y-2">
-      <h1 class="text-2xl font-bold tracking-tight">Issue board</h1>
-      <p class="text-neutral-600">
-        The work for <span class="font-medium">{project.name}</span>, grouped by lane and ordered by
-        wave.{#if plan !== null && !showEarlierPlans}
-          Showing <span class="font-medium">Plan v{plan.version}</span>.{/if}
-        {#if plan !== null && plan.isActive && plan.acceptedAt === null}
-          <a
-            href={resolve('/projects/[id]/issues/review', { id: project.id })}
-            class="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
-          >
-            {#if showEarlierPlans}Plan v{plan.version} not accepted{:else}not accepted{/if}
-          </a>
-        {/if}
-      </p>
-    </header>
+    {@const currentProjectId = project.id}
+    <PageHeader
+      title="Issue board"
+      purpose={`The work for ${project.name}, grouped by lane and ordered by wave.`}
+      breadcrumbs={shell.breadcrumbs}
+    >
+      {#snippet tabs()}
+        <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
+      {/snippet}
+    </PageHeader>
+
+    <p class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      {#if plan !== null && !showEarlierPlans}
+        Showing <span class="font-medium text-foreground">Plan v{plan.version}</span>.
+      {/if}
+      {#if plan !== null && plan.isActive && plan.acceptedAt === null}
+        <a
+          href={resolve('/projects/[id]/issues/review', { id: project.id })}
+          class="inline-block rounded-full bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning hover:underline"
+        >
+          {#if showEarlierPlans}Plan v{plan.version} not accepted{:else}not accepted{/if}
+        </a>
+      {/if}
+    </p>
 
     {#if error !== null}
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
@@ -860,7 +867,7 @@
 
     {#if selected !== null}
       <div
-        class="fixed inset-0 z-10 flex justify-end bg-black/30"
+        class="fixed inset-0 z-40 flex justify-end bg-black/30"
         role="presentation"
         onclick={(event) => {
           if (event.target === event.currentTarget) close();
@@ -1177,4 +1184,4 @@
       </div>
     {/if}
   {/if}
-</main>
+</div>

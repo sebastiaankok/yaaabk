@@ -1,9 +1,13 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { page } from '$app/state';
   import type { ProjectOverview } from '@yaaabk/stats';
   import { ApiError, getOverview } from '#lib/api.js';
+  import PageHeader from '#lib/components/page-header.svelte';
   import { projectModeLabel } from '#lib/project-mode.js';
+  import { resolveShell } from '#lib/shell.js';
 
+  const shell = $derived(resolveShell(page.url.pathname));
   let overviews = $state<ProjectOverview[] | null>(null);
   let error = $state<string | null>(null);
 
@@ -30,16 +34,21 @@
   <title>Projects · YAAABK</title>
 </svelte:head>
 
-<main class="mx-auto flex min-h-dvh max-w-4xl flex-col gap-6 p-6">
-  <header class="flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-bold tracking-tight">Projects</h1>
-    <a
-      href={resolve('/projects/new')}
-      class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700"
-    >
-      New project
-    </a>
-  </header>
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
+  <PageHeader
+    title="Projects"
+    purpose="Every Project, the work in flight and the state of its deployment."
+    breadcrumbs={shell.breadcrumbs}
+  >
+    {#snippet actions()}
+      <a
+        href={resolve('/projects/new')}
+        class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
+      >
+        New project
+      </a>
+    {/snippet}
+  </PageHeader>
 
   {#if error !== null}
     <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
@@ -148,4 +157,4 @@
       {/each}
     </ul>
   {/if}
-</main>
+</div>
