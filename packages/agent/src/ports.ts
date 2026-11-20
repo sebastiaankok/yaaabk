@@ -172,7 +172,7 @@ export interface SpendMeter {
 }
 
 export interface Checks {
-  /** Runs the project's pre-commit hooks; reports whether they passed. */
+  /** Runs the project's checks; reports whether they passed. */
   run(directory: string): Promise<{ passed: boolean; output: string }>;
 }
 

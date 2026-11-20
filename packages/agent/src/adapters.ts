@@ -681,9 +681,9 @@ async function projectScripts(directory: string): Promise<Record<string, string>
  * The commands a project's checks run.
  *
  * A project that declares `check` owns the definition of its checks; the
- * template defines one so lint, typecheck and tests cannot drift apart. Older
- * projects fall back to the individual scripts, including `test:unit` when
- * that is the only test script they expose.
+ * template defines one so lint, typecheck, tests and build cannot drift apart.
+ * Older projects fall back to the individual scripts, including `test:unit`
+ * when that is the only test script they expose.
  */
 export function checksForScripts(scripts: Record<string, string>): ChecksCommand[] {
   if (scripts['check'] !== undefined) return [{ script: 'run', args: ['check'] }];

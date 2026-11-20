@@ -5,4 +5,5 @@ build
 .output
 coverage
 .env
+.yaaabk/
 .DS_Store

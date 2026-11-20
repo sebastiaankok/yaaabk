@@ -52,6 +52,15 @@ describe('the bundled Agent skills', () => {
     ).toContain('Use the resolve-conflicts skill');
   });
 
+  it('runs the project check script and does not rely on a pre-commit hook', () => {
+    for (const id of ['implement-issue', 'resolve-conflicts']) {
+      const source = skillSource(id).replace(/\s+/g, ' ');
+
+      expect(source).toContain('`bun run check`');
+      expect(source).not.toContain('pre-commit');
+    }
+  });
+
   it('bounds the review skill to CI and the diff', () => {
     const source = skillSource('review-pr').replace(/\s+/g, ' ');
 

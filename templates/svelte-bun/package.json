@@ -15,7 +15,8 @@
     "typecheck": "bun run --filter '*' --if-present typecheck",
     "lint": "prettier --check .",
     "format": "prettier --write .",
-    "check": "bun run lint && bun run typecheck && bun run test"
+    "check": "bun run lint && bun run typecheck && bun run test && bun run build",
+    "smoke": "bun scripts/smoke.ts"
   },
   "devDependencies": {
     "prettier": "^3.10.1",

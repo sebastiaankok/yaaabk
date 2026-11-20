@@ -69,6 +69,13 @@ describe('buildImplementPrompt', () => {
     expect(prompt).toContain('/work/repo');
     expect(prompt).toContain('/app is the harness');
   });
+
+  it('points the Agent at the project check script, not a pre-commit hook', () => {
+    const prompt = buildImplementPrompt(ISSUE, CONFIG);
+
+    expect(prompt).toContain('bun run check');
+    expect(prompt).not.toContain('pre-commit');
+  });
 });
 
 describe('buildResolveConflictsPrompt', () => {
@@ -110,6 +117,18 @@ describe('buildResolveConflictsPrompt', () => {
 
     expect(prompt).toContain('/work/repo');
     expect(prompt).toContain('/app is the harness');
+  });
+
+  it('points the Agent at the project check script, not a pre-commit hook', () => {
+    const prompt = buildResolveConflictsPrompt(ISSUE, {
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+      paths: [],
+      mergeOutput: '',
+    });
+
+    expect(prompt).toContain('bun run check');
+    expect(prompt).not.toContain('pre-commit');
   });
 });
 

@@ -24,10 +24,17 @@ bun run dev   # API on :{{port}}, web dev server on :5173
 
 ## Checks
 
+Run the same checks YAAABK runs:
+
 ```sh
-bun run check   # lint, typecheck and tests
-bun run build
+bun run check   # lint, typecheck, tests and build
+bun run smoke   # start the API, check /health and /api/hello, stop it
+bun run build   # just the production build, when you need it
 ```
+
+Agents work without a browser: do not start one, install Playwright or
+Chromium, or take screenshots. See `AGENTS.md` for the repository map, the full
+command list and the Agent constraints.
 
 `bun.lock` is committed, so CI and the YAAABK agent install with
 `bun install --frozen-lockfile`.
