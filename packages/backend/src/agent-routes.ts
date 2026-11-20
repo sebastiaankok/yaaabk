@@ -27,8 +27,8 @@ function asOptionalNumber(value: unknown): number | undefined {
 }
 
 /** Reads a deploy outcome, treating anything else as absent. */
-function asDeployOutcome(value: unknown): 'success' | 'failed' | undefined {
-  return value === 'success' || value === 'failed' ? value : undefined;
+function asDeployOutcome(value: unknown): 'success' | 'failed' | 'skipped' | undefined {
+  return value === 'success' || value === 'failed' || value === 'skipped' ? value : undefined;
 }
 
 /** Reads a review verdict, treating anything else as absent. */

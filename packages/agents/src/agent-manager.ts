@@ -386,6 +386,22 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     return (perProject.get(projectId) ?? 0) < maxPerProject && cluster < maxCluster;
   }
 
+  /**
+   * Whether a deploy must wait for another deploy of the same Project.
+   *
+   * Deploys are serialized per Project: two `kubectl set image` calls against
+   * the same Deployment race, and the slower one wins regardless of which merge
+   * is newer. One deploy at a time turns that race into an ordered queue.
+   */
+  function deployBlocked(run: StoredAgentRun): boolean {
+    if (run.kind !== 'deploy') return false;
+    return store
+      .listForProject(run.projectId)
+      .some(
+        (other) => other.id !== run.id && other.kind === 'deploy' && other.status === 'running',
+      );
+  }
+
   async function requireIssue(projectId: string, issueId: string): Promise<Issue> {
     const result = await issues.get(projectId, issueId);
     if (!result.ok) {
@@ -400,6 +416,36 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
    */
   function resolveModel(issue: Issue, project: Project): string {
     return issue.agentModel ?? project.agentModel ?? defaultModel;
+  }
+
+  /**
+   * Drops a queued deploy a newer merge makes pointless.
+   *
+   * A queued deploy has no Job yet, so replacing its target costs nothing,
+   * while leaving it in line would roll an older commit out before the newer
+   * one. Only *queued* deploys are superseded: one already running is left to
+   * finish, and the deploy Job's own stale-target check stops it from
+   * overwriting a newer revision. Deploys are spawned in merge order, so the
+   * run being created is always the newer target.
+   */
+  function supersedeQueuedDeploys(run: StoredAgentRun): void {
+    if (run.kind !== 'deploy') return;
+    for (const other of store.listForProject(run.projectId)) {
+      if (other.id === run.id || other.kind !== 'deploy' || other.status !== 'queued') continue;
+      store.update({
+        ...other,
+        status: 'failed',
+        finishedAt: now().toISOString(),
+        logs: `Superseded by the deploy of ${run.commitSha ?? 'a newer merge'}; only the newest merge is rolled out`,
+      });
+      logger.info('agents superseded deploy', {
+        projectId: run.projectId,
+        runId: other.id,
+        commitSha: other.commitSha,
+        supersededBy: run.id,
+        newestCommitSha: run.commitSha,
+      });
+    }
   }
 
   /**
@@ -588,7 +634,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
   /** Dispatches the run only if the concurrency limits leave room. */
   async function dispatchIfCapacity(run: StoredAgentRun): Promise<StoredAgentRun> {
-    return canDispatch(run.projectId) ? dispatch(run) : run;
+    return canDispatch(run.projectId) && !deployBlocked(run) ? dispatch(run) : run;
   }
 
   /**
@@ -826,6 +872,10 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
     };
     store.create(run);
 
+    // Synchronous with the create above: no other spawn can interleave, so a
+    // burst of merges leaves exactly one queued deploy behind the running one.
+    supersedeQueuedDeploys(run);
+
     if (kind === 'implement-issue') {
       await issues.update(projectId, issueId, {
         status: 'in_progress',
@@ -836,7 +886,17 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
       await issues.update(projectId, issueId, { openrouterKeyHash });
     }
 
-    return toPublicRun(await dispatchIfCapacity(run));
+    const dispatched = await dispatchIfCapacity(run);
+    if (kind === 'deploy' && dispatched.status === 'queued') {
+      // Serialized behind a running deploy: the Developer sees it wait rather
+      // than race, and it starts on the next reconcile pass.
+      logger.info('agents deploy queued behind running deploy', {
+        projectId,
+        runId: dispatched.id,
+        commitSha: dispatched.commitSha,
+      });
+    }
+    return toPublicRun(dispatched);
   }
 
   return {
@@ -958,7 +1018,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
         for (const run of store.listActive()) {
           if (run.status !== 'queued') continue;
-          if (!canDispatch(run.projectId)) continue;
+          if (!canDispatch(run.projectId) || deployBlocked(run)) continue;
           try {
             await dispatch(run);
             summary.dispatched += 1;
@@ -1010,7 +1070,9 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
 
         if (run.kind === 'deploy' && report.deployOutcome !== undefined) {
           const project = projects.get(run.projectId);
-          if (project !== undefined) {
+          // A skipped deploy applied nothing — the newer revision it found is
+          // still live — so it must not touch the Project's deploy record.
+          if (project !== undefined && report.deployOutcome !== 'skipped') {
             const at = now().toISOString();
             // Only a successful deploy advances the deployed commit; a failure
             // keeps the last good one so the rollback is what stayed live.

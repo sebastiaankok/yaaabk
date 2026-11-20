@@ -72,7 +72,7 @@ interface Fakes {
     costCents?: number;
     tokens?: TokenUsage;
     commitSha?: string;
-    deployOutcome?: 'success' | 'failed';
+    deployOutcome?: 'success' | 'failed' | 'skipped';
   }>;
   pullRequests: AgentPullRequest;
   reviews: Array<{ pullNumber: number; event: string; body: string }>;
@@ -108,6 +108,17 @@ function fakes(
     usage?: { before: number | undefined; after: number | undefined };
     /** Token usage the OpenCode adapter measured, if any. */
     tokens?: TokenUsage | null;
+    /** SHA the Deployment's `yaaabk.io/deployed-sha` label currently names. */
+    deployedSha?: string;
+    /**
+     * Cluster state two deploy runs can share, so a test can run them
+     * concurrently and let one observe what the other deployed.
+     */
+    cluster?: { deployedSha?: string };
+    /** Commit ancestry keyed by descendant: the SHAs it descends from. */
+    ancestorsOf?: Record<string, string[]>;
+    /** Called while the run waits for its image, so a test can stagger deploys. */
+    onWaitForImage?: (image: string) => Promise<void> | void;
   } = {},
 ): Fakes {
   const calls: string[] = [];
@@ -117,9 +128,11 @@ function fakes(
     costCents?: number;
     tokens?: TokenUsage;
     commitSha?: string;
-    deployOutcome?: 'success' | 'failed';
+    deployOutcome?: 'success' | 'failed' | 'skipped';
   }> = [];
   const reviews: Array<{ pullNumber: number; event: string; body: string }> = [];
+  // The Deployment's state lives outside the run, so two runs can share it.
+  const cluster = overrides.cluster ?? { deployedSha: overrides.deployedSha };
   const pullRequests: AgentPullRequest = {
     number: 7,
     url: 'https://github.com/acme/todo-app/pull/7',
@@ -172,6 +185,10 @@ function fakes(
       if (unmergedReads === 1) return overrides.conflicts ?? [];
       return overrides.remainingConflicts ?? [];
     },
+    async isAncestor(directory, ancestor, descendant) {
+      calls.push(`is-ancestor:${directory}:${ancestor}:${descendant}`);
+      return (overrides.ancestorsOf?.[descendant] ?? []).includes(ancestor);
+    },
   };
   const kubectl: Kubectl = {
     async applyServerSide({ directory, namespace, path }) {
@@ -189,6 +206,7 @@ function fakes(
     },
     async labelDeployment({ namespace, deploymentName, labelKey, labelValue }) {
       calls.push(`label:${namespace}:${deploymentName}:${labelKey}=${labelValue}`);
+      if (labelKey === 'yaaabk.io/deployed-sha') cluster.deployedSha = labelValue;
     },
     async undoRollout({ namespace, deploymentName }) {
       const rolledBack = overrides.rolledBack ?? true;
@@ -201,10 +219,15 @@ function fakes(
       calls.push(`pod-logs:${namespace}:${deploymentName}`);
       return overrides.podLogs ?? 'pod log line';
     },
+    async deployedSha({ namespace, deploymentName }) {
+      calls.push(`deployed-sha:${namespace}:${deploymentName}`);
+      return cluster.deployedSha;
+    },
   };
   const registry: Registry = {
     async waitForImage({ image }) {
       calls.push(`wait-image:${image}`);
+      if (overrides.onWaitForImage !== undefined) await overrides.onWaitForImage(image);
       if (overrides.imageError !== undefined) throw new Error(overrides.imageError);
     },
   };
@@ -573,6 +596,7 @@ describe('runAgent', () => {
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout-commit:/work/repo:merge-sha-7',
       'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
+      'deployed-sha:yaaabk-a1b2c3d4:todo-app',
       'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
       'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:merge-sha-7',
       'rollout:yaaabk-a1b2c3d4:todo-app',
@@ -606,6 +630,7 @@ describe('runAgent', () => {
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout-commit:/work/repo:merge-sha-7',
       'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
+      'deployed-sha:yaaabk-a1b2c3d4:todo-app',
       'apply:/work/repo:yaaabk-a1b2c3d4:deploy',
       'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:merge-sha-7',
       'rollout:yaaabk-a1b2c3d4:todo-app',
@@ -665,6 +690,83 @@ describe('runAgent', () => {
     ]);
     expect(reports[0]?.deployOutcome).toBe('failed');
     expect(reports[0]?.logs).toContain('was not published');
+  });
+
+  it('skips a deploy whose target is older than the commit already deployed', async () => {
+    const { deps, calls, reports } = fakes({
+      deployedSha: 'merge-sha-8',
+      ancestorsOf: { 'merge-sha-8': ['merge-sha-7'] },
+    });
+
+    const outcome = await runAgent(DEPLOY_CONFIG, deps);
+
+    // The Deployment already runs a descendant of this target, so applying it
+    // would roll the application back. The run succeeds without mutating.
+    expect(outcome).toEqual({ ok: true, prUrl: '', branch: 'main', commitSha: 'merge-sha-7' });
+    expect(calls).toEqual([
+      'clone:https://github.com/acme/todo-app->/work/repo',
+      'checkout-commit:/work/repo:merge-sha-7',
+      'wait-image:ghcr.io/acme/todo-app:merge-sha-7',
+      'deployed-sha:yaaabk-a1b2c3d4:todo-app',
+      'is-ancestor:/work/repo:merge-sha-7:merge-sha-8',
+      'report',
+    ]);
+    expect(reports[0]).toMatchObject({
+      prUrl: null,
+      commitSha: 'merge-sha-7',
+      deployOutcome: 'skipped',
+    });
+    expect(reports[0]?.logs).toContain('merge-sha-8');
+    expect(reports[0]?.logs).toContain('newer');
+  });
+
+  it('cannot let a slowed older deploy overwrite a newer one', async () => {
+    // Both deploys target the same Deployment. The older one pauses in the
+    // registry wait until the newer one has applied and labelled its revision,
+    // which is exactly the race that used to roll the application back.
+    const cluster: { deployedSha?: string } = {};
+    let releaseOlder!: () => void;
+    let olderWaiting!: () => void;
+    const released = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const waiting = new Promise<void>((resolve) => {
+      olderWaiting = resolve;
+    });
+    const ancestry = { 'sha-new': ['sha-old'] };
+
+    const older = fakes({
+      cluster,
+      ancestorsOf: ancestry,
+      onWaitForImage: async (image) => {
+        if (image.endsWith(':sha-old')) {
+          olderWaiting();
+          await released;
+        }
+      },
+    });
+    const newer = fakes({ cluster, ancestorsOf: ancestry });
+
+    const olderRun = runAgent({ ...DEPLOY_CONFIG, commitSha: 'sha-old' }, older.deps);
+    await waiting;
+    await runAgent({ ...DEPLOY_CONFIG, commitSha: 'sha-new' }, newer.deps);
+    releaseOlder();
+    const olderOutcome = await olderRun;
+
+    // Only the newer deploy mutated the Deployment, and its SHA is still live.
+    expect(newer.calls).toContain(
+      'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:sha-new',
+    );
+    expect(older.calls).not.toContain(
+      'set-image:yaaabk-a1b2c3d4:todo-app:app=ghcr.io/acme/todo-app:sha-old',
+    );
+    expect(older.calls).not.toContain(
+      'label:yaaabk-a1b2c3d4:todo-app:yaaabk.io/deployed-sha=sha-old',
+    );
+    expect(cluster.deployedSha).toBe('sha-new');
+    expect(olderOutcome).toEqual({ ok: true, prUrl: '', branch: 'main', commitSha: 'sha-old' });
+    expect(older.reports[0]?.deployOutcome).toBe('skipped');
+    expect(older.reports[0]?.logs).toContain('already runs sha-new');
   });
 });
 

@@ -1469,4 +1469,119 @@ describe('deploy runs', () => {
     const runs = await manager.runs('project-1', issue.id);
     expect(runs.ok && runs.value).toHaveLength(1);
   });
+
+  it('serializes deploys per Project so an older merge cannot win', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const older = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-older',
+    });
+    if (!older.ok) throw new Error('spawn failed');
+    const newer = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-newer',
+    });
+    if (!newer.ok) throw new Error('spawn failed');
+
+    // The newer merge waits for the running deploy instead of racing it.
+    expect(older.value).toMatchObject({ status: 'running' });
+    expect(newer.value).toMatchObject({ status: 'queued', jobName: null });
+    const queuedJob = await k8s.jobs.get(NS, 'yaaabk-deploy-issue-1-attempt-2');
+    expect(queuedJob.ok).toBe(false);
+
+    await finishJob(k8s, NS, older.value.jobName!, 'succeeded');
+    const summary = await manager.reconcile();
+    expect(summary.ok && summary.value).toMatchObject({ succeeded: 1, dispatched: 1 });
+
+    // The Deployment finally runs the newest merged commit.
+    const { container } = await readJobContainer(k8s, NS, 'yaaabk-deploy-issue-1-attempt-2');
+    expect(container.env).toContainEqual({ name: 'COMMIT_SHA', value: 'sha-newer' });
+  });
+
+  it('coalesces queued deploys so a superseded merge is never rolled out', async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const running = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-1',
+    });
+    if (!running.ok) throw new Error('spawn failed');
+    const superseded = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-2',
+    });
+    if (!superseded.ok) throw new Error('spawn failed');
+    const newest = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-3',
+    });
+    if (!newest.ok) throw new Error('spawn failed');
+
+    // The middle merge is dropped instead of queued: only the newest target
+    // stays in line behind the running deploy.
+    const runs = await manager.runs('project-1', issue.id);
+    if (!runs.ok) throw new Error('runs failed');
+    expect(runs.value.map((run) => [run.commitSha, run.status])).toEqual([
+      ['sha-1', 'running'],
+      ['sha-2', 'failed'],
+      ['sha-3', 'queued'],
+    ]);
+    expect(runs.value[1]?.logs).toContain('Superseded');
+    expect(runs.value[1]?.logs).toContain('sha-3');
+
+    await finishJob(k8s, NS, running.value.jobName!, 'succeeded');
+    const summary = await manager.reconcile();
+    expect(summary.ok && summary.value).toMatchObject({ succeeded: 1, dispatched: 1 });
+
+    // The only Job created after the running one deploys the newest merge.
+    const { container } = await readJobContainer(k8s, NS, 'yaaabk-deploy-issue-1-attempt-3');
+    expect(container.env).toContainEqual({ name: 'COMMIT_SHA', value: 'sha-3' });
+    expect((await k8s.jobs.get(NS, 'yaaabk-deploy-issue-1-attempt-2')).ok).toBe(false);
+  });
+
+  it('leaves the deployed SHA alone when a deploy reports itself as skipped', async () => {
+    const { manager, issues, k8s, projects, github } = await harness();
+    const created = await github.createIssue('acme/todo-app', {
+      title: 'Add login',
+      body: '',
+      labels: ['ready'],
+    });
+    if (!created.ok) throw new Error('github issue create failed');
+    const issue = await readyIssue(issues, { githubNumber: created.value.number });
+    const deployedAt = '2025-12-31T00:00:00.000Z';
+    projects.update({
+      ...projects.get('project-1')!,
+      deployedCommitSha: 'sha-newer',
+      lastDeployStatus: 'success',
+      lastDeployAt: deployedAt,
+    });
+
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'deploy',
+      commitSha: 'sha-older',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+    const { container } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    const token = container.env?.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+
+    const reported = await manager.report(spawned.value.id, token!, {
+      logs: 'Skipped sha-older: deployment/todo-app already runs sha-newer, which is the same or newer',
+      commitSha: 'sha-older',
+      deployOutcome: 'skipped',
+    });
+
+    expect(reported.ok).toBe(true);
+    // The newer commit stays the deployed one, and the skip is not a failure.
+    expect(projects.get('project-1')).toMatchObject({
+      deployedCommitSha: 'sha-newer',
+      lastDeployStatus: 'success',
+      lastDeployAt: deployedAt,
+    });
+    expect(github.issues('acme/todo-app')[0]?.labels).not.toContain('deploy-failed');
+    const runs = await manager.runs('project-1', issue.id);
+    expect(runs.ok && runs.value[0]?.logs).toContain('already runs sha-newer');
+  });
 });

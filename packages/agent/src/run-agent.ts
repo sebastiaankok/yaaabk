@@ -369,6 +369,11 @@ async function runResolveConflicts(
  * deploy manifests with `kubectl apply --server-side`, waits for the rollout to
  * complete, hits the Project's `/health` endpoint, labels the Deployment with
  * the deployed commit SHA, and reports success back to YAAABK.
+ *
+ * The target is checked against the Deployment's `yaaabk.io/deployed-sha` label
+ * right before anything is applied: if that revision is the same commit or a
+ * descendant of it, a newer deploy has already won and this run reports
+ * `skipped` instead of rolling the application back.
  */
 async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<AgentOutcome> {
   const directory = deps.directory ?? DEFAULT_DIRECTORY;
@@ -395,6 +400,29 @@ async function runDeploy(config: AgentConfig, deps: AgentDependencies): Promise<
       progress(`waiting for ${image} to be published`);
       await deps.registry.waitForImage({ image });
       logs.push(`Found ${image}`);
+    }
+
+    // A newer deploy may have finished while this one waited. Check as late as
+    // possible before mutating, so a slowed older deploy cannot overwrite the
+    // newer revision: the Deployment's label records what is live, and a target
+    // reachable from it is stale by definition.
+    const deployed = await deps.kubectl.deployedSha({ namespace, deploymentName });
+    if (deployed !== undefined) {
+      const stale =
+        deployed === commitSha || (await deps.git.isAncestor(directory, commitSha, deployed));
+      if (stale) {
+        logs.push(
+          `Skipped ${commitSha}: deployment/${deploymentName} already runs ${deployed}, which is the same or newer`,
+        );
+        progress(`skipping ${commitSha}; ${deployed} is already deployed`);
+        await deps.reporter.report({
+          prUrl: null,
+          logs: logs.join('\n'),
+          commitSha,
+          deployOutcome: 'skipped',
+        });
+        return { ok: true, prUrl: '', branch, commitSha };
+      }
     }
 
     await deps.kubectl.applyServerSide({ directory, namespace, path: deployPath });
