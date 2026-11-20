@@ -72,6 +72,7 @@ export function buildGrillSessionPrompt(input: GrillSessionPromptInput): string 
       '"""',
       input.activePlan.trim(),
       '"""',
+      'Earlier accepted Plans are archived in `docs/plans/`. Consult them for rationale, but only the active Plan above is binding.',
     );
   }
   return lines.join('\n');

@@ -78,6 +78,16 @@ describe('the grill session opening prompt', () => {
     expect(prompt).toMatch(/context/i);
   });
 
+  it('points the agent at the accepted Plan archive while only the active Plan binds', () => {
+    const prompt = buildGrillSessionPrompt({ ...INPUT, activePlan: '# Existing PRD' });
+
+    expect(prompt).toContain('# Existing PRD');
+    expect(prompt).toContain('docs/plans/');
+    expect(prompt).toMatch(/earlier accepted Plans/i);
+    expect(prompt).toMatch(/rationale/i);
+    expect(prompt).toMatch(/only the active/i);
+  });
+
   it('names the repository when the Project has one', () => {
     const prompt = buildGrillSessionPrompt({ ...INPUT, repoFullName: 'acme/todo-app' });
 
