@@ -1,5 +1,6 @@
 import type { AgentError, AgentManager } from '@yaaabk/agents';
 import type { ProjectsModule } from '@yaaabk/projects';
+import { isTokenUsage } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { asString, body, fail, projectOrResponse } from './http';
@@ -196,9 +197,23 @@ export function agentRoutes(agents: AgentManager, projects: ProjectsModule): Hon
   app.post('/api/agent-runs/:runId/report', async (c) => {
     const input = await body(c);
     const token = asString(input.token);
+    const rawTokens = input.tokens;
+    // All-or-nothing: a partial or invalid usage object is a malformed report,
+    // not a run that spent nothing.
+    if (rawTokens !== undefined && rawTokens !== null && !isTokenUsage(rawTokens)) {
+      return c.json(
+        {
+          error: 'invalid-input',
+          message:
+            'tokens must contain non-negative integer input, output, reasoning and cache.read/write',
+        },
+        400,
+      );
+    }
     const result = await agents.report(c.req.param('runId'), token, {
       prUrl: typeof input.prUrl === 'string' ? input.prUrl : undefined,
       costCents: asOptionalNumber(input.costCents ?? input.cost_cents),
+      ...(isTokenUsage(rawTokens) ? { tokens: rawTokens } : {}),
       logs: typeof input.logs === 'string' ? input.logs : undefined,
       reviewVerdict: asReviewVerdict(input.reviewVerdict ?? input.review_verdict),
       reviewBody: typeof input.reviewBody === 'string' ? input.reviewBody : undefined,

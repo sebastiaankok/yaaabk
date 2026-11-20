@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { TokenUsage } from '@yaaabk/shared';
 import type { AgentConfig } from './config';
 import type {
   AgentDependencies,
@@ -55,6 +56,13 @@ const DEPLOY_CONFIG: AgentConfig = {
 
 const ISSUE: AgentIssue = { number: 42, title: 'Add login', body: 'With OAuth.' };
 
+const TOKENS: TokenUsage = {
+  input: 1_000,
+  output: 200,
+  reasoning: 30,
+  cache: { read: 4_000, write: 5 },
+};
+
 interface Fakes {
   deps: AgentDependencies;
   calls: string[];
@@ -62,6 +70,7 @@ interface Fakes {
     prUrl: string | null;
     logs: string;
     costCents?: number;
+    tokens?: TokenUsage;
     commitSha?: string;
     deployOutcome?: 'success' | 'failed';
   }>;
@@ -97,6 +106,8 @@ function fakes(
     podLogs?: string;
     /** USD the run's key has spent before and after the LLM call. */
     usage?: { before: number | undefined; after: number | undefined };
+    /** Token usage the OpenCode adapter measured, if any. */
+    tokens?: TokenUsage | null;
   } = {},
 ): Fakes {
   const calls: string[] = [];
@@ -104,6 +115,7 @@ function fakes(
     prUrl: string | null;
     logs: string;
     costCents?: number;
+    tokens?: TokenUsage;
     commitSha?: string;
     deployOutcome?: 'success' | 'failed';
   }> = [];
@@ -199,19 +211,28 @@ function fakes(
   const openCode: OpenCode = {
     async implement(input) {
       calls.push(`implement:${input.directory}`);
-      return { exitCode: overrides.exitCode ?? 0, output: 'implemented' };
+      return {
+        exitCode: overrides.exitCode ?? 0,
+        output: 'implemented',
+        tokens: overrides.tokens ?? null,
+      };
     },
     async review(input) {
       calls.push(`review:${input.directory}`);
       return {
         exitCode: overrides.reviewExitCode ?? 0,
         output: 'reviewed',
+        tokens: overrides.tokens ?? null,
         verdict: overrides.verdict ?? { event: 'approve', body: 'Looks good.' },
       };
     },
     async resolveConflicts(input) {
       calls.push(`resolve:${input.directory}`);
-      return { exitCode: overrides.conflictExitCode ?? 0, output: 'resolved' };
+      return {
+        exitCode: overrides.conflictExitCode ?? 0,
+        output: 'resolved',
+        tokens: overrides.tokens ?? null,
+      };
     },
   };
   const checks: Checks = {
@@ -299,6 +320,28 @@ describe('runAgent', () => {
         costCents: 25,
       },
     ]);
+  });
+
+  it('reports the token usage measured for the attempt', async () => {
+    const { deps, reports } = fakes({ tokens: TOKENS });
+
+    await runAgent(CONFIG, deps);
+
+    expect(reports).toEqual([
+      {
+        prUrl: 'https://github.com/acme/todo-app/pull/7',
+        logs: 'implemented\nchecks ok',
+        tokens: TOKENS,
+      },
+    ]);
+  });
+
+  it('omits tokens when the adapter could not measure the attempt', async () => {
+    const { deps, reports } = fakes({ tokens: null });
+
+    await runAgent(CONFIG, deps);
+
+    expect(reports[0]).not.toHaveProperty('tokens');
   });
 
   it('reports a failed attempt and opens no pull request when checks fail', async () => {
@@ -400,6 +443,14 @@ describe('runAgent', () => {
     ]);
   });
 
+  it('reports the token usage measured for a review', async () => {
+    const { deps, reports } = fakes({ tokens: TOKENS });
+
+    await runAgent(REVIEW_CONFIG, deps);
+
+    expect(reports[0]).toMatchObject({ tokens: TOKENS });
+  });
+
   it('posts no review and reports a failure when the review itself fails', async () => {
     const { deps, calls, reports, reviews } = fakes({ reviewExitCode: 1 });
 
@@ -441,6 +492,18 @@ describe('runAgent', () => {
       prUrl: 'https://github.com/acme/todo-app/pull/7',
     });
     expect(reports[0]?.logs).toContain('CONFLICT (content): src/a.ts');
+  });
+
+  it('reports the token usage measured while resolving conflicts', async () => {
+    const { deps, reports } = fakes({
+      mergeConflicted: true,
+      conflicts: ['src/a.ts'],
+      tokens: TOKENS,
+    });
+
+    await runAgent(CONFLICT_CONFIG, deps);
+
+    expect(reports[0]).toMatchObject({ tokens: TOKENS });
   });
 
   it('pushes a clean base-branch merge without spending an LLM call', async () => {
@@ -527,6 +590,7 @@ describe('runAgent', () => {
     expect(reports[0]?.prUrl).toBeNull();
     expect(reports[0]?.commitSha).toBe('merge-sha-7');
     expect(reports[0]?.deployOutcome).toBe('success');
+    expect(reports[0]).not.toHaveProperty('tokens');
   });
 
   it('captures pod logs, rolls back, and reports a failed deploy when the rollout fails', async () => {

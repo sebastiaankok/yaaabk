@@ -266,6 +266,85 @@ describe('POST /api/agent-runs/:runId/report', () => {
     });
   });
 
+  it('records the token usage reported by the run', async () => {
+    const { context, session } = await signedIn();
+    const { projectId, issueId } = await projectWithIssue(context, session);
+    const spawned = await request(
+      context,
+      `/api/projects/${projectId}/issues/${issueId}/spawn`,
+      { method: 'POST', body: JSON.stringify({}) },
+      session,
+    );
+    const run = (await spawned.json()) as { id: string; jobName: string };
+    const project = await context.projects.get(projectId);
+    if (!project.ok) throw new Error('project missing');
+    const job = await context.k8s.objectApi.read({
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: run.jobName, namespace: project.value.namespace },
+    });
+    const token = (
+      job.spec as {
+        template: { spec: { containers: Array<{ env: Array<{ name: string; value: string }> }> } };
+      }
+    ).template.spec.containers[0]!.env.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+
+    const tokens = {
+      input: 1_200,
+      output: 300,
+      reasoning: 40,
+      cache: { read: 5_000, write: 10 },
+    };
+    const reported = await request(context, `/api/agent-runs/${run.id}/report`, {
+      method: 'POST',
+      body: JSON.stringify({ token, prUrl: 'https://github.com/acme/todo/pull/7', tokens }),
+    });
+
+    expect(reported.status).toBe(200);
+    await expect(reported.json()).resolves.toMatchObject({ tokens });
+  });
+
+  it('rejects a partial or negative token payload without recording it', async () => {
+    const { context, session } = await signedIn();
+    const { projectId, issueId } = await projectWithIssue(context, session);
+    const spawned = await request(
+      context,
+      `/api/projects/${projectId}/issues/${issueId}/spawn`,
+      { method: 'POST', body: JSON.stringify({}) },
+      session,
+    );
+    const run = (await spawned.json()) as { id: string; jobName: string };
+    const project = await context.projects.get(projectId);
+    if (!project.ok) throw new Error('project missing');
+    const job = await context.k8s.objectApi.read({
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: run.jobName, namespace: project.value.namespace },
+    });
+    const token = (
+      job.spec as {
+        template: { spec: { containers: Array<{ env: Array<{ name: string; value: string }> }> } };
+      }
+    ).template.spec.containers[0]!.env.find((entry) => entry.name === 'AGENT_RUN_TOKEN')?.value;
+
+    const invalid = [
+      { input: 1, output: 2, reasoning: 3, cache: { read: 4 } },
+      { input: -1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+      { input: 1.5, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+      'many',
+    ];
+    for (const tokens of invalid) {
+      const rejected = await request(context, `/api/agent-runs/${run.id}/report`, {
+        method: 'POST',
+        body: JSON.stringify({ token, tokens }),
+      });
+      expect(rejected.status).toBe(400);
+    }
+
+    const runs = await context.agents.runs(projectId, issueId);
+    expect(runs.ok && runs.value[0]?.tokens).toBeNull();
+  });
+
   it('records a failed deploy reported with its outcome', async () => {
     const { context, session } = await signedIn();
     const { projectId, issueId } = await projectWithIssue(context, session);

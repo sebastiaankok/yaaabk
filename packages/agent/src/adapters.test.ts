@@ -11,9 +11,18 @@ import {
   createOpenRouterMeter,
   createRegistry,
   createReporter,
+  newOpenCodeSessionId,
+  parseExportedSessionTokens,
   parseImage,
 } from './adapters';
 import type { AgentConfig } from './config';
+
+const TOKENS = {
+  input: 1_200,
+  output: 300,
+  reasoning: 40,
+  cache: { read: 5_000, write: 10 },
+};
 
 const CONFIG: AgentConfig = {
   kind: 'implement-issue',
@@ -55,10 +64,30 @@ describe('createOpenCode', () => {
     };
   }
 
-  it('runs OpenCode with the configured model and automatic approvals', async () => {
-    const runner = recordingRunner();
+  /** An export reader that records the sessions it was asked to export. */
+  function recordingExport(tokens: unknown = TOKENS) {
+    const sessions: string[] = [];
+    return {
+      sessions,
+      exportSession: async ({ sessionId }: { sessionId: string }) => {
+        sessions.push(sessionId);
+        return { exitCode: 0, stdout: JSON.stringify({ info: { tokens } }) };
+      },
+    };
+  }
 
-    const openCode = createOpenCode({ model: 'openrouter/chosen' }, { run: runner.run });
+  it('runs OpenCode in a fresh session and records the exported tokens', async () => {
+    const runner = recordingRunner();
+    const exporter = recordingExport();
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      {
+        run: runner.run,
+        exportSession: exporter.exportSession,
+        newSessionId: () => 'ses_first',
+      },
+    );
     const result = await openCode.implement({
       directory: '/work/repo',
       prompt: 'Implement issue #42',
@@ -67,10 +96,19 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Implement issue #42'],
+        args: [
+          'run',
+          '--model',
+          'openrouter/chosen',
+          '--auto',
+          '--session',
+          'ses_first',
+          'Implement issue #42',
+        ],
       },
     ]);
-    expect(result).toEqual({ exitCode: 0, output: 'done' });
+    expect(exporter.sessions).toEqual(['ses_first']);
+    expect(result).toEqual({ exitCode: 0, output: 'done', tokens: TOKENS });
   });
 
   it('keeps stderr so a provider error is not an empty run log', async () => {
@@ -80,7 +118,10 @@ describe('createOpenCode', () => {
       stderr: 'Error: This request requires more credits',
     });
 
-    const openCode = createOpenCode({ model: 'openrouter/chosen' }, { run: runner.run });
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      { run: runner.run, exportSession: recordingExport().exportSession },
+    );
     const result = await openCode.implement({
       directory: '/work/repo',
       prompt: 'Implement issue #42',
@@ -89,10 +130,11 @@ describe('createOpenCode', () => {
     expect(result).toEqual({
       exitCode: 1,
       output: 'Error: This request requires more credits',
+      tokens: TOKENS,
     });
   });
 
-  it('retries when OpenCode has not synced its model catalogue yet', async () => {
+  it('retries with fresh sessions and sums what each attempt used', async () => {
     const queued = [
       { exitCode: 1, stdout: '', stderr: 'Error: Model unavailable: openrouter/chosen' },
       { exitCode: 1, stdout: '', stderr: 'Error: Model unavailable: openrouter/chosen' },
@@ -105,15 +147,74 @@ describe('createOpenCode', () => {
       if (next === undefined) throw new Error('unexpected extra invocation');
       return next;
     };
-
+    const sessionIds = ['ses_1', 'ses_2', 'ses_3'];
+    const exported: string[] = [];
     const openCode = createOpenCode(
       { model: 'openrouter/chosen' },
-      { run, retryDelaysMs: [0, 0, 0] },
+      {
+        run,
+        retryDelaysMs: [0, 0, 0],
+        newSessionId: () => sessionIds.shift() ?? 'ses_extra',
+        exportSession: async ({ sessionId }) => {
+          exported.push(sessionId);
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              info: {
+                tokens: {
+                  input: 10,
+                  output: 1,
+                  reasoning: 0,
+                  cache: { read: 100, write: 0 },
+                },
+              },
+            }),
+          };
+        },
+      },
     );
     const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
 
     expect(requests).toHaveLength(3);
-    expect(result).toEqual({ exitCode: 0, output: 'done' });
+    expect(requests.map((request) => request.args[request.args.indexOf('--session') + 1])).toEqual([
+      'ses_1',
+      'ses_2',
+      'ses_3',
+    ]);
+    expect(exported).toEqual(['ses_1', 'ses_2', 'ses_3']);
+    expect(result).toEqual({
+      exitCode: 0,
+      output: 'done',
+      tokens: {
+        input: 30,
+        output: 3,
+        reasoning: 0,
+        cache: { read: 300, write: 0 },
+      },
+    });
+  });
+
+  it('reports no tokens when no retry could be measured', async () => {
+    const queued = [
+      { exitCode: 1, stdout: '', stderr: 'Error: Model unavailable: openrouter/chosen' },
+      { exitCode: 0, stdout: 'done' },
+    ];
+    const run = async () => queued.shift() ?? { exitCode: 0, stdout: 'done' };
+    let exports = 0;
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      {
+        run,
+        retryDelaysMs: [0],
+        newSessionId: () => `ses_${++exports}`,
+        exportSession: async () => ({ exitCode: 1, stdout: 'export failed' }),
+      },
+    );
+
+    const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
+
+    expect(exports).toBe(2);
+    expect(result.tokens).toBeNull();
   });
 
   it('does not retry a failure that is not the model catalogue', async () => {
@@ -125,7 +226,11 @@ describe('createOpenCode', () => {
 
     const openCode = createOpenCode(
       { model: 'openrouter/chosen' },
-      { run: runner.run, retryDelaysMs: [0, 0] },
+      {
+        run: runner.run,
+        retryDelaysMs: [0, 0],
+        exportSession: recordingExport().exportSession,
+      },
     );
     const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
 
@@ -142,7 +247,11 @@ describe('createOpenCode', () => {
 
     const openCode = createOpenCode(
       { model: 'openrouter/chosen' },
-      { run: runner.run, retryDelaysMs: [0, 0] },
+      {
+        run: runner.run,
+        retryDelaysMs: [0, 0],
+        exportSession: recordingExport().exportSession,
+      },
     );
     const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });
 
@@ -150,6 +259,12 @@ describe('createOpenCode', () => {
     expect(result).toEqual({
       exitCode: 1,
       output: 'Error: Model unavailable: openrouter/chosen',
+      tokens: {
+        input: 3_600,
+        output: 900,
+        reasoning: 120,
+        cache: { read: 15_000, write: 30 },
+      },
     });
   });
 
@@ -159,7 +274,12 @@ describe('createOpenCode', () => {
 
     const openCode = createOpenCode(
       { model: 'openrouter/chosen' },
-      { run: runner.run, readVerdict: async () => verdict },
+      {
+        run: runner.run,
+        readVerdict: async () => verdict,
+        exportSession: recordingExport().exportSession,
+        newSessionId: () => 'ses_review',
+      },
     );
     const result = await openCode.review({
       directory: '/work/repo',
@@ -169,18 +289,58 @@ describe('createOpenCode', () => {
     expect(runner.requests).toEqual([
       {
         directory: '/work/repo',
-        args: ['run', '--model', 'openrouter/chosen', '--auto', 'Review pull request #7'],
+        args: [
+          'run',
+          '--model',
+          'openrouter/chosen',
+          '--auto',
+          '--session',
+          'ses_review',
+          'Review pull request #7',
+        ],
       },
     ]);
-    expect(result).toEqual({ exitCode: 0, output: 'done', verdict });
+    expect(result).toEqual({ exitCode: 0, output: 'done', verdict, tokens: TOKENS });
   });
 
   it('refuses to run without a configured model', async () => {
-    const openCode = createOpenCode({}, { run: recordingRunner().run });
+    const openCode = createOpenCode(
+      {},
+      { run: recordingRunner().run, exportSession: recordingExport().exportSession },
+    );
 
     await expect(
       openCode.implement({ directory: '/work/repo', prompt: 'Implement issue #42' }),
     ).rejects.toThrow(/AGENT_MODEL/);
+  });
+});
+
+describe('parseExportedSessionTokens', () => {
+  it('reads the five token components from an exported session', () => {
+    const exported = JSON.stringify({
+      info: { id: 'ses_1', tokens: TOKENS },
+      messages: [],
+    });
+
+    expect(parseExportedSessionTokens(exported)).toEqual(TOKENS);
+  });
+
+  it('returns null for a malformed, partial or unreadable export', () => {
+    expect(parseExportedSessionTokens('not json')).toBeNull();
+    expect(parseExportedSessionTokens(JSON.stringify({ info: {} }))).toBeNull();
+    expect(
+      parseExportedSessionTokens(JSON.stringify({ info: { tokens: { input: 1 } } })),
+    ).toBeNull();
+  });
+});
+
+describe('newOpenCodeSessionId', () => {
+  it('generates a fresh id in the form OpenCode accepts', () => {
+    const first = newOpenCodeSessionId();
+    const second = newOpenCodeSessionId();
+
+    expect(first).toMatch(/^ses_[0-9a-f]+$/);
+    expect(second).not.toBe(first);
   });
 });
 
@@ -249,6 +409,32 @@ describe('createReporter', () => {
 
     const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
     expect(body).toMatchObject({ token: 'run-token', costCents: 25 });
+  });
+
+  it('includes token usage in the report body when the run measured it', async () => {
+    const { calls, fetch } = stubFetch(() => new Response('{}', { status: 200 }));
+    const reporter = createReporter(
+      { ...CONFIG, apiUrl: 'https://api.test', runId: 'run-1', runToken: 'run-token' },
+      { fetch },
+    );
+
+    await reporter.report({ prUrl: null, logs: 'done', tokens: TOKENS });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ token: 'run-token', tokens: TOKENS });
+  });
+
+  it('omits token usage from the report body when no attempt could be measured', async () => {
+    const { calls, fetch } = stubFetch(() => new Response('{}', { status: 200 }));
+    const reporter = createReporter(
+      { ...CONFIG, apiUrl: 'https://api.test', runId: 'run-1', runToken: 'run-token' },
+      { fetch },
+    );
+
+    await reporter.report({ prUrl: null, logs: 'done' });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('tokens');
   });
 
   it('includes commitSha in the report body when the deploy run reports the deployed SHA', async () => {

@@ -84,6 +84,7 @@ function run(overrides: Partial<AgentRun> & { id: string }): AgentRun {
     reviewBody: null,
     logs: null,
     costCents: 0,
+    tokens: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     startedAt: null,
     finishedAt: null,

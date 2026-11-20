@@ -12,6 +12,7 @@ export interface StoreTestApi {
   it(name: string, fn: () => void): void;
   expect(actual: unknown): {
     toBe(expected: unknown): void;
+    toBeNull(): void;
     toEqual(expected: unknown): void;
     toBeUndefined(): void;
     toHaveLength(length: number): void;
@@ -41,6 +42,7 @@ export function runRecord(overrides: Partial<StoredAgentRun> = {}): StoredAgentR
     reviewBody: null,
     logs: null,
     costCents: 0,
+    tokens: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     startedAt: null,
     finishedAt: null,
@@ -114,6 +116,21 @@ export function agentStoreContract(api: StoreTestApi, createStore: () => AgentSt
       store.create(running);
 
       expect(store.get('run-1')?.model).toBe('openrouter/anthropic/claude-sonnet-4.5');
+    });
+
+    it('stores measured token usage and keeps unmeasured runs null', () => {
+      const store = createStore();
+      const tokens = {
+        input: 100,
+        output: 20,
+        reasoning: 5,
+        cache: { read: 300, write: 10 },
+      };
+      store.create(runRecord({ id: 'measured', tokens }));
+      store.create(runRecord({ id: 'unmeasured', tokens: null }));
+
+      expect(store.get('measured')?.tokens).toEqual(tokens);
+      expect(store.get('unmeasured')?.tokens).toBeNull();
     });
 
     it('lists a project\u2019s runs newest first', () => {

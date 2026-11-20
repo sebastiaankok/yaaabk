@@ -513,6 +513,38 @@ test('opens a card to show its body and agent run history', async ({ page }) => 
   await expect(panel.getByText('Agent finished: opened PR #1')).toBeVisible();
 });
 
+test('shows measured token usage with a partial total and per-run values', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.runs = [
+    {
+      ...state.runs[0],
+      attemptNumber: 1,
+      tokens: { input: 1_000, output: 200, reasoning: 50, cache: { read: 4_000, write: 10 } },
+    },
+    {
+      ...state.runs[0],
+      id: 'r2',
+      attemptNumber: 2,
+      status: 'failed',
+      prUrl: null,
+      costCents: 0,
+      tokens: null,
+    },
+  ];
+
+  await page.goto('/projects/p1/issues');
+  await card(page, 'Schema').click();
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel.getByTestId('issue-tokens')).toHaveText('Total: ≥ 5,260');
+  await expect(panel.getByTestId('issue-token-breakdown')).toHaveText(
+    'in 1,000 · out 250 · cached 4,010',
+  );
+  await expect(panel.getByTestId('run-tokens').nth(0)).toHaveText('Tokens: 5.3k');
+  await expect(panel.getByTestId('run-tokens').nth(1)).toHaveText('Tokens: —');
+  await expect(panel.getByText('Some model runs did not report token usage.')).toBeVisible();
+});
+
 test('renders Issue Markdown in the drawer', async ({ page }) => {
   const state = await mockBoard(page);
   state.issues = state.issues.map((item) =>

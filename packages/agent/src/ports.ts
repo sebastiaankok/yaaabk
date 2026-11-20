@@ -6,7 +6,7 @@
  * verified without a cluster, a repository or an LLM.
  */
 
-import { issueBranch } from '@yaaabk/shared';
+import { issueBranch, type TokenUsage } from '@yaaabk/shared';
 import type { AgentConfig } from './config';
 
 /** The Issue as the agent needs it. */
@@ -126,6 +126,8 @@ export interface OpenCode {
   implement(input: { directory: string; prompt: string }): Promise<{
     exitCode: number;
     output: string;
+    /** Measured usage, or `null` when the session export failed. */
+    tokens: TokenUsage | null;
   }>;
   /**
    * Runs OpenCode with the review-pr prompt and reads back the verdict the
@@ -135,11 +137,13 @@ export interface OpenCode {
     exitCode: number;
     output: string;
     verdict: ReviewVerdict;
+    tokens: TokenUsage | null;
   }>;
   /** Runs OpenCode with the resolve-conflicts prompt in the working directory. */
   resolveConflicts(input: { directory: string; prompt: string }): Promise<{
     exitCode: number;
     output: string;
+    tokens: TokenUsage | null;
   }>;
 }
 
@@ -190,12 +194,14 @@ export interface Reporter {
   /**
    * Reports the outcome back to YAAABK. `costCents` is the run's LLM spend in
    * whole cents, when the meter could measure it; omitting it leaves the run's
-   * cost unrecorded rather than zero.
+   * cost unrecorded rather than zero. `tokens` is measured the same way: a run
+   * whose sessions could not be exported reports none.
    */
   report(input: {
     prUrl: string | null;
     logs: string;
     costCents?: number;
+    tokens?: TokenUsage;
     /** The verdict a review run reached. Omitted by other kinds. */
     reviewVerdict?: 'approve' | 'request-changes';
     /** The reviewer's written summary. Omitted with {@link reviewVerdict}. */

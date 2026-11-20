@@ -23,7 +23,13 @@
     type IssueBudget,
     type ModelCatalogueView,
   } from '#lib/api.js';
-  import { runLabel } from '#lib/agent-run.js';
+  import {
+    compactTokens,
+    formatTokens,
+    issueTokenSummary,
+    runLabel,
+    runTokenTotal,
+  } from '#lib/agent-run.js';
   import Markdown from '#lib/markdown.svelte';
   import { isAtBottom } from '#lib/scroll.js';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
@@ -197,6 +203,23 @@
       .filter((run) => run.issueId === selectedId)
       .slice()
       .sort((a, b) => a.attemptNumber - b.attemptNumber),
+  );
+
+  /** The open Issue's measured token usage across its model runs. */
+  const tokenSummary = $derived(issueTokenSummary(selectedRuns));
+
+  /** The total shown in the drawer, marked partial when a run is unmeasured. */
+  const tokenTotalLabel = $derived(
+    tokenSummary.total === null
+      ? '—'
+      : `${tokenSummary.partial ? '≥ ' : ''}${formatTokens(tokenSummary.total)}`,
+  );
+
+  /** The in/out/cached split, or `null` when nothing was measured. */
+  const tokenBreakdownLabel = $derived(
+    tokenSummary.breakdown === null
+      ? null
+      : `in ${formatTokens(tokenSummary.breakdown.input)} · out ${formatTokens(tokenSummary.breakdown.output)} · cached ${formatTokens(tokenSummary.breakdown.cached)}`,
   );
 
   function columnItems(column: BoardColumn): BoardItem[] {
@@ -899,6 +922,23 @@
             </p>
           {/if}
 
+          <section aria-label="Token usage" class="space-y-1">
+            <h3 class="text-sm font-semibold">Tokens</h3>
+            {#if selectedRuns.length === 0}
+              <p class="text-sm text-neutral-500">No agent runs yet.</p>
+            {:else}
+              <p class="text-sm" data-testid="issue-tokens">Total: {tokenTotalLabel}</p>
+              {#if tokenBreakdownLabel !== null}
+                <p class="text-xs text-neutral-500" data-testid="issue-token-breakdown">
+                  {tokenBreakdownLabel}
+                </p>
+              {/if}
+              {#if tokenSummary.partial}
+                <p class="text-xs text-neutral-500">Some model runs did not report token usage.</p>
+              {/if}
+            {/if}
+          </section>
+
           <div class="flex flex-col gap-1">
             <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
             <select
@@ -1005,6 +1045,9 @@
                     {/if}
                     <span class="text-xs text-neutral-500">
                       {(run.costCents / 100).toFixed(2)}
+                    </span>
+                    <span class="text-xs text-neutral-500" data-testid="run-tokens">
+                      Tokens: {compactTokens(runTokenTotal(run.tokens))}
                     </span>
                     {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
                       <Markdown

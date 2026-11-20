@@ -1,5 +1,12 @@
 /// <reference types="bun" />
-import { withReviewVerdict } from '@yaaabk/shared';
+import {
+  addTokenUsage,
+  isTokenUsage,
+  tokenUsageTotal,
+  withReviewVerdict,
+  type TokenUsage,
+} from '@yaaabk/shared';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentConfig } from './config';
@@ -233,12 +240,38 @@ export interface OpenCodeRunResult {
  */
 export type OpenCodeRunner = (request: OpenCodeRunRequest) => Promise<OpenCodeRunResult>;
 
+/** One `opencode session export <id>` call, which measures a run's tokens. */
+export interface OpenCodeSessionExportRequest {
+  directory: string;
+  sessionId: string;
+}
+
+/** What an export command printed and whether it succeeded. */
+export interface OpenCodeSessionExportResult {
+  exitCode: number;
+  stdout: string;
+}
+
+/**
+ * Runs `opencode session export` for an invocation's session.
+ *
+ * Injectable so tests do not need the real CLI, and so an unreadable export can
+ * be simulated without touching the filesystem.
+ */
+export type OpenCodeSessionExporter = (
+  request: OpenCodeSessionExportRequest,
+) => Promise<OpenCodeSessionExportResult>;
+
 /** Reads the verdict a review run wrote for its pull request. */
 export type OpenCodeVerdictReader = (directory: string) => Promise<ReviewVerdict>;
 
 export interface OpenCodeAdapterOptions {
   run?: OpenCodeRunner;
   readVerdict?: OpenCodeVerdictReader;
+  /** Reads the token usage OpenCode recorded for an invocation's session. */
+  exportSession?: OpenCodeSessionExporter;
+  /** Creates the fresh session id each invocation runs in. */
+  newSessionId?: () => string;
   /**
    * Delays between retries when OpenCode cannot resolve the model yet.
    * Defaults to {@link MODEL_RETRY_DELAYS_MS}; tests pass `[]` to keep runs fast.
@@ -262,15 +295,54 @@ export const MODEL_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_000, 1
  *
  * `--model` is explicit because the runtime has no default model, and `--auto`
  * approves routine permission prompts so a Job cannot hang waiting for a human
- * who is not attached to it.
+ * who is not attached to it. `--session` names the fresh session the run
+ * creates, which is what lets its exported token usage be measured afterwards.
  *
  * Deliberately no `--standalone`: a private server does not wait for the
  * catalogue either, and it dies with the failed invocation, so retrying never
  * becomes possible. The shared background service does persist and finishes
  * syncing, which is what makes {@link MODEL_RETRY_DELAYS_MS} work.
  */
-export function openCodeRunArgs(model: string, prompt: string): string[] {
-  return ['run', '--model', model, '--auto', prompt];
+export function openCodeRunArgs(model: string, prompt: string, sessionId: string): string[] {
+  return ['run', '--model', model, '--auto', '--session', sessionId, prompt];
+}
+
+/**
+ * Reads the token usage from an `opencode session export` document.
+ *
+ * The export nests the usage under `info.tokens`; anything else — malformed
+ * JSON, a missing field, a partial object — yields `null`, so an unmeasured run
+ * is never reported as one that spent nothing.
+ */
+export function parseExportedSessionTokens(exported: string): TokenUsage | null {
+  try {
+    const parsed: unknown = JSON.parse(exported);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const info = (parsed as Record<string, unknown>)['info'];
+    if (typeof info !== 'object' || info === null) return null;
+    const tokens = (info as Record<string, unknown>)['tokens'];
+    return isTokenUsage(tokens) ? tokens : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The default session id: OpenCode requires it to start with `ses`. */
+export function newOpenCodeSessionId(): string {
+  return `ses_${randomUUID().replaceAll('-', '')}`;
+}
+
+/** Runs `opencode session export <id>` quietly, capturing the JSON. */
+const exportSessionWithBun: OpenCodeSessionExporter = async ({ directory, sessionId }) => {
+  const result = await Bun.$`opencode session export ${sessionId}`.cwd(directory).quiet().nothrow();
+  return { exitCode: result.exitCode ?? 1, stdout: result.stdout.toString() };
+};
+
+/** Writes the measured usage as a progress line the UI streams live. */
+function progressTokens(tokens: TokenUsage): void {
+  process.stdout.write(
+    `[yaaabk] measured ${tokenUsageTotal(tokens)} tokens (input ${tokens.input}, output ${tokens.output}, reasoning ${tokens.reasoning}, cache read ${tokens.cache.read}, cache write ${tokens.cache.write})\n`,
+  );
 }
 
 /** Largest output tail kept for the final report, so a chatty run cannot grow without bound. */
@@ -396,6 +468,8 @@ export function createOpenCode(
 ): OpenCode {
   const run = options.run ?? runWithBun;
   const readVerdict = options.readVerdict ?? readVerdictFile;
+  const exportSession = options.exportSession ?? exportSessionWithBun;
+  const newSessionId = options.newSessionId ?? newOpenCodeSessionId;
   const retryDelays = options.retryDelaysMs ?? MODEL_RETRY_DELAYS_MS;
 
   /** The model to invoke, failing with the configuration to set when absent. */
@@ -417,22 +491,54 @@ export function createOpenCode(
     return `${result.stdout}\n${result.stderr ?? ''}`.includes('Model unavailable');
   }
 
-  /** Runs OpenCode with `prompt`, retrying until the model catalogue is ready. */
+  /** The usage an invocation's session recorded, or `null` when unreadable. */
+  async function measureTokens(directory: string, sessionId: string): Promise<TokenUsage | null> {
+    try {
+      const exported = await exportSession({ directory, sessionId });
+      if (exported.exitCode !== 0) return null;
+      return parseExportedSessionTokens(exported.stdout);
+    } catch {
+      // A missing session or an unreachable server must not fail the attempt:
+      // it only means this invocation's usage is unknown.
+      return null;
+    }
+  }
+
+  /**
+   * Runs OpenCode with `prompt`, retrying until the model catalogue is ready.
+   *
+   * Every attempt gets a fresh session id, because the same session would
+   * accumulate the retry's tokens on top of the failed attempt's. The usage of
+   * every attempt that could be exported is summed; if none could be, the run
+   * reports no tokens rather than zero.
+   */
   async function invoke(directory: string, prompt: string) {
-    const args = openCodeRunArgs(requireModel(), prompt);
-    let result = await run({ directory, args });
-    for (const delay of retryDelays) {
-      if (!isModelUnavailable(result)) break;
+    const model = requireModel();
+    let result: OpenCodeRunResult | undefined;
+    let tokens: TokenUsage | null = null;
+
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      const sessionId = newSessionId();
+      result = await run({ directory, args: openCodeRunArgs(model, prompt, sessionId) });
+      const measured = await measureTokens(directory, sessionId);
+      if (measured !== null) {
+        tokens = tokens === null ? measured : addTokenUsage(tokens, measured);
+      }
+      if (!isModelUnavailable(result) || attempt === retryDelays.length) break;
+      const delay = retryDelays[attempt] ?? 0;
       process.stdout.write(
         `[yaaabk] model catalogue not ready; retrying in ${Math.round(delay / 1000)}s\n`,
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
-      result = await run({ directory, args });
     }
+
+    // The loop runs at least once, so a result is always assigned.
+    const finished = result as OpenCodeRunResult;
     // Provider failures arrive on stderr; dropping it leaves an empty run log
     // with no clue why the attempt failed.
-    const output = [result.stdout, result.stderr ?? ''].filter((part) => part.trim() !== '');
-    return { exitCode: result.exitCode, output: output.join('\n') };
+    const output = [finished.stdout, finished.stderr ?? ''].filter((part) => part.trim() !== '');
+    if (tokens !== null) progressTokens(tokens);
+    return { exitCode: finished.exitCode, output: output.join('\n'), tokens };
   }
 
   return {
@@ -447,6 +553,7 @@ export function createOpenCode(
         exitCode: result.exitCode,
         output: result.output,
         verdict,
+        tokens: result.tokens,
       };
     },
 
@@ -677,7 +784,16 @@ export function createReporter(
 ): Reporter {
   const doFetch = options.fetch ?? globalThis.fetch;
   return {
-    async report({ prUrl, logs, costCents, reviewVerdict, reviewBody, commitSha, deployOutcome }) {
+    async report({
+      prUrl,
+      logs,
+      costCents,
+      tokens,
+      reviewVerdict,
+      reviewBody,
+      commitSha,
+      deployOutcome,
+    }) {
       if (
         config.apiUrl === undefined ||
         config.runId === undefined ||
@@ -693,6 +809,7 @@ export function createReporter(
           prUrl,
           logs,
           ...(costCents === undefined ? {} : { costCents }),
+          ...(tokens === undefined ? {} : { tokens }),
           ...(reviewVerdict === undefined ? {} : { reviewVerdict }),
           ...(reviewBody === undefined ? {} : { reviewBody }),
           ...(commitSha === undefined ? {} : { commitSha }),

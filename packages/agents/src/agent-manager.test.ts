@@ -1006,11 +1006,21 @@ describe('report', () => {
     if (!denied.ok) expect(denied.error.kind).toBe('unauthorized');
 
     const prUrl = 'https://github.com/acme/todo-app/pull/7';
-    const reported = await manager.report(spawned.value.id, token!, { prUrl, costCents: 123 });
+    const tokens = {
+      input: 100,
+      output: 20,
+      reasoning: 5,
+      cache: { read: 300, write: 10 },
+    };
+    const reported = await manager.report(spawned.value.id, token!, {
+      prUrl,
+      costCents: 123,
+      tokens,
+    });
 
-    expect(reported.ok && reported.value).toMatchObject({ prUrl, costCents: 123 });
+    expect(reported.ok && reported.value).toMatchObject({ prUrl, costCents: 123, tokens });
     const runs = await manager.runs('project-1', issue.id);
-    expect(runs.ok && runs.value[0]).toMatchObject({ prUrl, costCents: 123 });
+    expect(runs.ok && runs.value[0]).toMatchObject({ prUrl, costCents: 123, tokens });
   });
 
   it('records the verdict and body a review reported', async () => {
