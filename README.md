@@ -314,14 +314,16 @@ directly. `YAAABK_SESSION_OPENCODE_CONFIG` scopes the config to sessions, so
 Agent Jobs never register a server they have no token for.
 
 The opening prompt tells the agent to load the image-baked `grill-me` skill
-before anything else. The interview then hands off automatically: `grill-me`
-confirms the settled plan, `to-prd` synthesises the PRD and checks its module
-sketch with the Developer, and `to-issues` cuts the PRD into vertical slices,
-quizzes the Developer on granularity and dependencies, labels AFK slices
-`ready` and HITL slices `needs-human`, and orders them with `depends_on`. The
-Developer can say "write the PRD now" to skip the rest of the interview. The
-skills live in [`packages/grill-me/skills`](./packages/grill-me/skills) and are
-listed by the session OpenCode config's `skills` entry.
+before anything else. In guided mode the interview hands off automatically:
+`grill-me` confirms the settled plan, `to-prd` synthesises the PRD and checks
+its module sketch with the Developer, and `to-issues` cuts the PRD into vertical
+slices and quizzes the Developer on granularity and dependencies. In autonomous
+mode those three checkpoints are decided by the agent without a question. Both
+modes label AFK slices `ready` and HITL slices `needs-human`, and order them
+with `depends_on`. The Developer can say "write the PRD now" to skip the rest of
+the interview. The skills live in
+[`packages/grill-me/skills`](./packages/grill-me/skills) and are listed by the
+session OpenCode config's `skills` entry.
 
 ## Issues
 

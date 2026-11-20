@@ -147,10 +147,10 @@ On reconnect the frontend sends a resize. `opencode mini` runs with replay enabl
 
 ### Skills
 
-- **`grill-me`.** Loads first. Interviews one question at a time, adapts to the Project mode, inspects the repository and cluster when useful, confirms when the plan is settled, and hands off.
-- **`to-prd`.** Explores, sketches modules, checks them with the Developer, writes the PRD from the template, and calls `report_prd`.
-- **`to-issues`.** Drafts vertical slices, quizzes the Developer on granularity and dependencies, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`.
-- The handoff is automatic after the confirmation gate. The Developer can ask for the PRD immediately at any point.
+- **`grill-me`.** Loads first. Interviews one question at a time in guided mode, decides every checkpoint itself in autonomous mode, adapts to the Project mode, inspects the repository and cluster when useful, confirms when the plan is settled in guided mode, and hands off.
+- **`to-prd`.** Explores, sketches modules, checks them with the Developer only in guided mode, writes the PRD from the template, and calls `report_prd`.
+- **`to-issues`.** Drafts vertical slices, quizzes the Developer on granularity and dependencies in guided mode and validates them itself in autonomous mode, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`.
+- The handoff is automatic after the guided confirmation gate; autonomous mode has no gate. Finish stays manual in both modes.
 
 ### Model and credentials
 

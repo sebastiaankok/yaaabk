@@ -1,11 +1,24 @@
 ---
 name: YAAABK To Issues
-description: Break a reported YAAABK Plan into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies, maps AFK slices to ready and HITL slices to needs-human, and reports them through report_issues.
+description: Break a reported YAAABK Plan into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies in guided mode, validates them itself in autonomous mode, maps AFK slices to ready and HITL slices to needs-human, and reports them through report_issues.
 ---
 
 # YAAABK To Issues
 
 Use this skill after `to-prd` has reported the Plan, in the same Grill-Me Session.
+
+## Mode
+
+Read the Project mode from the Plan conversation or the opening prompt. A
+missing mode behaves as guided. The mode changes how the breakdown is checked,
+not the Finish invariant: in both modes `report_issues` stores a draft.
+
+- **Autonomous**: cut the slices, validate every `depends_on` title exists and
+  the graph is acyclic, and report through `report_issues` without quizzing the
+  Developer. Do not ask about granularity or dependencies; pick the recommended
+  split and say so in the closing summary.
+- **Guided**: show the breakdown grouped by wave and quiz the Developer as
+  described below before reporting.
 
 ## 1. Start from the Plan
 
@@ -54,10 +67,11 @@ Split HITL work out of an otherwise AFK slice instead of mixing both in one
 Issue. Do not label an Issue `blocked` or `refinement-needed`; ordering belongs
 in `depends_on`.
 
-## 4. Quiz the Developer
+## 4. Quiz the Developer in guided mode
 
-Before reporting, show the proposed breakdown grouped by wave (the Issues with no
-dependencies first, then the ones they unblock) and quiz the Developer:
+In guided mode, before reporting, show the proposed breakdown grouped by wave
+(the Issues with no dependencies first, then the ones they unblock) and quiz the
+Developer:
 
 - Ask **one question at a time** about granularity and dependencies, for example
   "The auth slice includes both the token store and the login screen — should
@@ -68,6 +82,9 @@ dependencies first, then the ones they unblock) and quiz the Developer:
 - Re-check that every dependency title still exists and the graph is acyclic.
 - Stop when the Developer confirms the breakdown. If the Developer has no notes,
   say so and report it.
+
+In autonomous mode, skip this quiz: validate every dependency title and the
+acyclic graph yourself, then report the breakdown without waiting for feedback.
 
 ## 5. Report the list
 
@@ -115,5 +132,7 @@ safe.
 
 Tell the Developer the Plan and Issues are ready as drafts. The Project changes
 only when they click **Finish** in YAAABK, which publishes both together. A
-cancelled session leaves nothing behind. Do not ask the Developer to paste the
-Issues anywhere, and do not create GitHub Issues yourself.
+cancelled session leaves nothing behind. This manual Finish step is the same in
+guided and autonomous mode: an autonomous session still stops at drafts and
+never publishes on its own. Do not ask the Developer to paste the Issues
+anywhere, and do not create GitHub Issues yourself.

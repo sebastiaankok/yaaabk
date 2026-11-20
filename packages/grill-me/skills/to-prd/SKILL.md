@@ -1,6 +1,6 @@
 ---
 name: YAAABK To PRD
-description: Turn a settled YAAABK grill-me conversation into the Project's Plan. Explores the repository, checks the module sketch with the Developer, writes the Plan template and reports it through report_prd, then hands off to to-issues.
+description: Turn a settled YAAABK grill-me conversation into the Project's Plan. Explores the repository, records the module sketch (confirming it only in guided mode), writes the Plan template and reports it through report_prd, then hands off to to-issues.
 ---
 
 # YAAABK To PRD
@@ -19,8 +19,9 @@ Developer already made.
 - The chosen approach and the alternatives that were rejected, with the reason.
 - The boundaries: what the Plan deliberately does not cover.
 - The data and interfaces the work touches.
-- The decisions that are still open. If one blocks the module sketch, ask exactly
-  one question, then continue.
+- The decisions that are still open. If one blocks the module sketch, in guided
+  mode ask exactly one question, then continue. In autonomous mode pick the
+  recommended answer yourself and note the choice under Further Notes.
 
 ## 2. Sketch the modules
 
@@ -31,12 +32,20 @@ Before writing the Plan, sketch the technical shape in a few lines:
 - **Extended** modules that gain capability.
 - **Unchanged** modules the work relies on.
 
-Show the sketch to the Developer and ask one question: "Do these modules and
-boundaries match how you want this built?" Reflect their corrections. Do not
-write the Plan until the Developer has confirmed the sketch. If the Developer
-already delegated the remaining decisions ("you decide the rest", "fill in the
-answers yourself", "use your recommendations"), pick the sketch you recommend
-and continue without waiting for another confirmation.
+Read the Project mode from the conversation or the opening prompt. A missing
+mode behaves as guided.
+
+In **guided** mode, show the sketch to the Developer and ask one question: "Do
+these modules and boundaries match how you want this built?" Reflect their
+corrections. Do not write the Plan until the Developer has confirmed the
+sketch. If the Developer already delegated the remaining decisions ("you decide
+the rest", "fill in the answers yourself", "use your recommendations"), pick
+the sketch you recommend and continue without waiting for another confirmation.
+
+In **autonomous** mode, pick the sketch you recommend, record it under
+Implementation Decisions, and continue to write the Plan. Do not ask the
+confirmation question and do not wait for the Developer. If the Developer typed
+an instruction about the modules, adopt it as the sketch.
 
 ## 3. Write the Plan from the template
 
@@ -127,7 +136,9 @@ and its summary:
 
 Every `report_prd` call needs both fields. If the tool rejects the report, fix
 exactly what it names and call it again. A successful call stores a **draft**.
-Nothing is published until the Developer clicks **Finish** in YAAABK.
+Nothing is published until the Developer clicks **Finish** in YAAABK. This
+manual Finish step is the same in guided and autonomous mode: an autonomous
+session still stops at drafts and never publishes on its own.
 
 If the call fails with a connection error ("Connection closed", a timeout or a
 5xx), the terminal may have reconnected underneath you. Retry the same report
@@ -138,5 +149,5 @@ safe.
 
 After `report_prd` succeeds, load the `to-issues` skill with the `skill` tool and
 follow it. It turns this Plan into vertical slices and reports them through
-`report_issues`. Do not repeat the module confirmation there and do not write
-the Issue list yourself.
+`report_issues`. Do not repeat the guided module confirmation there and do not
+write the Issue list yourself.

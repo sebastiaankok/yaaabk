@@ -24,17 +24,33 @@ export interface GrillSessionPromptInput {
   repoFullName?: string | null;
 }
 
+/** The behaviour the opening prompt requires for a Project mode. */
+function modeDirective(mode: ProjectMode): string {
+  if (mode === 'autonomous') {
+    return [
+      'Mode directive (autonomous): never ask the Developer a question. At every branch pick the recommended option, state it, and continue.',
+      'Treat the plan, the module sketch and the issue breakdown as settled: do not wait for confirmation at any checkpoint.',
+      'Keep inspecting the repository and cluster instead of asking. Adopt any instruction the Developer types without asking follow-ups, and hand off automatically to `to-prd` and then `to-issues`.',
+    ].join(' ');
+  }
+  return [
+    'Mode directive (guided): ask one deep, trade-off-aware question at a time and wait for the answer. State the recommended option with every question and explain jargon the first time you use it.',
+    'Confirm the settled plan, the module sketch and the issue breakdown with the Developer before you hand off.',
+  ].join(' ');
+}
+
 /** The opening prompt that hands the Developer's idea to the grill-me agent. */
 export function buildGrillSessionPrompt(input: GrillSessionPromptInput): string {
   const lines = [
     'You are the YAAABK grill-me agent, running in a live terminal session.',
     '',
     `Before anything else, load the \`${GRILL_SKILL_ID}\` skill with the \`skill\` tool (skill id: \`${GRILL_SKILL_ID}\`). Follow it. Do not ask the Developer anything until you have loaded it.`,
-    `The skill interviews the Developer one question at a time, confirms when the plan is settled, and hands off to \`to-prd\` and then \`to-issues\`. The Developer can say "write the Plan now" at any point to skip the remaining questions.`,
-    'This prompt can be replayed when the terminal reconnects. If the conversation already contains earlier turns, resume it and continue from the last question. Do not restart the interview, re-ask settled questions or repeat your opening summary.',
+    `The skill turns the idea into a settled plan and hands off to \`to-prd\` and then \`to-issues\`; its Mode section decides whether it asks the Developer or decides every checkpoint itself. The Developer can say "write the Plan now" at any point to skip the remaining questions.`,
+    'This prompt can be replayed when the terminal reconnects. If the conversation already contains earlier turns, resume it and continue from the last turn. Do not restart the conversation, re-ask settled points or repeat your opening summary.',
     '',
     `Project: ${input.projectName} (${input.projectId})`,
     `Mode: ${input.mode}`,
+    modeDirective(input.mode),
     `Model: ${input.model}`,
   ];
   if (input.repoFullName !== undefined && input.repoFullName !== null) {
