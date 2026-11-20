@@ -18,7 +18,9 @@ interface Context {
   sleeps: number[];
 }
 
-function context(): Context {
+function context(
+  planPath?: (projectId: string, planId: string) => Promise<string | null>,
+): Context {
   let sequence = 0;
   const issues = createIssuesModule({
     store: createInMemoryIssueStore(),
@@ -31,6 +33,7 @@ function context(): Context {
   const sync = createIssueSyncModule({
     issues,
     github,
+    ...(planPath === undefined ? {} : { planPath }),
     clock: () => new Date(NOW),
     sleep: async (ms) => {
       sleeps.push(ms);
@@ -111,6 +114,20 @@ describe('issue sync push', () => {
     const pushed = await list(issues);
     expect(pushed.find((issue) => issue.title === 'Old work')?.githubNumber).toBeNull();
     expect(pushed.find((issue) => issue.title === 'New work')?.githubNumber).toBe(1);
+  });
+
+  it('points a Plan\u2019s issues at the Plan\u2019s decision record', async () => {
+    const { issues, github, sync } = context(async (_projectId, planId) =>
+      planId === 'plan-7' ? 'docs/plans/v3.md' : null,
+    );
+    await issues.create({ projectId: 'p1', planId: 'plan-7', title: 'Plan work' });
+    await issues.create({ projectId: 'p1', title: 'Loose work' });
+
+    await sync.push('p1', 'acme/todo-app');
+
+    const [planned, loose] = github.issues('acme/todo-app');
+    expect(planned?.body.startsWith('Plan: docs/plans/v3.md\n\n')).toBe(true);
+    expect(loose?.body).not.toContain('Plan:');
   });
 
   it('updates an already-synced issue instead of creating a duplicate', async () => {

@@ -74,6 +74,7 @@ import {
 import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp, type AppOptions } from './app';
 import type { GrillRoutesOptions } from './grill-routes';
+import { createPlanPathResolver } from './plan-path';
 
 /** A password that satisfies the real policy. */
 export const TEST_PASSWORD = 'vX7$qmPz2!Lw9Rt';
@@ -252,6 +253,7 @@ export function createTestContext(
   const issueSync = createIssueSyncModule({
     issues,
     github,
+    planPath: createPlanPathResolver(plans),
     clock: () => new Date(clock.ms),
     sleep: async () => {},
     logger: silent,

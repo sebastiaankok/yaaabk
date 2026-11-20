@@ -20,15 +20,30 @@ function trimTrailingBlankLines(text: string): string {
   return text.replace(/[\s\uFEFF\xA0]+$/, '');
 }
 
-/** Appends the YAAABK footer to a body. An empty body becomes just the footer. */
-export function encodeIssueBody(body: string, metadata: IssueMetadata): string {
+/**
+ * Appends the YAAABK footer to a body. An empty body becomes just the footer.
+ *
+ * When the Issue belongs to a Plan, its decision record is pointed at on the
+ * first visible line so a reader can find the Plan without decoding anything.
+ */
+export function encodeIssueBody(
+  body: string,
+  metadata: IssueMetadata,
+  planPath: string | null = null,
+): string {
   const json = JSON.stringify({
     depends_on: metadata.dependsOn,
     budget_cents: metadata.budgetCents,
   });
   const footer = `<!-- yaaabk:meta ${json} -->`;
   const trimmed = trimTrailingBlankLines(body);
-  return trimmed === '' ? footer : `${trimmed}\n\n${footer}`;
+  const visible =
+    planPath === null || planPath.trim() === ''
+      ? trimmed
+      : trimmed === ''
+        ? `Plan: ${planPath}`
+        : `Plan: ${planPath}\n\n${trimmed}`;
+  return visible === '' ? footer : `${visible}\n\n${footer}`;
 }
 
 /**

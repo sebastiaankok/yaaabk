@@ -14,6 +14,29 @@ describe('issue metadata', () => {
     expect(decoded.metadata).toEqual({ dependsOn: ['Schema', 'Auth API'], budgetCents: 75 });
   });
 
+  it('puts the Plan path on the first visible line', () => {
+    const encoded = encodeIssueBody(
+      'Add the login form.',
+      { dependsOn: [], budgetCents: 75 },
+      'docs/plans/v2.md',
+    );
+
+    expect(encoded.startsWith('Plan: docs/plans/v2.md\n\n')).toBe(true);
+  });
+
+  it('keeps the Plan line in the visible body across a round trip', () => {
+    const encoded = encodeIssueBody(
+      'Add the login form.',
+      { dependsOn: ['Schema'], budgetCents: 75 },
+      'docs/plans/v2.md',
+    );
+
+    expect(decodeIssueBody(encoded)).toEqual({
+      body: 'Plan: docs/plans/v2.md\n\nAdd the login form.',
+      metadata: { dependsOn: ['Schema'], budgetCents: 75 },
+    });
+  });
+
   it('leaves a body without a footer untouched', () => {
     const decoded = decodeIssueBody('Just a plain body.');
 

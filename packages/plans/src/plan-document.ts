@@ -43,6 +43,11 @@ function issueLine(issue: AcceptedPlanIssue): string {
     : `${line} — depends on: ${issue.dependsOn.join(', ')}`;
 }
 
+/** The repository path holding a Plan's decision record, e.g. `docs/plans/v2.md`. */
+export function planDocumentPath(version: number): string {
+  return `docs/plans/v${version}.md`;
+}
+
 /** Renders the Markdown committed to `docs/plans/v<N>.md` on acceptance. */
 export function renderAcceptedPlan(plan: AcceptedPlanDocument): string {
   return [
