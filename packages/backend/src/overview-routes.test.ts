@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
-const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
+const PROJECT = { name: 'todo-app', description: 'A todo list', mode: 'guided' } as const;
 
 async function request(
   context: TestContext,
@@ -35,7 +35,7 @@ async function createProject(context: TestContext, name: string = PROJECT.name):
 async function savePlan(context: TestContext, session: string, projectId: string): Promise<string> {
   const res = await request(context, `/api/projects/${projectId}/plans`, session, {
     method: 'POST',
-    body: JSON.stringify({ content_markdown: '# Plan', skill_level: 'expert' }),
+    body: JSON.stringify({ content_markdown: '# Plan', mode: 'guided' }),
   });
   if (res.status !== 201) throw new Error('plan create failed');
   return ((await res.json()) as { id: string }).id;

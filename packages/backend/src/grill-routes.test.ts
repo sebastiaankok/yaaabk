@@ -9,7 +9,7 @@ import type { UpgradeWebSocket, WSEvents, WSContext } from 'hono/ws';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
-const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
+const PROJECT = { name: 'todo-app', description: 'A todo list', mode: 'guided' } as const;
 
 async function request(
   context: TestContext,
@@ -174,7 +174,7 @@ describe('POST /api/projects/:id/grill', () => {
     expect(runtimeRequest).toMatchObject({
       projectId,
       idea: 'A todo app',
-      skillLevel: 'expert',
+      mode: 'guided',
       model: 'openrouter/default-model',
       namespace: expect.stringMatching(/^yaaabk-/),
       repoFullName: expect.stringContaining('/'),
@@ -188,7 +188,7 @@ describe('POST /api/projects/:id/grill', () => {
     await context.plans.create({
       projectId,
       contentMarkdown: '# Existing plan',
-      skillLevel: 'expert',
+      mode: 'guided',
       source: 'grill-me',
     });
 

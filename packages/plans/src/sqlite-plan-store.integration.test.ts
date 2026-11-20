@@ -24,7 +24,7 @@ describe('sqlite plan store migrations', () => {
         project_id       TEXT NOT NULL,
         version          INTEGER NOT NULL,
         content_markdown TEXT NOT NULL,
-        skill_level      TEXT NOT NULL,
+        mode      TEXT NOT NULL,
         source           TEXT NOT NULL,
         created_at       TEXT NOT NULL,
         is_active        INTEGER NOT NULL,
@@ -34,10 +34,10 @@ describe('sqlite plan store migrations', () => {
     database
       .prepare(
         `INSERT INTO plans
-           (id, project_id, version, content_markdown, skill_level, source, created_at, is_active)
+           (id, project_id, version, content_markdown, mode, source, created_at, is_active)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run('old', 'project-1', 1, '# Old plan', 'expert', 'grill-me', '2025-01-01', 1);
+      .run('old', 'project-1', 1, '# Old plan', 'guided', 'grill-me', '2025-01-01', 1);
 
     const store = createSqlitePlanStore(database as unknown as SqliteDatabase);
 
@@ -55,7 +55,7 @@ describe('sqlite plan store migrations', () => {
         version          INTEGER NOT NULL,
         content_markdown TEXT NOT NULL,
         summary          TEXT,
-        skill_level      TEXT NOT NULL,
+        mode      TEXT NOT NULL,
         source           TEXT NOT NULL,
         created_at       TEXT NOT NULL,
         is_active        INTEGER NOT NULL,
@@ -65,10 +65,10 @@ describe('sqlite plan store migrations', () => {
     database
       .prepare(
         `INSERT INTO plans
-           (id, project_id, version, content_markdown, skill_level, source, created_at, is_active)
+           (id, project_id, version, content_markdown, mode, source, created_at, is_active)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run('old', 'project-1', 1, '# Old plan', 'expert', 'grill-me', '2025-01-01', 1);
+      .run('old', 'project-1', 1, '# Old plan', 'guided', 'grill-me', '2025-01-01', 1);
 
     const store = createSqlitePlanStore(database as unknown as SqliteDatabase);
 

@@ -2,9 +2,10 @@ import type { IssueSyncModule } from '@yaaabk/github';
 import type { IssuesModule } from '@yaaabk/issues';
 import type { PlanError, PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
+import type { ProjectMode } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { asSkillLevel, asSource, asString, body, fail, projectOrResponse } from './http';
+import { asSource, asString, body, fail, projectOrResponse } from './http';
 
 /**
  * Plan failures map to the HTTP status the caller should act on: a malformed
@@ -39,7 +40,7 @@ export function planRoutes(
       projectId: project.id,
       contentMarkdown: asString(input.content_markdown ?? input.contentMarkdown),
       ...(typeof input.summary === 'string' ? { summary: input.summary } : {}),
-      skillLevel: asSkillLevel(input) ?? project.skillLevel,
+      mode: (input.mode ?? project.mode) as ProjectMode,
       source: asSource(input),
     });
     return result.ok

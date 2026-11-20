@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import type { K8sClient } from '@yaaabk/k8s';
-import { isSkillLevel, projectNamespace } from '@yaaabk/shared';
+import { isProjectMode, projectNamespace } from '@yaaabk/shared';
 import { isValidProjectName, type TemplateModule } from '@yaaabk/template';
 import {
   DEFAULT_BRANCH,
@@ -71,8 +71,8 @@ function invalidReason(input: NewProject): string | undefined {
   if (description.length > MAX_DESCRIPTION_LENGTH) {
     return `Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`;
   }
-  if (!isSkillLevel(input.skillLevel)) {
-    return `"${input.skillLevel}" is not a valid skill level`;
+  if (!isProjectMode(input.mode)) {
+    return `"${String(input.mode)}" is not a valid project mode`;
   }
   return undefined;
 }
@@ -260,7 +260,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           id,
           name,
           description,
-          skillLevel: input.skillLevel,
+          mode: input.mode,
           repoUrl: repository.url,
           repoFullName: repository.fullName,
           namespace,
@@ -334,12 +334,15 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
           }
         }
 
-        let skillLevel = project.skillLevel;
-        if (patch.skillLevel !== undefined) {
-          if (!isSkillLevel(patch.skillLevel)) {
-            throw projectError('invalid-input', `"${patch.skillLevel}" is not a valid skill level`);
+        let mode = project.mode;
+        if (patch.mode !== undefined) {
+          if (!isProjectMode(patch.mode)) {
+            throw projectError(
+              'invalid-input',
+              `"${String(patch.mode)}" is not a valid project mode`,
+            );
           }
-          skillLevel = patch.skillLevel;
+          mode = patch.mode;
         }
 
         let agentModel = project.agentModel;
@@ -361,7 +364,7 @@ export function createProjectsModule(options: ProjectsModuleOptions): ProjectsMo
         const updated: Project = {
           ...project,
           description,
-          skillLevel,
+          mode,
           agentModel,
           updatedAt: now().toISOString(),
         };

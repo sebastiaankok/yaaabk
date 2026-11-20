@@ -142,7 +142,7 @@ describe('createProject', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      createProject({ name: 'todo-app', description: 'A todo list', skillLevel: 'expert' }),
+      createProject({ name: 'todo-app', description: 'A todo list', mode: 'guided' }),
     ).resolves.toEqual(created);
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -152,7 +152,7 @@ describe('createProject', () => {
         body: JSON.stringify({
           name: 'todo-app',
           description: 'A todo list',
-          skillLevel: 'expert',
+          mode: 'guided',
         }),
       }),
     );
@@ -238,7 +238,7 @@ describe('createProjectStream', () => {
     const events: unknown[] = [];
 
     const project = await createProjectStream(
-      { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+      { name: 'todo-app', description: 'A todo list', mode: 'guided' },
       (event) => events.push(event),
     );
 
@@ -262,7 +262,7 @@ describe('createProjectStream', () => {
 
     await expect(
       createProjectStream(
-        { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+        { name: 'todo-app', description: 'A todo list', mode: 'guided' },
         (event) => events.push(event),
       ),
     ).rejects.toMatchObject({
@@ -281,7 +281,7 @@ describe('createProjectStream', () => {
 
     await expect(
       createProjectStream(
-        { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' },
+        { name: 'todo-app', description: 'A todo list', mode: 'guided' },
         () => {},
       ),
     ).rejects.toMatchObject({ name: 'ApiError', status: 401, code: 'unauthorized' });

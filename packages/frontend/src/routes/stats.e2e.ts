@@ -4,7 +4,7 @@ const PROJECT = {
   id: 'p1',
   name: 'todo-app',
   description: 'A todo list',
-  skillLevel: 'expert',
+  mode: 'guided',
   repoUrl: 'https://github.com/acme/todo-app',
   repoFullName: 'acme/todo-app',
   namespace: 'yaaabk-a1b2c3d4',

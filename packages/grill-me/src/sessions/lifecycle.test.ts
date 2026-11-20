@@ -15,7 +15,7 @@ const INPUT: StartGrillSessionInput = {
   projectId: 'p1',
   projectName: 'todo-app',
   idea: 'A todo app',
-  skillLevel: 'expert',
+  mode: 'guided',
 };
 
 const PRD = '# Todo app\n\nA plan.';
@@ -249,7 +249,7 @@ describe('restart reconciliation', () => {
       projectId: 'p2',
       projectName: 'crashed',
       status: 'starting',
-      skillLevel: 'expert',
+      mode: 'guided',
       model: 'openrouter/default-model',
       startedAt: new Date(Date.UTC(2026, 0, 1, 12)).toISOString(),
       lastActivityAt: new Date(Date.UTC(2026, 0, 1, 12)).toISOString(),
@@ -282,7 +282,7 @@ describe('restart reconciliation', () => {
       projectId: 'p3',
       projectName: 'ended',
       status: 'cancelled',
-      skillLevel: 'expert',
+      mode: 'guided',
       model: 'openrouter/default-model',
       startedAt: new Date(Date.UTC(2026, 0, 1, 11)).toISOString(),
       lastActivityAt: new Date(Date.UTC(2026, 0, 1, 11)).toISOString(),

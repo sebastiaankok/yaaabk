@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import { SKILL_LEVELS, type SkillLevel } from '@yaaabk/shared';
+  import { PROJECT_MODES, type ProjectMode } from '@yaaabk/shared';
   import { ApiError, createProjectStream } from '#lib/api.js';
   import {
     applyProvisioningEvent,
@@ -10,32 +10,34 @@
     startCreation,
     type CreationState,
   } from '#lib/creation-progress.js';
+  import { projectModeLabel } from '#lib/project-mode.js';
   import {
     hasErrors,
     validateProjectDetails,
     type ProjectDetailsErrors,
   } from '#lib/project-form.js';
 
-  type Step = 'details' | 'skill' | 'creating';
+  type Step = 'details' | 'mode' | 'creating';
 
-  const SKILL_LABELS: Record<SkillLevel, string> = { beginner: 'Beginner', expert: 'Expert' };
-  const SKILL_HINTS: Record<SkillLevel, string> = {
-    beginner: 'Step-by-step questions with sensible defaults',
-    expert: 'Deeper architectural questions and opinionated choices',
+  const MODE_HINTS: Record<ProjectMode, string> = {
+    guided:
+      'The agent interviews you one question at a time, then checks the module sketch and issue breakdown with you.',
+    autonomous:
+      'The agent decides everything itself and only shows you the finished Plan and Issues.',
   };
 
   let step = $state<Step>('details');
   let name = $state('');
   let description = $state('');
-  let skillLevel = $state<SkillLevel>('beginner');
+  let mode = $state<ProjectMode>('guided');
   let errors = $state<ProjectDetailsErrors>({});
   let creation = $state<CreationState | null>(null);
   let failure = $state<string | null>(null);
 
-  function continueToSkill(): void {
+  function continueToMode(): void {
     errors = validateProjectDetails({ name, description });
     if (hasErrors(errors)) return;
-    step = 'skill';
+    step = 'mode';
   }
 
   function describe(cause: unknown): string {
@@ -52,7 +54,7 @@
         {
           name: name.trim(),
           description: description.trim(),
-          skillLevel,
+          mode,
         },
         (event) => {
           if (creation !== null) creation = applyProvisioningEvent(creation, event);
@@ -88,7 +90,7 @@
         class="flex flex-col gap-4"
         onsubmit={(event) => {
           event.preventDefault();
-          continueToSkill();
+          continueToMode();
         }}
       >
         <div class="flex flex-col gap-1">
@@ -131,26 +133,26 @@
         </button>
       </form>
     </section>
-  {:else if step === 'skill'}
+  {:else if step === 'mode'}
     <section class="flex flex-col gap-4">
-      <h2 class="text-xl font-semibold tracking-tight">Skill level</h2>
+      <h2 class="text-xl font-semibold tracking-tight">How should the agent work with you?</h2>
       <fieldset class="flex flex-col gap-3">
-        <legend class="sr-only">Skill level</legend>
-        {#each SKILL_LEVELS as level (level)}
+        <legend class="sr-only">How should the agent work with you?</legend>
+        {#each PROJECT_MODES as option (option)}
           <label
             class="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-3 has-[:checked]:border-neutral-900"
           >
             <input
               type="radio"
-              name="skill"
-              value={level}
-              aria-label={SKILL_LABELS[level]}
-              bind:group={skillLevel}
+              name="mode"
+              value={option}
+              aria-label={projectModeLabel(option)}
+              bind:group={mode}
               class="mt-1"
             />
             <span>
-              <span class="font-medium">{SKILL_LABELS[level]}</span>
-              <span class="block text-sm text-neutral-500">{SKILL_HINTS[level]}</span>
+              <span class="font-medium">{projectModeLabel(option)}</span>
+              <span class="block text-sm text-neutral-500">{MODE_HINTS[option]}</span>
             </span>
           </label>
         {/each}

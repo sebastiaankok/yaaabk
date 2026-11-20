@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SESSION_COOKIE } from './auth-routes';
 import { createTestContext, signIn, type TestContext } from './test-support';
 
-const PROJECT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
+const PROJECT = { name: 'todo-app', description: 'A todo list', mode: 'guided' } as const;
 
 async function request(
   context: TestContext,
@@ -40,7 +40,7 @@ async function savePlan(
 ): Promise<string> {
   const res = await request(context, session, `/api/projects/${projectId}/plans`, {
     method: 'POST',
-    body: JSON.stringify({ content_markdown: contentMarkdown, skill_level: 'expert' }),
+    body: JSON.stringify({ content_markdown: contentMarkdown, mode: 'guided' }),
   });
   expect(res.status).toBe(201);
   const plan = (await res.json()) as { id: string };
@@ -68,7 +68,7 @@ describe('POST /api/projects/:id/plans', () => {
       method: 'POST',
       body: JSON.stringify({
         content_markdown: '# Plan',
-        skill_level: 'expert',
+        mode: 'guided',
         source: 'grill-me',
       }),
     });
@@ -78,7 +78,7 @@ describe('POST /api/projects/:id/plans', () => {
       projectId,
       version: 1,
       contentMarkdown: '# Plan',
-      skillLevel: 'expert',
+      mode: 'guided',
       source: 'grill-me',
       isActive: true,
     });
@@ -123,7 +123,7 @@ describe('POST /api/projects/:id/plans', () => {
     expect(res.status).toBe(400);
   });
 
-  it('defaults the skill level to the project', async () => {
+  it('defaults the project mode to the project', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);
 
@@ -133,7 +133,7 @@ describe('POST /api/projects/:id/plans', () => {
     });
 
     expect(res.status).toBe(201);
-    await expect(res.json()).resolves.toMatchObject({ skillLevel: 'expert' });
+    await expect(res.json()).resolves.toMatchObject({ mode: 'guided' });
   });
 
   it('returns 404 for an unknown project', async () => {
@@ -254,7 +254,7 @@ async function newPlan(
   const result = await context.plans.create({
     projectId,
     contentMarkdown: content,
-    skillLevel: 'expert',
+    mode: 'guided',
     source: 'grill-me',
   });
   if (!result.ok) throw new Error('plan setup failed');

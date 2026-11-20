@@ -23,6 +23,7 @@
   import Markdown from '#lib/markdown.svelte';
   import { canForceFinish, finishHint } from '#lib/grill-finish.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
+  import { projectModeLabel } from '#lib/project-mode.js';
   import { summaryForPlan } from '#lib/summary.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
@@ -257,7 +258,7 @@
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h1 class="text-2xl font-bold tracking-tight">{project.name}</h1>
         <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-          {project.skillLevel}
+          {projectModeLabel(project.mode)}
         </span>
       </div>
       <p class="text-neutral-600">{project.description}</p>

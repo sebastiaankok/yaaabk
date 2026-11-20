@@ -9,7 +9,7 @@
  * stores them as TEXT and they sort lexicographically.
  */
 
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 
 /** Where a Plan came from. */
 export type PlanSource = 'grill-me' | 'upload';
@@ -26,8 +26,8 @@ export interface Plan {
   contentMarkdown: string;
   /** A one- or two-sentence plain-text summary; null only for rows from before summaries. */
   summary: string | null;
-  /** The skill level in force when the plan was produced. */
-  skillLevel: SkillLevel;
+  /** The Project mode in force when the plan was produced. */
+  mode: ProjectMode;
   source: PlanSource;
   createdAt: string;
   /** Whether this is the active version for its Project. */
@@ -75,7 +75,7 @@ export interface NewPlan {
    * Markdown; a supplied summary must be non-empty and at most 200 characters.
    */
   summary?: string | null;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
   source: PlanSource;
 }
 

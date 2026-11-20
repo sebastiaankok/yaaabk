@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths';
   import type { ProjectOverview } from '@yaaabk/stats';
   import { ApiError, getOverview } from '#lib/api.js';
+  import { projectModeLabel } from '#lib/project-mode.js';
 
   let overviews = $state<ProjectOverview[] | null>(null);
   let error = $state<string | null>(null);
@@ -115,8 +116,8 @@
               </dd>
             </div>
             <div class="flex gap-1">
-              <dt class="font-medium">Skill</dt>
-              <dd>{project.skillLevel}</dd>
+              <dt class="font-medium">Mode</dt>
+              <dd>{projectModeLabel(project.mode)}</dd>
             </div>
             <div class="flex gap-1">
               <dt class="font-medium">Namespace</dt>

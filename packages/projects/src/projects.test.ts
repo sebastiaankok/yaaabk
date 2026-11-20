@@ -24,7 +24,7 @@ import type { ProvisioningEvent, ProjectStore } from './types';
 const PROJECT_ID = 'a1b2c3d4-1111-4111-8111-111111111111';
 const NOW = new Date('2026-01-01T12:00:00.000Z');
 
-const INPUT = { name: 'todo-app', description: 'A todo list', skillLevel: 'expert' } as const;
+const INPUT = { name: 'todo-app', description: 'A todo list', mode: 'guided' } as const;
 
 interface Harness {
   module: ProjectsModule;
@@ -114,7 +114,7 @@ describe('create', () => {
     const result = await module.create({
       name: 'todo-app',
       description: 'A todo list',
-      skillLevel: 'expert',
+      mode: 'guided',
     });
 
     expect(result.ok).toBe(true);
@@ -125,7 +125,7 @@ describe('create', () => {
       id: PROJECT_ID,
       name: 'todo-app',
       description: 'A todo list',
-      skillLevel: 'expert',
+      mode: 'guided',
       repoFullName: 'acme/todo-app',
       repoUrl: 'https://github.com/acme/todo-app',
       namespace: 'yaaabk-a1b2c3d4',
@@ -217,6 +217,18 @@ describe('create', () => {
     expect(result.error.kind).toBe('invalid-input');
     expect(repositories.calls).toHaveLength(0);
     expect(git.calls).toHaveLength(0);
+    expect(store.list()).toHaveLength(0);
+  });
+
+  it('rejects an unknown mode without touching any external system', async () => {
+    const { module, store, repositories } = harness();
+
+    const result = await module.create({ ...INPUT, mode: 'ninja' } as never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid-input');
+    expect(repositories.calls).toHaveLength(0);
     expect(store.list()).toHaveLength(0);
   });
 
@@ -367,7 +379,7 @@ describe('update', () => {
     if (!result.ok) expect(result.error.kind).toBe('invalid-input');
   });
 
-  it('updates the description and skill level, bumping updatedAt', async () => {
+  it('updates the description and mode, bumping updatedAt', async () => {
     const { module, store, clock } = harness();
     const created = await module.create(INPUT);
     if (!created.ok) throw new Error('create failed');
@@ -375,14 +387,14 @@ describe('update', () => {
 
     const result = await module.update(created.value.id, {
       description: 'Updated',
-      skillLevel: 'beginner',
+      mode: 'autonomous',
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toMatchObject({
       description: 'Updated',
-      skillLevel: 'beginner',
+      mode: 'autonomous',
       updatedAt: '2026-02-01T00:00:00.000Z',
     });
     expect(store.get(created.value.id)?.description).toBe('Updated');
@@ -394,6 +406,17 @@ describe('update', () => {
     if (!created.ok) throw new Error('create failed');
 
     const result = await module.update(created.value.id, { description: '   ' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
+  it('rejects an unknown mode', async () => {
+    const { module } = harness();
+    const created = await module.create(INPUT);
+    if (!created.ok) throw new Error('create failed');
+
+    const result = await module.update(created.value.id, { mode: 'ninja' } as never);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('invalid-input');

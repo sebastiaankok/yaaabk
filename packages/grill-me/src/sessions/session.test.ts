@@ -44,7 +44,7 @@ const INPUT: StartGrillSessionInput = {
   projectId: 'p1',
   projectName: 'todo-app',
   idea: 'A todo app',
-  skillLevel: 'expert',
+  mode: 'guided',
 };
 
 describe('starting a grill session', () => {
@@ -96,20 +96,31 @@ describe('starting a grill session', () => {
     expect(fromDefault.ok && fromDefault.value.model).toBe('openrouter/default-model');
   });
 
-  it('carries the idea, skill level and active plan into the opening prompt', async () => {
+  it('carries the idea, project mode and active plan into the opening prompt', async () => {
     const { runtime, sessions } = setup();
 
     await sessions.start({
       ...INPUT,
       idea: 'A recipe box',
-      skillLevel: 'beginner',
+      mode: 'autonomous',
       activePlan: '# Existing plan',
     });
 
     const prompt = runtime.requests[0]?.prompt ?? '';
     expect(prompt).toContain('A recipe box');
-    expect(prompt).toContain('beginner');
+    expect(prompt).toContain('Mode: autonomous');
     expect(prompt).toContain('# Existing plan');
+  });
+
+  it('returns the project mode on the session view', async () => {
+    const { sessions } = setup();
+
+    const started = await sessions.start({ ...INPUT, mode: 'autonomous' });
+    if (!started.ok) throw new Error('start failed');
+    const fetched = await sessions.get('p1', started.value.id);
+
+    expect(started.value.mode).toBe('autonomous');
+    expect(fetched.ok && fetched.value.mode).toBe('autonomous');
   });
 
   it('hands the runtime the Project namespace, repository and a read-only clone token', async () => {

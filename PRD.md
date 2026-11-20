@@ -12,7 +12,7 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 
 - **The browser gets a terminal, not a chat.** The Plan page hosts an xterm.js terminal connected to ttyd running `opencode mini` inside the session Pod. The Developer types, scrolls, resizes and sees tool output exactly as they would locally.
 - **Each session is its own Pod** in the Project's Namespace under the `yaaabk-agent` identity: read-only pods, logs, deployments, configmaps, events and httproutes, plus `pods/exec`, and no Secret reads. The backend never runs OpenCode for a session and never shares its own credentials with one.
-- **The Pod starts with context.** An init container clones the Project repository with a short-lived `contents:read` GitHub App token and removes the credential from the remote. The opening prompt carries the Developer's idea, Skill Level, Project identity and active Plan, and tells the agent to load the `grill-me` skill.
+- **The Pod starts with context.** An init container clones the Project repository with a short-lived `contents:read` GitHub App token and removes the credential from the remote. The opening prompt carries the Developer's idea, Project mode, Project identity and active Plan, and tells the agent to load the `grill-me` skill.
 - **Three explicit skills.** `grill-me` interviews one question at a time and stops when the plan is settled; `to-prd` synthesises a PRD; `to-issues` breaks the PRD into vertical slices. The handoff is automatic once the Developer confirms the plan is settled.
 - **Reporting is a typed tool call, not stdout parsing.** A local stdio MCP server exposes `report_prd`, `report_issues` and `session_status`. Reports are stored as drafts on the session and are only published when the Developer clicks **Finish**.
 - **The model is a per-session choice** from a live, tool-capable OpenRouter catalogue, with the Project remembering the last-used model. Each session gets its own budget-limited OpenRouter key that is revoked when the session ends.
@@ -41,7 +41,7 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 18. As a **Developer**, I want a clear error when the platform has no OpenRouter management credential, so that I know what to fix in Settings.
 19. As a **Developer**, I want the session to load the YAAABK grill-me skill automatically, so that I do not have to paste instructions.
 20. As a **Developer**, I want the session to ask one question at a time, so that the conversation stays focused and each answer resolves one branch.
-21. As a **Developer**, I want question depth to follow my Skill Level, so that beginner sessions explain jargon and expert sessions push on trade-offs and failure modes.
+21. As a **Developer**, I want choose a guided or autonomous Project mode, so that the agent either interviews me or decides everything itself and only shows me the finished Plan and Issues.
 22. As a **Developer**, I want the agent to explore the repository or cluster instead of asking questions it can answer, so that I spend my time on real decisions.
 23. As a **Developer**, I want the agent to stop grilling and confirm that the plan is settled, so that the session does not run indefinitely.
 24. As a **Developer**, I want the agent to synthesise a PRD from the conversation, so that the outcome is a durable document rather than chat history.
@@ -113,7 +113,7 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 
 ### Session record
 
-A Grill-Me Session record stores: project, status (`starting`, `active`, `finishing`, `finished`, `cancelled`, `failed`), Skill Level, model, runtime reference (Pod name or local process id), report-token hash, OpenRouter key hash, draft PRD markdown, draft Issues as JSON, last activity time, start time, end time, end reason and a human-readable error when failed.
+A Grill-Me Session record stores: project, status (`starting`, `active`, `finishing`, `finished`, `cancelled`, `failed`), Project mode, model, runtime reference (Pod name or local process id), report-token hash, OpenRouter key hash, draft PRD markdown, draft Issues as JSON, last activity time, start time, end time, end reason and a human-readable error when failed.
 
 Drafts live only on the session row. Publishing is the only operation that writes Plans or Issues.
 
@@ -140,14 +140,14 @@ On reconnect the frontend sends a resize. `opencode mini` runs with replay enabl
 - Created in the Project Namespace with the Project's `yaaabk-agent` ServiceAccount.
 - An init container clones the Project repository with a short-lived `contents:read` installation token, then rewrites the remote to a credential-free URL. The token Secret is mounted only into the init container.
 - The main container runs ttyd in front of `opencode mini` with a deterministic session id, the opening prompt, the selected OpenRouter model, automatic approvals and replay enabled. The workspace is an empty directory.
-- Environment supplies the per-session OpenRouter key, report token, API URL, project identity, Skill Level and prompt.
+- Environment supplies the per-session OpenRouter key, report token, API URL, project identity, Project mode and prompt.
 - Pod Security `restricted`: non-root, no privilege escalation, all capabilities dropped, default seccomp, explicit CPU and memory limits.
 - A NetworkPolicy allows ingress only from the backend and egress only to the backend, the Kubernetes API, GitHub and OpenRouter, plus DNS.
 - OpenCode configuration loads the grill skills from the image, registers the reporting MCP server with Code Mode disabled, and applies a deny-list: no `git push`, no `kubectl apply/delete/patch`, no `.env` reads, no external directories, no arbitrary write outside the workspace.
 
 ### Skills
 
-- **`grill-me`.** Loads first. Interviews one question at a time, adapts to Skill Level, inspects the repository and cluster when useful, confirms when the plan is settled, and hands off.
+- **`grill-me`.** Loads first. Interviews one question at a time, adapts to the Project mode, inspects the repository and cluster when useful, confirms when the plan is settled, and hands off.
 - **`to-prd`.** Explores, sketches modules, checks them with the Developer, writes the PRD from the template, and calls `report_prd`.
 - **`to-issues`.** Drafts vertical slices, quizzes the Developer on granularity and dependencies, maps AFK to `ready` and HITL to `needs-human`, and calls `report_issues`.
 - The handoff is automatic after the confirmation gate. The Developer can ask for the PRD immediately at any point.
@@ -211,7 +211,7 @@ A real `opencode mini` session against a real model is manually smoked before re
 - Persisting the session transcript or OpenCode conversation history after the Pod ends.
 - More than one concurrent grill session per Project.
 - Serving the terminal from a separate origin or exposing it outside the backend proxy.
-- Per-Skill-Level model selection or automatic model routing.
+- Per-Project-mode model selection or automatic model routing.
 - Publishing PRDs or Issues directly to GitHub from inside the session; the existing sync flow remains the only path.
 - A historical session list, replay or resume-after-finish.
 - Editing or refining Issues outside a new grill session.

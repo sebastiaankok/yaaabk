@@ -1,5 +1,4 @@
 import type { Project, ProjectsModule } from '@yaaabk/projects';
-import type { SkillLevel } from '@yaaabk/shared';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
@@ -16,11 +15,6 @@ export async function body(c: Context): Promise<Record<string, unknown>> {
 /** Reads a string field, treating anything else as absent. */
 export function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
-}
-
-/** Reads the skill level from either the camelCase or the documented snake_case key. */
-export function asSkillLevel(input: Record<string, unknown>): SkillLevel {
-  return (input.skillLevel ?? input.skill_level) as SkillLevel;
 }
 
 /** Reads a plan source, defaulting to `grill-me`. */

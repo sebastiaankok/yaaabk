@@ -1,4 +1,4 @@
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 import { DuplicateProjectNameError } from './in-memory-project-store';
 import type { Project, ProjectStore } from './types';
 
@@ -24,7 +24,7 @@ interface ProjectRow {
   id: string;
   name: string;
   description: string;
-  skill_level: string;
+  mode: string;
   repo_url: string;
   repo_full_name: string;
   namespace: string;
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id                 TEXT PRIMARY KEY,
   name               TEXT NOT NULL UNIQUE,
   description        TEXT NOT NULL,
-  skill_level        TEXT NOT NULL,
+  mode               TEXT NOT NULL,
   repo_url           TEXT NOT NULL,
   repo_full_name     TEXT NOT NULL,
   namespace          TEXT NOT NULL,
@@ -63,7 +63,7 @@ function toProject(row: ProjectRow): Project {
     id: row.id,
     name: row.name,
     description: row.description,
-    skillLevel: row.skill_level as SkillLevel,
+    mode: row.mode as ProjectMode,
     repoUrl: row.repo_url,
     repoFullName: row.repo_full_name,
     namespace: row.namespace,
@@ -126,14 +126,14 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         database
           .prepare(
             `INSERT INTO projects
-               (id, name, description, skill_level, repo_url, repo_full_name, namespace, last_model, agent_model, deployed_commit_sha, last_deploy_status, last_deploy_at, created_at, updated_at)
+               (id, name, description, mode, repo_url, repo_full_name, namespace, last_model, agent_model, deployed_commit_sha, last_deploy_status, last_deploy_at, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             project.id,
             project.name,
             project.description,
-            project.skillLevel,
+            project.mode,
             project.repoUrl,
             project.repoFullName,
             project.namespace,
@@ -176,7 +176,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
       database
         .prepare(
           `UPDATE projects
-             SET name = ?, description = ?, skill_level = ?, repo_url = ?, repo_full_name = ?,
+             SET name = ?, description = ?, mode = ?, repo_url = ?, repo_full_name = ?,
                  namespace = ?, last_model = ?, agent_model = ?, deployed_commit_sha = ?, last_deploy_status = ?, last_deploy_at = ?,
                  created_at = ?, updated_at = ?
            WHERE id = ?`,
@@ -184,7 +184,7 @@ export function createSqliteProjectStore(database: SqliteDatabase): ProjectStore
         .run(
           project.name,
           project.description,
-          project.skillLevel,
+          project.mode,
           project.repoUrl,
           project.repoFullName,
           project.namespace,

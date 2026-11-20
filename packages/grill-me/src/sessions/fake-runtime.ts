@@ -21,7 +21,7 @@ import {
   type LocalProcessSpawner,
 } from './local-runtime';
 import type { SessionRuntimeContractHarness } from './runtime-contract';
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 
 let pidSequence = 4000;
 let sessionSequence = 0;
@@ -141,7 +141,7 @@ export function createFakeLocalRuntime(options: FakeLocalRuntimeOptions = {}): F
       projectId: `project-${sessionSequence}`,
       projectName: 'todo-app',
       idea: 'A todo app',
-      skillLevel: 'expert' satisfies SkillLevel,
+      mode: 'guided' satisfies ProjectMode,
       prompt: 'Build a todo app',
       model: options.model ?? 'openrouter/test-model',
       reportToken: 'report-token',

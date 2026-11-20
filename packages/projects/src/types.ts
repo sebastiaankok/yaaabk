@@ -10,7 +10,7 @@
  * stores them as TEXT and they sort lexicographically.
  */
 
-import type { SkillLevel } from '@yaaabk/shared';
+import type { ProjectMode } from '@yaaabk/shared';
 
 /** A Project as persisted and handed to the UI. */
 export interface Project {
@@ -19,7 +19,8 @@ export interface Project {
   /** GitHub repository and project name, e.g. `todo-app`. Immutable. */
   name: string;
   description: string;
-  skillLevel: SkillLevel;
+  /** How the agent works with the Developer. */
+  mode: ProjectMode;
   /** HTTPS URL of the backing repository, for the UI. */
   repoUrl: string;
   /** Full repository name, e.g. `acme/todo-app`. */
@@ -54,7 +55,7 @@ export type DeployStatus = 'success' | 'failed';
 export interface NewProject {
   name: string;
   description: string;
-  skillLevel: SkillLevel;
+  mode: ProjectMode;
 }
 
 /**
@@ -65,7 +66,7 @@ export interface NewProject {
  */
 export interface ProjectPatch {
   description?: string;
-  skillLevel?: SkillLevel;
+  mode?: ProjectMode;
   /**
    * Default model for this Project's Agent Jobs, or `null` to fall back to the
    * environment default. Grill-Me Sessions keep their own `lastModel`.

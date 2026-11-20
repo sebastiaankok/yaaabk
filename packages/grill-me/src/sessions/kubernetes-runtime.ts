@@ -10,7 +10,7 @@
 
 import { randomBytes } from 'node:crypto';
 import type { K8sClient, PodSpec } from '@yaaabk/k8s';
-import { isSkillLevel } from '@yaaabk/shared';
+import { isProjectMode } from '@yaaabk/shared';
 import {
   type SessionRuntime,
   type SessionRuntimeInspection,
@@ -152,8 +152,8 @@ function validSpec(spec: SessionRuntimeSpec): string | undefined {
   if (typeof spec.idea !== 'string' || spec.idea.trim() === '') {
     return 'An idea is required';
   }
-  if (!isSkillLevel(spec.skillLevel)) {
-    return `"${String(spec.skillLevel)}" is not a valid skill level`;
+  if (!isProjectMode(spec.mode)) {
+    return `"${String(spec.mode)}" is not a valid project mode`;
   }
   if (typeof spec.prompt !== 'string' || spec.prompt.trim() === '') {
     return 'An opening prompt is required';
@@ -261,7 +261,7 @@ function sessionPodSpec(
         env: {
           YAAABK_PROJECT_ID: spec.projectId,
           YAAABK_SESSION_ID: spec.sessionId,
-          YAAABK_SKILL_LEVEL: spec.skillLevel,
+          YAAABK_MODE: spec.mode,
           [SESSION_PROMPT_ENV]: spec.prompt,
           ...(spec.apiUrl === undefined ? {} : { YAAABK_API_URL: spec.apiUrl }),
           ...(options.opencodeConfig === undefined

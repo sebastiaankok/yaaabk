@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { deriveSummary, isSkillLevel, normaliseSummary } from '@yaaabk/shared';
+import { deriveSummary, normaliseSummary, isProjectMode } from '@yaaabk/shared';
 import { consoleLogger, plansError, toPlansError, type PlansLogger } from './errors';
 import type {
   NewPlan,
@@ -27,8 +27,8 @@ function invalidReason(input: NewPlan): string | undefined {
   if (typeof input.contentMarkdown !== 'string' || input.contentMarkdown.trim() === '') {
     return 'Plan content is required';
   }
-  if (!isSkillLevel(input.skillLevel)) {
-    return `"${input.skillLevel}" is not a valid skill level`;
+  if (!isProjectMode(input.mode)) {
+    return `"${String(input.mode)}" is not a valid project mode`;
   }
   if (input.source !== 'grill-me' && input.source !== 'upload') {
     return `"${input.source}" is not a valid plan source`;
@@ -115,7 +115,7 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
           version: store.nextVersion(input.projectId),
           contentMarkdown: input.contentMarkdown,
           summary,
-          skillLevel: input.skillLevel,
+          mode: input.mode,
           source: input.source,
           createdAt: now().toISOString(),
           isActive: true,
