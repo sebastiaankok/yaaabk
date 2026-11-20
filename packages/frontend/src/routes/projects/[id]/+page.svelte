@@ -12,7 +12,9 @@
     updateProject,
     type ModelCatalogueView,
   } from '#lib/api.js';
+  import { runLabel } from '#lib/agent-run.js';
   import { hasErrors, validateExportTarget, type ExportTargetErrors } from '#lib/export-project.js';
+  import { pollWhileVisible } from '#lib/polling.js';
 
   const projectId = $derived(page.params.id);
 
@@ -44,6 +46,11 @@
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
   }
 
+  /** The date and time of a run, trimmed to the minute, in the API's UTC form. */
+  function clock(at: string): string {
+    return at.slice(0, 16).replace('T', ' ');
+  }
+
   // Load the Project whenever the route id changes, plus the catalogue the
   // agent-model selector offers.
   $effect(() => {
@@ -67,6 +74,34 @@
       });
     return () => {
       cancelled = true;
+    };
+  });
+
+  // Keep the in-flight work and the Plan banner fresh while the page is on
+  // screen. Only the overview is replaced: the agent-model input and the export
+  // form hold their own state, so a poll must not write over what the Developer
+  // has typed but not saved.
+  $effect(() => {
+    const id = projectId;
+    if (id === undefined) return;
+    let cancelled = false;
+    const stop = pollWhileVisible({
+      intervalMs: 10_000,
+      isVisible: () => document.visibilityState === 'visible',
+      onVisibilityChange: (listener) => {
+        document.addEventListener('visibilitychange', listener);
+        return () => document.removeEventListener('visibilitychange', listener);
+      },
+      poll: () =>
+        getProjectOverview(id)
+          .then((next) => {
+            if (!cancelled) overview = next;
+          })
+          .catch(() => undefined),
+    });
+    return () => {
+      cancelled = true;
+      stop();
     };
   });
 
@@ -155,6 +190,47 @@
       >
         Plan v{overview.activePlan.version} not accepted
       </a>
+    {/if}
+
+    {#if overview !== null}
+      <section
+        class="rounded-lg border border-neutral-200 p-4"
+        aria-labelledby="active-work-heading"
+      >
+        <h2 id="active-work-heading" class="mb-3 text-sm font-semibold">Active work</h2>
+        {#if overview.activeWork.length === 0}
+          <p class="text-sm text-neutral-500">Idle — no agent runs in flight.</p>
+        {:else}
+          <ul class="flex flex-col gap-2">
+            {#each overview.activeWork as run (run.id)}
+              <li>
+                <!-- eslint-disable svelte/no-navigation-without-resolve -- the issue id belongs in the query string -->
+                <a
+                  href={`${resolve('/projects/[id]/issues', { id: project.id })}?issue=${encodeURIComponent(run.issueId)}`}
+                  class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50"
+                >
+                  <span class="font-medium">{run.issueTitle}</span>
+                  <span class="text-neutral-600">{runLabel(run)}</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs {run.status === 'running'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-neutral-100 text-neutral-700'}"
+                  >
+                    {run.status}
+                  </span>
+                  <span class="text-xs text-neutral-500">
+                    {run.startedAt === null ? 'Queued' : 'Started'}
+                    <time datetime={run.startedAt ?? run.createdAt}>
+                      {clock(run.startedAt ?? run.createdAt)}
+                    </time>
+                  </span>
+                </a>
+                <!-- eslint-enable svelte/no-navigation-without-resolve -->
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
     {/if}
 
     {#if error !== null}

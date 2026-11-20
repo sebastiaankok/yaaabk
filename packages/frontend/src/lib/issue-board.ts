@@ -190,3 +190,16 @@ export function pullRequestNumber(prUrl: string | null): number | null {
   const match = /\/pull\/(\d+)(?:[/?#]|$)/.exec(prUrl);
   return match === null ? null : Number(match[1]);
 }
+
+/**
+ * The Issue named by the `issue` query parameter, or `null` when it is absent
+ * or names no Issue on the board. A stale or mistyped link must not open an
+ * empty drawer.
+ */
+export function issueIdFromParam(
+  param: string | null,
+  issues: readonly Pick<Issue, 'id'>[],
+): string | null {
+  if (param === null || param === '') return null;
+  return issues.some((issue) => issue.id === param) ? param : null;
+}
