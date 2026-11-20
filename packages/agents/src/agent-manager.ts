@@ -26,6 +26,7 @@ import {
   DEFAULT_PVC_STORAGE,
   DEPLOY_FAILED_LABEL,
   OPENROUTER_SECRET_KEY,
+  REVIEW_ACTIVE_DEADLINE_SECONDS,
   WORKSPACE_MOUNT_PATH,
   WORKSPACE_VOLUME_NAME,
   githubTokenSecretName,
@@ -546,7 +547,10 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           : PROJECT_AGENT_SERVICE_ACCOUNT,
         volumes,
         volumeMounts: [{ name: WORKSPACE_VOLUME_NAME, mountPath: WORKSPACE_MOUNT_PATH }],
-        activeDeadlineSeconds,
+        activeDeadlineSeconds:
+          run.kind === 'review'
+            ? Math.min(activeDeadlineSeconds, REVIEW_ACTIVE_DEADLINE_SECONDS)
+            : activeDeadlineSeconds,
         backoffLimit: 0,
         labels,
         resources: {

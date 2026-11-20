@@ -16,10 +16,15 @@ const CONFIG: AgentConfig = {
   maxAttempts: 3,
 };
 
+/** Reads a bundled skill's markdown. */
+function skillSource(id: string): string {
+  const path = fileURLToPath(new URL(`../skills/${id}/SKILL.md`, import.meta.url));
+  return readFileSync(path, 'utf8');
+}
+
 /** Reads the `name` from a bundled skill's frontmatter. */
 function skillName(id: string): string {
-  const path = fileURLToPath(new URL(`../skills/${id}/SKILL.md`, import.meta.url));
-  const source = readFileSync(path, 'utf8');
+  const source = skillSource(id);
   const name = source.match(/^name:\s*(.+)$/m)?.[1]?.trim();
   if (name === undefined) throw new Error(`${id} has no frontmatter name`);
   return name;
@@ -45,5 +50,19 @@ describe('the bundled Agent skills', () => {
         mergeOutput: '',
       }),
     ).toContain('Use the resolve-conflicts skill');
+  });
+
+  it('bounds the review skill to CI and the diff', () => {
+    const source = skillSource('review-pr').replace(/\s+/g, ' ');
+
+    expect(source).toContain('CI has already run lint, typecheck, tests and build');
+    expect(source).toContain('`bun run check` at most once');
+    expect(source).toContain('Do not start a browser');
+    expect(source).toContain('Playwright');
+    expect(source).toContain('Chromium');
+    expect(source).toContain('screenshots');
+    expect(source).toContain('Aim for 20–30 tool calls');
+    expect(source).toContain('`bun run build` unless the diff changes build configuration');
+    expect(source).toContain('compiled CSS');
   });
 });

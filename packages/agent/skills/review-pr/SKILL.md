@@ -30,8 +30,15 @@ reviewing, not implementing.
 2. **Judge the change against the Issue.** Does it deliver what the Issue asks
    for, and nothing unrelated? Is it correct, complete and consistent with the
    surrounding code's structure, naming and style?
-3. **Run the project's checks.** Run the pre-commit hooks — lint, type-check and
-   tests — so your verdict reflects a change that actually works.
+3. **Trust CI and bound the extra commands.** CI has already run lint,
+   typecheck, tests and build; trust it. Run `bun run check` at most once, and
+   only when a specific concern in the diff requires it.
+   - Do not start a browser, install Playwright or Chromium, or take
+     screenshots.
+   - Do not run `bun run build` unless the diff changes build configuration.
+   - Do not inspect compiled CSS unless the Issue is specifically about build
+     output.
+   - Only run extra commands when a specific concern in the diff requires it.
 4. **Be specific.** Name the files and lines you are concerned about, and say
    what would resolve each concern. Do not post vague feedback.
 
@@ -56,6 +63,9 @@ YAAABK reads the file and posts the review on GitHub. Do not call `gh` or the
 GitHub API yourself.
 
 ## Budget
+
+Aim for 20–30 tool calls. If you exceed that budget, write the verdict with the
+evidence you have gathered.
 
 You have a per-review OpenRouter budget. If it is exhausted, stop and write a
 `request-changes` verdict explaining what you could not finish, rather than

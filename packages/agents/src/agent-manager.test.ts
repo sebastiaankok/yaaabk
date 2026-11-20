@@ -13,6 +13,7 @@ import {
   AGENT_OPENCODE_CONFIG_PATH,
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_MODEL,
+  REVIEW_ACTIVE_DEADLINE_SECONDS,
 } from './config';
 import { silentLogger } from './errors';
 import { createInMemoryAgentStore } from './in-memory-agent-store';
@@ -1220,6 +1221,22 @@ describe('review runs', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('invalid-input');
+  });
+
+  it("caps a review Job at the review's wall-clock budget", async () => {
+    const { manager, issues, k8s } = await harness();
+    const issue = await readyIssue(issues);
+
+    const spawned = await manager.spawn('project-1', issue.id, {
+      kind: 'review',
+      pullNumber: 7,
+      branch: 'agent/issue-42',
+    });
+    if (!spawned.ok) throw new Error('spawn failed');
+
+    const { spec } = await readJobContainer(k8s, NS, spawned.value.jobName!);
+    expect(spec.activeDeadlineSeconds).toBe(REVIEW_ACTIVE_DEADLINE_SECONDS);
+    expect(REVIEW_ACTIVE_DEADLINE_SECONDS).toBe(10 * 60);
   });
 
   it('records the LLM spend a review run reports', async () => {
