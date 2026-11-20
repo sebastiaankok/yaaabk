@@ -17,6 +17,34 @@ export const REVIEW_VERDICT_FILE = '.yaaabk/review.json';
 export const REVIEW_VERDICT_PATH = `${REPOSITORY_DIRECTORY}/${REVIEW_VERDICT_FILE}`;
 
 /**
+ * The first visible line of an Issue that came from an accepted Plan.
+ *
+ * `encodeIssueBody` writes `Plan: docs/plans/v<N>.md`, so the prompt can point
+ * the Agent at the decision record without inlining the Plan itself.
+ */
+const ACCEPTED_PLAN_LINE = /^\s*Plan:\s*(docs\/plans\/v\d+\.md)\s*$/m;
+
+/**
+ * The accepted Plan path the Issue body carries, or `null` for an Issue that
+ * was not published from a Plan.
+ */
+function acceptedPlanPath(issue: AgentIssue): string | null {
+  return ACCEPTED_PLAN_LINE.exec(issue.body)?.[1] ?? null;
+}
+
+/** The prompt lines that point the Agent at an accepted Plan, when there is one. */
+function acceptedPlanSection(issue: AgentIssue): string[] {
+  const path = acceptedPlanPath(issue);
+  return path === null
+    ? []
+    : [
+        `Read the accepted Plan at \`${path}\` before you start: it records the module boundaries,`,
+        'data decisions and out-of-scope constraints this Issue came from.',
+        '',
+      ];
+}
+
+/**
  * Builds the prompt handed to OpenCode for one Issue.
  *
  * Kept pure and small so the wording can be asserted in tests; the actual
@@ -39,6 +67,7 @@ export function buildImplementPrompt(issue: AgentIssue, config: AgentConfig): st
     '',
     `Repository: ${config.repoUrl}`,
     '',
+    ...acceptedPlanSection(issue),
     ...(feedback === undefined || feedback === ''
       ? []
       : ['A previous attempt was rejected. Reviewer feedback:', feedback, '']),
@@ -124,6 +153,7 @@ export function buildReviewPrompt(
     '',
     `Repository: pull request branch ${review.branch}`,
     '',
+    ...acceptedPlanSection(issue),
     `Issue #${issue.number}:`,
     issue.body.trim() === '' ? '(no description)' : issue.body,
     '',

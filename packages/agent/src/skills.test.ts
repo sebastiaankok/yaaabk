@@ -61,6 +61,17 @@ describe('the bundled Agent skills', () => {
     }
   });
 
+  it('gives the implement skill the accepted Plan and says to read it before editing', () => {
+    const source = skillSource('implement-issue').replace(/\s+/g, ' ');
+
+    expect(source).toContain('accepted Plan');
+    expect(source).toContain('docs/plans/');
+    expect(source).toContain('Read it before editing');
+    expect(source).toContain('module boundaries');
+    expect(source).toContain('data decisions');
+    expect(source).toContain('out-of-scope');
+  });
+
   it('bounds the review skill to CI and the diff', () => {
     const source = skillSource('review-pr').replace(/\s+/g, ' ');
 

@@ -34,6 +34,8 @@ pass; YAAABK runs them again after you stop.
 
 ## Constraints
 
+- **Accepted Plans are binding.** Accepted Plans live in `docs/plans/`, and the
+  version named by the Issue is binding even when a later Plan exists.
 - **No browser.** Do not start a browser, install Playwright or Chromium, or
   take screenshots. `bun run smoke` is the end-to-end check for the API and the
   server wiring.

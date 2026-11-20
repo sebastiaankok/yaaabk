@@ -13,6 +13,9 @@ request once you finish. Do not open a pull request yourself.
 ## What you are given
 
 - the **issue number, title and body** of the work to implement;
+- the **accepted Plan** at the `docs/plans/v<N>.md` path named by the Issue
+  body, when the Issue came from a Plan. Read it before editing for the module
+  boundaries, data decisions and out-of-scope constraints the Issue must respect;
 - the **repository** you are working in, already on your branch;
 - an **OpenRouter key** scoped to a per-issue budget, exposed as
   `OPENROUTER_API_KEY`;
