@@ -5,6 +5,7 @@ import {
   boardItems,
   budgetRemaining,
   dependencyEdges,
+  issueIdFromParam,
   pullRequestNumber,
   spendByIssue,
 } from './issue-board';
@@ -276,5 +277,22 @@ describe('pullRequestNumber', () => {
 
   it('returns null when the URL does not look like a pull request', () => {
     expect(pullRequestNumber('https://github.com/acme/todo-app')).toBeNull();
+  });
+});
+
+describe('issueIdFromParam', () => {
+  const issues = [issue({ title: 'Schema' }), issue({ title: 'Api' })];
+
+  it('finds the Issue named in the query parameter', () => {
+    expect(issueIdFromParam('api', issues)).toBe('api');
+  });
+
+  it('ignores an unknown id', () => {
+    expect(issueIdFromParam('nope', issues)).toBeNull();
+  });
+
+  it('returns null when the parameter is absent or empty', () => {
+    expect(issueIdFromParam(null, issues)).toBeNull();
+    expect(issueIdFromParam('', issues)).toBeNull();
   });
 });

@@ -422,6 +422,38 @@ test('ignores an accepted version that is not the active accepted plan', async (
   await expect(page.getByText(/accepted and synced to GitHub/)).toHaveCount(0);
 });
 
+test('opens the issue named in the URL once the issues load', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues?issue=i1');
+
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('Create the tables')).toBeVisible();
+});
+
+test('ignores an unknown issue id in the URL and clears it', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues?issue=missing');
+
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/issue=/);
+});
+
+test('clears the issue parameter when the drawer closes', async ({ page }) => {
+  await mockBoard(page);
+
+  await page.goto('/projects/p1/issues?issue=i1');
+  const panel = page.getByRole('dialog', { name: 'Schema' });
+  await expect(panel).toBeVisible();
+
+  await panel.getByRole('button', { name: 'Close details' }).click();
+
+  await expect(panel).toBeHidden();
+  await expect(page).not.toHaveURL(/issue=/);
+});
+
 test('draws dependency arrows between cards', async ({ page }) => {
   await mockBoard(page);
 

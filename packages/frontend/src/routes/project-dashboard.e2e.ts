@@ -39,7 +39,7 @@ function overview(overrides: Record<string, unknown> = {}) {
 
 async function mockProject(
   page: Page,
-  projectOverview: Record<string, unknown> = overview(),
+  projectOverview: Record<string, unknown> | (() => Record<string, unknown>) = overview(),
 ): Promise<void> {
   await page.route('**/api/auth/status', (route) =>
     route.fulfill({
@@ -47,7 +47,9 @@ async function mockProject(
     }),
   );
   await page.route('**/api/projects/p1/overview', (route) =>
-    route.fulfill({ json: projectOverview }),
+    route.fulfill({
+      json: typeof projectOverview === 'function' ? projectOverview() : projectOverview,
+    }),
   );
   await page.route('**/api/models', (route) => route.fulfill({ json: MODELS }));
 }
@@ -98,6 +100,107 @@ test('banners an unaccepted active plan and links to review', async ({ page }) =
     'href',
     '/projects/p1/issues/review',
   );
+});
+
+test('lists active work and links each row to its issue', async ({ page }) => {
+  await mockProject(
+    page,
+    overview({
+      activeWork: [
+        {
+          id: 'r1',
+          issueId: 'i1',
+          issueTitle: 'Schema',
+          kind: 'implement-issue',
+          attemptNumber: 2,
+          status: 'running',
+          createdAt: '2026-02-03T01:00:00.000Z',
+          startedAt: '2026-02-03T01:01:00.000Z',
+        },
+        {
+          id: 'r2',
+          issueId: 'i2',
+          issueTitle: 'Api',
+          kind: 'review',
+          attemptNumber: 1,
+          status: 'queued',
+          createdAt: '2026-02-04T02:00:00.000Z',
+          startedAt: null,
+        },
+      ],
+    }),
+  );
+
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByRole('heading', { name: 'Active work' })).toBeVisible();
+  const schema = page.getByRole('link', { name: /Schema/ });
+  await expect(schema).toHaveAttribute('href', '/projects/p1/issues?issue=i1');
+  await expect(schema).toContainText('Attempt 2');
+  await expect(schema).toContainText('running');
+  await expect(schema).toContainText('Started 2026-02-03 01:01');
+
+  const api = page.getByRole('link', { name: /Api/ });
+  await expect(api).toHaveAttribute('href', '/projects/p1/issues?issue=i2');
+  await expect(api).toContainText('Review 1');
+  await expect(api).toContainText('queued');
+  await expect(api).toContainText('Queued 2026-02-04 02:00');
+});
+
+test('shows an explicit idle state when no agent runs are in flight', async ({ page }) => {
+  await mockProject(page);
+
+  await gotoHydrated(page, '/projects/p1');
+
+  await expect(page.getByText('Idle — no agent runs in flight.')).toBeVisible();
+});
+
+test('polls active work and the plan banner without clobbering unsaved forms', async ({ page }) => {
+  let current = overview();
+  await mockProject(page, () => current);
+
+  const patches: unknown[] = [];
+  await page.route('**/api/projects/p1', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      patches.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ...PROJECT } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await gotoHydrated(page, '/projects/p1');
+  await expect(page.getByText('Idle — no agent runs in flight.')).toBeVisible();
+  await page.getByLabel('GitHub username').fill('dev');
+  await page.getByLabel('Default agent model').fill('openrouter/unsaved');
+
+  // The next poll sees an unaccepted Plan and a queued run appear.
+  current = overview({
+    activePlan: { id: 'plan-2', version: 2, acceptedAt: null },
+    activeWork: [
+      {
+        id: 'r3',
+        issueId: 'i3',
+        issueTitle: 'Auth',
+        kind: 'implement-issue',
+        attemptNumber: 1,
+        status: 'queued',
+        createdAt: '2026-02-05T03:00:00.000Z',
+        startedAt: null,
+      },
+    ],
+  });
+
+  await expect(page.getByRole('link', { name: 'Plan v2 not accepted' })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole('link', { name: /Auth/ })).toHaveAttribute(
+    'href',
+    '/projects/p1/issues?issue=i3',
+  );
+  await expect(page.getByLabel('Default agent model')).toHaveValue('openrouter/unsaved');
+  await expect(page.getByLabel('GitHub username')).toHaveValue('dev');
+  expect(patches).toHaveLength(0);
 });
 
 test('shows no plan banner when the active plan is accepted', async ({ page }) => {

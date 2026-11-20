@@ -23,6 +23,7 @@
     type IssueBudget,
     type ModelCatalogueView,
   } from '#lib/api.js';
+  import { runLabel } from '#lib/agent-run.js';
   import Markdown from '#lib/markdown.svelte';
   import { isAtBottom } from '#lib/scroll.js';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
@@ -34,6 +35,7 @@
     boardItems,
     budgetRemaining,
     dependencyEdges,
+    issueIdFromParam,
     pullRequestNumber,
     spendByIssue,
     type BoardColumn,
@@ -144,14 +146,6 @@
   });
 
   const spend = $derived(spendByIssue(runs));
-
-  /** What a run is, so reviews are not mistaken for implement attempts. */
-  function runLabel(run: AgentRun): string {
-    if (run.kind === 'review') return `Review ${run.attemptNumber}`;
-    if (run.kind === 'resolve-conflicts') return `Conflict fix ${run.attemptNumber}`;
-    if (run.kind === 'deploy') return `Deploy ${run.attemptNumber}`;
-    return `Attempt ${run.attemptNumber}`;
-  }
 
   /** The issue whose detail panel is open, taken from the unfiltered list. */
   const selected = $derived(issues.find((candidate) => candidate.id === selectedId) ?? null);
@@ -321,7 +315,7 @@
       await deleteIssue(projectId, selected.id);
       issues = issues.filter((issue) => issue.id !== selected.id);
       graph = await getIssueGraph(projectId);
-      selectedId = null;
+      close();
       confirmingDelete = false;
     } catch (cause) {
       error = describe(cause);
@@ -377,15 +371,27 @@
   }
 
   /**
-   * Drops `accepted` from the URL without navigating, so reloading the board
-   * does not repeat the banner.
+   * Drops query parameters from the URL without navigating, so a reload does
+   * not repeat the banner or reopen a closed drawer.
    */
-  function clearAcceptedParam(param: string | null): void {
-    if (param === null) return;
+  function clearParams(...names: string[]): void {
     const url = new URL(page.url.href);
-    url.searchParams.delete('accepted');
+    let changed = false;
+    for (const name of names) {
+      if (url.searchParams.has(name)) {
+        url.searchParams.delete(name);
+        changed = true;
+      }
+    }
+    if (!changed) return;
     // eslint-disable-next-line svelte/no-navigation-without-resolve -- only the query string changes
     void goto(url, { replace: true, shallow: true, reset: false });
+  }
+
+  /** Closes the detail panel and drops the deep link that opened it. */
+  function close(): void {
+    selectedId = null;
+    clearParams('issue');
   }
 
   // Re-measure after anything that can move a card: the visible set or layout.
@@ -410,6 +416,7 @@
     if (id === undefined) return;
     // Read without subscribing: clearing the parameter must not reload the board.
     const acceptedParam = untrack(() => page.url.searchParams.get('accepted'));
+    const issueParam = untrack(() => page.url.searchParams.get('issue'));
     let cancelled = false;
     loading = true;
     error = null;
@@ -436,7 +443,12 @@
         ) {
           acceptedNotice = nextPlan.version;
         }
-        clearAcceptedParam(acceptedParam);
+        const requestedIssue = issueIdFromParam(issueParam, nextIssues);
+        if (requestedIssue !== null) open(requestedIssue);
+        const staleParams: string[] = [];
+        if (acceptedParam !== null) staleParams.push('accepted');
+        if (issueParam !== null && requestedIssue === null) staleParams.push('issue');
+        clearParams(...staleParams);
       })
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -828,10 +840,10 @@
         class="fixed inset-0 z-10 flex justify-end bg-black/30"
         role="presentation"
         onclick={(event) => {
-          if (event.target === event.currentTarget) selectedId = null;
+          if (event.target === event.currentTarget) close();
         }}
         onkeydown={(event) => {
-          if (event.key === 'Escape') selectedId = null;
+          if (event.key === 'Escape') close();
         }}
       >
         <div
@@ -851,7 +863,7 @@
             <button
               type="button"
               aria-label="Close details"
-              onclick={() => (selectedId = null)}
+              onclick={() => close()}
               class="rounded-md border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-100"
             >
               ✕
