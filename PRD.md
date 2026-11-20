@@ -50,7 +50,7 @@ YAAABK is an AI-native Internal Developer Platform that a Platform Admin install
 27. As a **Developer**, I want the agent to turn the PRD into vertical-slice Issues, so that each Issue cuts end to end through schema, API, UI and tests.
 28. As a **Developer**, I want each Issue to be independently grabbable by an Agent, so that concurrency and ordering are explicit.
 29. As a **Developer**, I want Issues to declare what blocks them, so that Agents do not start work whose dependencies are incomplete.
-30. As a **Developer**, I want HITL slices labelled `needs-human` and AFK slices labelled `ready`, so that the Issue board reflects which work needs me.
+30. As a **Developer**, I want every generated slice labelled `ready` and `needs-human` reserved for an Agent or CI run that gets stuck, so that the Issue board starts with all work available and only escalations need me.
 31. As a **Developer**, I want guided sessions to quiz me on the proposed Issue breakdown and iterate before reporting it, so that granularity and dependencies are right.
 32. As a **Developer**, I want to say "write the PRD now" at any point, so that I can skip remaining grilling when I already know what I want.
 33. As a **Developer**, I want the PRD and Issues reported through a typed tool, so that malformed output is rejected with a correction the agent can act on.

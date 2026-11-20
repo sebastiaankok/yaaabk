@@ -1,12 +1,6 @@
-import { relabelUnverifiableIssues } from '@yaaabk/shared';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-
-/** Reads a fixture in this package's `__fixtures__` directory. */
-function readFixture(path: string): string {
-  return readFileSync(fileURLToPath(new URL(`./__fixtures__/${path}`, import.meta.url)), 'utf8');
-}
 
 /** Reads a bundled skill by its OpenCode id (the directory name). */
 function readSkill(id: string): string {
@@ -234,11 +228,11 @@ describe('to-issues skill', () => {
     expect(skill).toMatch(/independently implementable|independently grabbable/i);
   });
 
-  it('maps AFK work to ready and HITL work to needs-human', () => {
-    expect(skill).toContain('`ready`');
-    expect(skill).toContain('`needs-human`');
-    expect(skill).toMatch(/AFK/i);
-    expect(skill).toMatch(/HITL|human-in-the-loop/i);
+  it('labels every generated Issue ready and leaves needs-human to escalation', () => {
+    expect(skill).toContain('["ready"]');
+    expect(skill).toMatch(/every Issue you report gets/i);
+    expect(skill).toMatch(/do not label an Issue `needs-human`/i);
+    expect(skill).toMatch(/escalat/i);
   });
 
   it('expresses ordering with depends_on', () => {
@@ -292,54 +286,24 @@ describe('to-issues skill', () => {
   });
 });
 
-describe('visual acceptance policy', () => {
-  it('turns a plan with visual-only criteria into needs-human Issues', () => {
-    const plan = readFixture('to-issues-visual-only/plan.md');
-    const issues = JSON.parse(readFixture('to-issues-visual-only/issues.json')) as Array<{
-      title: string;
-      body: string;
-      labels: string[];
-    }>;
+describe('generated Issue labels', () => {
+  it('supersedes the visual-checks ADR so generated Issues stay ready', () => {
+    const oldAdr = readRepoFile('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
+    const adr = readRepoFile('docs/adr/0003-generated-issues-are-always-ready.md');
 
-    // The fixture is the todo-app Plan that produced visual-only ready Issues.
-    expect(plan).toMatch(/1280px and 375px/);
-    expect(plan).toMatch(/focus ring/i);
-
-    const result = relabelUnverifiableIssues(issues);
-
-    expect(result.relabelled).toEqual([
-      'Centre the bookmark card',
-      'Show a focus ring on every control',
-      'Follow the browser theme in the tab title',
-      'Show an alert when the API fails',
-    ]);
-    expect(result.issues.map((issue) => issue.labels)).toEqual([
-      ['needs-human'],
-      ['needs-human'],
-      ['needs-human'],
-      ['needs-human'],
-      ['ready'],
-    ]);
-  });
-
-  it('records that visual checks are human-in-the-loop', () => {
-    const adr = readRepoFile('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
-
-    expect(adr).toMatch(/^# 0002:/m);
+    expect(oldAdr).toMatch(/\*\*Status:\*\* Superseded by \[?0003/);
+    expect(adr).toMatch(/^# 0003:/m);
     expect(adr).toMatch(/\*\*Status:\*\* Accepted/);
-    expect(adr).toMatch(/option A|policy A/i);
+    expect(adr).toMatch(/every generated Issue|always `?ready/i);
     expect(adr).toContain('`needs-human`');
-    expect(adr).toContain('baidu/ernie-5.5-flash-preview:free');
-    expect(adr).toMatch(/no browser|without a browser|image has no browser/i);
   });
 
-  it('requires an executable check for ready Issues in the to-issues skill', () => {
+  it('keeps executable-check guidance without relabelling', () => {
     const skill = readSkill('to-issues');
 
     expect(skill).toMatch(/executable acceptance check/i);
-    expect(skill).toMatch(/visual|look at the page|screenshot/i);
-    expect(skill).toContain('`needs-human`');
-    expect(skill).toContain('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
+    expect(skill).toMatch(/visual|screenshot/i);
+    expect(skill).toContain('docs/adr/0003-generated-issues-are-always-ready.md');
   });
 
   it('validates every ready Issue before report_issues', () => {
@@ -349,7 +313,8 @@ describe('visual acceptance policy', () => {
     expect(skill).toMatch(/validation/i);
     expect(skill).toMatch(/runnable command/i);
     expect(skill).toMatch(/expected result/i);
-    expect(skill).toMatch(/relabel|change the label|set .*needs-human/i);
+    expect(skill).toMatch(/keep the label `ready`/i);
+    expect(skill).not.toMatch(/relabel|change the label/i);
   });
 
   it('carries an Issue body template with a runnable acceptance check', () => {

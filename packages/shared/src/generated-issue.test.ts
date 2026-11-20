@@ -18,11 +18,10 @@ describe('normaliseGeneratedIssues', () => {
           depends_on: [],
         },
       ],
-      relabelled: [],
     });
   });
 
-  it('moves ready issues without an executable acceptance check to needs-human', () => {
+  it('keeps the labels the agent reported', () => {
     const acceptance = (check: string) =>
       `## What to build\n\nPersist it.\n\n## Acceptance criteria\n\n- [ ] ${check}`;
     const result = normaliseGeneratedIssues([
@@ -36,14 +35,13 @@ describe('normaliseGeneratedIssues', () => {
         title: 'Persist a bookmark',
         summary: 'Persist a bookmark.',
         body: acceptance('`bun test` passes and reports the new test.'),
-        labels: ['ready'],
+        labels: ['ready', 'frontend'],
       },
     ]);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.relabelled).toEqual(['Centre the card']);
-    expect(result.value.map((issue) => issue.labels)).toEqual([['needs-human'], ['ready']]);
+    expect(result.value.map((issue) => issue.labels)).toEqual([['ready'], ['ready', 'frontend']]);
   });
 
   it('normalises the summary whitespace', () => {

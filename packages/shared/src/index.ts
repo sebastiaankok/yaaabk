@@ -1,4 +1,3 @@
-export * from './acceptance-check';
 export * from './branch';
 export * from './generated-issue';
 export * from './mode';

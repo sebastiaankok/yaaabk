@@ -1,6 +1,6 @@
 ---
 name: YAAABK To Issues
-description: Break a reported YAAABK Plan into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies in guided mode, validates them itself in autonomous mode, maps AFK slices to ready and HITL slices to needs-human, and reports them through report_issues.
+description: Break a reported YAAABK Plan into vertical-slice Issues that each cut through the full stack. Quizzes the Developer on granularity and dependencies in guided mode, validates them itself in autonomous mode, labels every slice ready, and reports them through report_issues.
 ---
 
 # YAAABK To Issues
@@ -52,17 +52,16 @@ tests — so an Agent can implement and verify it on its own.
 
 ### Executable acceptance checks
 
-A `ready` Issue must name an executable acceptance check: a concrete command or
-test to run and the expected pass/fail result. An Issue with only a visual or
-manual check belongs in `needs-human`, because a Developer must look at the
-page. This includes checks that ask an Agent to confirm appearance, spacing,
-contrast, or a screenshot. A rendered behaviour can stay `ready` only when an
-existing automated UI test asserts it and the Issue names that command.
+Prefer an executable acceptance check: a concrete command or test to run and
+the expected pass/fail result. A rendered behaviour is acceptable when an
+automated UI test asserts it and the Issue names that command.
 
 The Agent model is text-only and the Agent image has no browser. Never write an
 acceptance check that asks an Agent to install a browser, Playwright, Chromium,
-or to take screenshots. See
-`docs/adr/0002-visual-checks-are-human-in-the-loop.md`.
+or to take screenshots. If a slice needs a Developer's eye, say what to look at
+in the body and let the Developer check it after the pull request; still label
+the Issue `ready`. See
+`docs/adr/0003-generated-issues-are-always-ready.md`.
 
 ### Issue body template
 
@@ -79,26 +78,21 @@ The behaviour, the affected modules and the data change (or "none").
 - [ ] `bun test` passes and reports the new tests.
 ```
 
-The acceptance bullet must start with a command in backticks. It must also say
-what a passing or failing result looks like. A statement like "the page looks
-right" is not an acceptance check.
+An executable acceptance bullet starts with a command in backticks and says
+what a passing or failing result looks like. A manual bullet may describe what
+the Developer should look at after the pull request. A vague statement like
+"the page looks right" is not an acceptance check.
 
 Order the slices by what unblocks what. Express ordering only with
 `depends_on`: the titles of the Issues that must be implemented first. The graph
 must be acyclic.
 
-## 3. Label AFK and HITL work
+## 3. Label every Issue ready
 
-Every Issue gets one of two intent labels:
-
-| Label | Meaning |
-| --- | --- |
-| `ready` | AFK work: an Agent can implement and verify it without the Developer. Every acceptance check names an executable command and its expected result. |
-| `needs-human` | HITL work: a decision, credential, external account or manual check only the Developer can do. Any visual check is manual. |
-
-Split HITL work out of an otherwise AFK slice instead of mixing both in one
-Issue. Do not label an Issue `blocked` or `refinement-needed`; ordering belongs
-in `depends_on`.
+Every Issue you report gets `["ready"]`. `ready` means the Issue is grabbable
+right away. Do not label an Issue `needs-human`, `blocked` or
+`refinement-needed`; YAAABK applies `needs-human` only later, when an Agent
+escalates a stuck Issue. Ordering belongs in `depends_on`.
 
 ## 4. Quiz the Developer in guided mode
 
@@ -127,16 +121,16 @@ Run this validation before you call `report_issues`, in both modes. For every
 Issue labelled `ready`:
 
 - [ ] The body has an `## Acceptance criteria` section.
-- [ ] Every bullet in that section starts with a runnable command and names the
-      expected result.
-- [ ] No bullet asks for a visual or manual decision.
-- [ ] The command can run in the Agent image. Do not name a browser, Playwright,
-      Chromium or a screenshot.
+- [ ] At least one bullet names a runnable command and its expected result.
+- [ ] Every manual bullet says what the Developer should look at after the pull
+      request.
+- [ ] The commands can run in the Agent image. Do not name a browser,
+      Playwright, Chromium or a screenshot.
 
-If a bullet fails, do not invent a command. Either replace the visual check with
-a real automated check that the slice adds, or change the label to
-`needs-human`. Relabel the whole Issue when its only checks are manual. Run this
-validation again after every edit, and do not call the tool until it passes.
+If a bullet fails, do not invent a command. Replace the check with a real
+automated check that the slice adds, or state plainly what the Developer should
+look at after the pull request. Keep the label `ready`. Run this validation
+again after every edit, and do not call the tool until it passes.
 
 ## 6. Report the list
 
@@ -148,7 +142,7 @@ entry has exactly these fields:
 | `title` | string | Short, unique, imperative title. |
 | `summary` | string | One or two plain sentences, no Markdown, at most 200 characters. |
 | `body` | string | What to build as Markdown, with an `## Acceptance criteria` section that names a runnable command and its expected result. |
-| `labels` | string[] | `["ready"]` or `["needs-human"]`. |
+| `labels` | string[] | `["ready"]`. |
 | `depends_on` | string[] | Titles of Issues that must land first; `[]` when none. |
 
 ```json

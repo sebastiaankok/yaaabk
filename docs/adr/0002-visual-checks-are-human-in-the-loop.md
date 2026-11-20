@@ -1,6 +1,6 @@
 # 0002: Visual acceptance checks are human-in-the-loop
 
-- **Status:** Accepted
+- **Status:** Superseded by [0003](0003-generated-issues-are-always-ready.md)
 - **Date:** 2026-11-20
 
 ## Context

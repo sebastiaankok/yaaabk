@@ -182,7 +182,7 @@ describe('reporting tools', () => {
     ]);
   });
 
-  it('relabels a ready issue with only a visual acceptance check', async () => {
+  it('stores a ready issue with a visual acceptance check without relabelling it', async () => {
     const { server, reports } = setup();
 
     const response = await server.handle(
@@ -201,7 +201,7 @@ describe('reporting tools', () => {
 
     const result = response?.result as TextResult;
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain('needs-human');
+    expect(result.content[0]?.text).not.toContain('needs-human');
     expect(reports).toEqual([
       {
         issues: [
@@ -209,7 +209,7 @@ describe('reporting tools', () => {
             title: 'Centre the card',
             body: '## Acceptance criteria\n\n- [ ] Open the page and confirm that the card is centred.',
             summary: 'Centre the card on the page.',
-            labels: ['needs-human'],
+            labels: ['ready'],
             depends_on: [],
           },
         ],
