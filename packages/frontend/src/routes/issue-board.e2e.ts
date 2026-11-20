@@ -372,6 +372,56 @@ test('shows no not-accepted chip once the active plan is accepted', async ({ pag
   await expect(page.getByRole('link', { name: /not accepted/ })).toHaveCount(0);
 });
 
+test('banners a matching accepted plan once the board opens', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.plans = [{ ...PLAN, acceptedAt: '2026-01-02T00:00:00.000Z' }];
+
+  await page.goto('/projects/p1/issues?accepted=1');
+
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
+  await expect(page).not.toHaveURL(/accepted=/);
+});
+
+test('dismisses the acceptance banner', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.plans = [{ ...PLAN, acceptedAt: '2026-01-02T00:00:00.000Z' }];
+
+  await page.goto('/projects/p1/issues?accepted=1');
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toHaveCount(0);
+});
+
+test('does not banner again after reloading the board', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.plans = [{ ...PLAN, acceptedAt: '2026-01-02T00:00:00.000Z' }];
+
+  await page.goto('/projects/p1/issues?accepted=1');
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/accepted=/);
+});
+
+test('ignores an accepted version that is not the active accepted plan', async ({ page }) => {
+  const state = await mockBoard(page);
+  state.plans = [{ ...PLAN, version: 2, acceptedAt: '2026-01-02T00:00:00.000Z' }];
+
+  await page.goto('/projects/p1/issues?accepted=1');
+
+  await expect(page.getByText(/accepted and synced to GitHub/)).toHaveCount(0);
+  await expect(page).not.toHaveURL(/accepted=/);
+
+  state.plans = [PLAN];
+  await page.goto('/projects/p1/issues?accepted=1');
+
+  await expect(page.getByText(/accepted and synced to GitHub/)).toHaveCount(0);
+});
+
 test('draws dependency arrows between cards', async ({ page }) => {
   await mockBoard(page);
 

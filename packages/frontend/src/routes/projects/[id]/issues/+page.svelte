@@ -1,7 +1,8 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import type { AgentRun } from '@yaaabk/agents';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Plan } from '@yaaabk/plans';
@@ -71,6 +72,8 @@
   let issueBudget = $state<IssueBudget | null>(null);
   /** A refusal or validation failure for the open card, shown in the panel. */
   let actionError = $state<string | null>(null);
+  /** The accepted Plan version to acknowledge, while the banner is on screen. */
+  let acceptedNotice = $state<number | null>(null);
 
   let catalogue = $state<ModelCatalogueView | null>(null);
   let catalogueError = $state<string | null>(null);
@@ -373,6 +376,18 @@
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
   }
 
+  /**
+   * Drops `accepted` from the URL without navigating, so reloading the board
+   * does not repeat the banner.
+   */
+  function clearAcceptedParam(param: string | null): void {
+    if (param === null) return;
+    const url = new URL(page.url.href);
+    url.searchParams.delete('accepted');
+    // eslint-disable-next-line svelte/no-navigation-without-resolve -- only the query string changes
+    void goto(url, { replace: true, shallow: true, reset: false });
+  }
+
   // Re-measure after anything that can move a card: the visible set or layout.
   $effect(() => {
     void items;
@@ -393,6 +408,8 @@
   $effect(() => {
     const id = projectId;
     if (id === undefined) return;
+    // Read without subscribing: clearing the parameter must not reload the board.
+    const acceptedParam = untrack(() => page.url.searchParams.get('accepted'));
     let cancelled = false;
     loading = true;
     error = null;
@@ -410,6 +427,16 @@
         graph = nextGraph;
         runs = nextRuns;
         plan = nextPlan;
+        if (
+          acceptedParam !== null &&
+          nextPlan !== null &&
+          nextPlan.isActive &&
+          nextPlan.acceptedAt !== null &&
+          String(nextPlan.version) === acceptedParam
+        ) {
+          acceptedNotice = nextPlan.version;
+        }
+        clearAcceptedParam(acceptedParam);
       })
       .catch((cause) => {
         if (!cancelled) error = describe(cause);
@@ -592,6 +619,22 @@
 
     {#if error !== null}
       <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+    {/if}
+
+    {#if acceptedNotice !== null}
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+        role="status"
+      >
+        <p>Plan v{acceptedNotice} accepted and synced to GitHub</p>
+        <button
+          type="button"
+          onclick={() => (acceptedNotice = null)}
+          class="rounded-md px-2 py-0.5 text-xs font-medium hover:bg-emerald-100"
+        >
+          Dismiss
+        </button>
+      </div>
     {/if}
 
     {#if earlierWork.length > 0}

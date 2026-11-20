@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Plan } from '@yaaabk/plans';
@@ -154,8 +155,13 @@
     try {
       const accepted = await acceptPlan(projectId, selectedPlan.id);
       confirmOpen = false;
-      await refresh(projectId, accepted.id);
-      notice = `Plan v${accepted.version} accepted and synced to GitHub.`;
+      // Land on the board, replacing the review entry so Back does not return
+      // to a stale accept form.
+      await goto(
+        // eslint-disable-next-line svelte/no-navigation-without-resolve -- the accepted version belongs in the query string
+        `${resolve('/projects/[id]/issues', { id: projectId })}?accepted=${accepted.version}`,
+        { replace: true },
+      );
     } catch (cause) {
       confirmOpen = false;
       acceptError = describe(cause);
