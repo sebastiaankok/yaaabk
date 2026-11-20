@@ -50,6 +50,20 @@ tests — so an Agent can implement and verify it on its own.
   When in doubt, prefer a working end-to-end slice over a clean layer.
 - The first slice should produce something a Developer can exercise.
 
+### Executable acceptance checks
+
+A `ready` Issue must name an executable acceptance check: a concrete command or
+test to run and the expected pass/fail result. An Issue with only a visual or
+manual check belongs in `needs-human`, because a Developer must look at the
+page. This includes checks that ask an Agent to confirm appearance, spacing,
+contrast, or a screenshot. A rendered behaviour can stay `ready` only when an
+existing automated UI test asserts it and the Issue names that command.
+
+The Agent model is text-only and the Agent image has no browser. Never write an
+acceptance check that asks an Agent to install a browser, Playwright, Chromium,
+or to take screenshots. See
+`docs/adr/0002-visual-checks-are-human-in-the-loop.md`.
+
 Order the slices by what unblocks what. Express ordering only with
 `depends_on`: the titles of the Issues that must be implemented first. The graph
 must be acyclic.
@@ -60,8 +74,8 @@ Every Issue gets one of two intent labels:
 
 | Label | Meaning |
 | --- | --- |
-| `ready` | AFK work: an Agent can implement and verify it without the Developer. |
-| `needs-human` | HITL work: a decision, credential, external account or manual check only the Developer can do. |
+| `ready` | AFK work: an Agent can implement and verify it without the Developer. Every acceptance check names an executable command and its expected result. |
+| `needs-human` | HITL work: a decision, credential, external account or manual check only the Developer can do. Any visual check is manual. |
 
 Split HITL work out of an otherwise AFK slice instead of mixing both in one
 Issue. Do not label an Issue `blocked` or `refinement-needed`; ordering belongs
