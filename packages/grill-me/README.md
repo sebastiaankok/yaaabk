@@ -181,9 +181,10 @@ only Finish, Cancel, failure or a timeout stops it.
 ## Configuration
 
 - `YAAABK_SESSION_OPENCODE_CONFIG` — the OpenCode config sessions load. The
-  image ships one that lists `/app/skills` and registers the reporting MCP
-  server; Agent Jobs do not load it. Without it, OpenCode only discovers skills
-  from the project's own `.opencode/skills`.
+  image ships one that lists `/app/grill-skills` and `/app/skills` and registers
+  the reporting MCP server; Agent Jobs load `opencode-agent.json` instead, which
+  registers only the Agent skills. Without either config, OpenCode only
+  discovers skills from the project's own `.opencode/skills`.
 - `YAAABK_TTYD_BIN` and `YAAABK_OPENCODE_BIN` — the local adapter's binaries.
   Both default to `ttyd` and `opencode` on `PATH`.
 - `YAAABK_SESSION_CWD` — the local adapter's working directory.

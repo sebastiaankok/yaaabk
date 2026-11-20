@@ -54,14 +54,15 @@ export const OPENROUTER_SECRET_KEY = 'OPENROUTER_API_KEY';
 /** Key a run's GitHub token is stored under in its per-attempt Secret. */
 export const GITHUB_TOKEN_SECRET_KEY = 'GITHUB_TOKEN';
 
-/** Skill the implement-issue Job loads. */
-export const IMPLEMENT_SKILL_PATH = '/app/skills/implement-issue/SKILL.md';
-
-/** Skill the review Job loads. */
-export const REVIEW_SKILL_PATH = '/app/skills/review-pr/SKILL.md';
-
-/** Skill the conflict-resolution Job loads. */
-export const RESOLVE_CONFLICTS_SKILL_PATH = '/app/skills/resolve-conflicts/SKILL.md';
+/**
+ * OpenCode config an Agent Job loads.
+ *
+ * It registers the image-baked Agent skills, so the `skill` tool can load the
+ * name each prompt uses instead of the Agent reading the Markdown by hand.
+ * Sessions load `opencode-session.json` instead: it also registers the
+ * reporting MCP server, which a Job has no token for.
+ */
+export const AGENT_OPENCODE_CONFIG_PATH = '/app/opencode-agent.json';
 
 /** Label a failed deploy leaves on the Issue, so the Developer can find it. */
 export const DEPLOY_FAILED_LABEL = 'deploy-failed';

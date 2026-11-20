@@ -59,17 +59,18 @@ RUN . /tmp/runtime-versions.env && \
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/packages/agent/dist ./dist
-# The agent skills and the image-baked grill skills. Sessions load their skill
-# from the grill-skills directory rather than from the backend's filesystem.
+# The Agent skills and the image-baked Grill-Me skills. Both configs register
+# the Agent skills; the session config also registers the Grill-Me directory.
 COPY --from=build /app/packages/agent/skills ./skills
 COPY --from=build /app/packages/grill-me/skills/grill-me ./grill-skills/grill-me
 COPY --from=build /app/packages/grill-me/skills/to-prd ./grill-skills/to-prd
 COPY --from=build /app/packages/grill-me/skills/to-issues ./grill-skills/to-issues
 COPY --from=build /app/packages/grill-me/skills/simple-english ./grill-skills/simple-english
-# The reporting MCP server OpenCode starts for a session. Sessions load their
-# OpenCode config through OPENCODE_CONFIG so Agent Jobs never register a server
-# whose report token they do not have.
+# Two OpenCode configs: Agent Jobs register only the image-baked Agent skills,
+# while sessions also register the reporting MCP server. Splitting them keeps a
+# Job from starting a server whose report token it does not have.
 COPY --from=build /app/packages/grill-mcp/dist ./grill-mcp
+COPY --from=build /app/packages/agent/opencode-agent.json ./opencode-agent.json
 COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.json
 # kubectl does not discover the mounted ServiceAccount by itself; this points it
 # at the in-cluster API and lets the projected token authenticate every call.
@@ -80,7 +81,6 @@ COPY --from=build /app/packages/agent/kubeconfig.yaml ./kubeconfig.yaml
 COPY --from=project-cache /bun-cache /home/bun/.bun/install/cache
 RUN mkdir -p /work && chown -R bun:bun /work /home/bun/.bun
 ENV BUN_INSTALL_CACHE_DIR=/home/bun/.bun/install/cache
-ENV YAAABK_SKILL_PATH=/app/skills/implement-issue/SKILL.md
 ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
 ENV KUBECONFIG=/app/kubeconfig.yaml
 USER bun

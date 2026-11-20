@@ -45,7 +45,7 @@ instead of hanging it.
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "skills": ["/app/grill-skills"],
+  "skills": ["/app/skills", "/app/grill-skills"],
   "mcp": {
     "servers": {
       "yaaabk": {
@@ -62,7 +62,8 @@ instead of hanging it.
 direct call cannot fail because the model wrote invalid Code Mode JavaScript.
 Sessions load the file through `OPENCODE_CONFIG` (set from
 `YAAABK_SESSION_OPENCODE_CONFIG`), so Agent Jobs sharing the image do not
-register the server.
+register the server. Agent Jobs load `opencode-agent.json` instead, which lists
+only `/app/skills`.
 
 ## Protocol
 

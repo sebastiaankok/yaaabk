@@ -1,5 +1,5 @@
 ---
-name: yaaabk-review-pr
+name: review-pr
 description: YAAABK review agent. Use inside an agent Job to review one Agent-opened pull request in a checked-out repository — explore the codebase, judge the change against its Issue, and write an approve or request-changes verdict for YAAABK to post.
 ---
 

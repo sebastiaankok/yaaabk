@@ -1,5 +1,5 @@
 ---
-name: yaaabk-resolve-conflicts
+name: resolve-conflicts
 description: YAAABK resolve-conflicts agent. Use inside an agent Job on a pull request branch that conflicts with the default branch. The merge has already run; reconcile the conflict markers without reimplementing either Issue.
 ---
 

@@ -16,6 +16,7 @@ import {
 } from '@yaaabk/projects';
 import {
   AGENT_CONTAINER_SECURITY_CONTEXT,
+  AGENT_OPENCODE_CONFIG_PATH,
   AGENT_POD_SECURITY_CONTEXT,
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_IMAGE,
@@ -24,10 +25,7 @@ import {
   DEFAULT_MAX_CONCURRENT_PER_PROJECT,
   DEFAULT_PVC_STORAGE,
   DEPLOY_FAILED_LABEL,
-  IMPLEMENT_SKILL_PATH,
   OPENROUTER_SECRET_KEY,
-  RESOLVE_CONFLICTS_SKILL_PATH,
-  REVIEW_SKILL_PATH,
   WORKSPACE_MOUNT_PATH,
   WORKSPACE_VOLUME_NAME,
   githubTokenSecretName,
@@ -487,12 +485,7 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
           ? {}
           : {
               AGENT_MODEL: runModel ?? defaultModel,
-              YAAABK_SKILL_PATH:
-                run.kind === 'review'
-                  ? REVIEW_SKILL_PATH
-                  : run.kind === 'resolve-conflicts'
-                    ? RESOLVE_CONFLICTS_SKILL_PATH
-                    : IMPLEMENT_SKILL_PATH,
+              OPENCODE_CONFIG: AGENT_OPENCODE_CONFIG_PATH,
             }),
       };
       if (options.apiUrl !== undefined) {

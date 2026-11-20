@@ -10,10 +10,9 @@ import { createMockK8sClient, type K8sObject, type MockK8sClient } from '@yaaabk
 import { createInMemoryProjectStore, type Project, type ProjectStore } from '@yaaabk/projects';
 import { createAgentManager, type AgentManagerOptions } from './agent-manager';
 import {
+  AGENT_OPENCODE_CONFIG_PATH,
   DEFAULT_ACTIVE_DEADLINE_SECONDS,
   DEFAULT_AGENT_MODEL,
-  RESOLVE_CONFLICTS_SKILL_PATH,
-  REVIEW_SKILL_PATH,
 } from './config';
 import { silentLogger } from './errors';
 import { createInMemoryAgentStore } from './in-memory-agent-store';
@@ -233,6 +232,10 @@ describe('spawn', () => {
     expect(container.env).toContainEqual({
       name: 'REPO_URL',
       value: 'https://github.com/acme/todo-app',
+    });
+    expect(container.env).toContainEqual({
+      name: 'OPENCODE_CONFIG',
+      value: AGENT_OPENCODE_CONFIG_PATH,
     });
     expect(container.envFrom).toEqual([]);
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
@@ -1099,7 +1102,10 @@ describe('review runs', () => {
     expect(container.env).toContainEqual({ name: 'AGENT_RUN_KIND', value: 'review' });
     expect(container.env).toContainEqual({ name: 'PULL_NUMBER', value: '7' });
     expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
-    expect(container.env).toContainEqual({ name: 'YAAABK_SKILL_PATH', value: REVIEW_SKILL_PATH });
+    expect(container.env).toContainEqual({
+      name: 'OPENCODE_CONFIG',
+      value: AGENT_OPENCODE_CONFIG_PATH,
+    });
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
   });
 
@@ -1154,8 +1160,8 @@ describe('review runs', () => {
     expect(container.env).toContainEqual({ name: 'PULL_NUMBER', value: '7' });
     expect(container.env).toContainEqual({ name: 'BRANCH', value: 'agent/issue-42' });
     expect(container.env).toContainEqual({
-      name: 'YAAABK_SKILL_PATH',
-      value: RESOLVE_CONFLICTS_SKILL_PATH,
+      name: 'OPENCODE_CONFIG',
+      value: AGENT_OPENCODE_CONFIG_PATH,
     });
   });
 
@@ -1307,6 +1313,7 @@ describe('deploy runs', () => {
     expect(container.env).toContainEqual({ name: 'DEPLOY_PATH', value: 'deploy' });
     expect(container.env).toContainEqual({ name: 'DEPLOYMENT_NAME', value: 'todo-app' });
     expect(container.env).not.toContainEqual(expect.objectContaining({ name: 'AGENT_MODEL' }));
+    expect(container.env).not.toContainEqual(expect.objectContaining({ name: 'OPENCODE_CONFIG' }));
     expect(container.envFrom).toEqual([{ secretRef: { name: 'yaaabk-deploy-github-issue-1-1' } }]);
 
     // Does not consume an implement attempt or reopen the Issue.

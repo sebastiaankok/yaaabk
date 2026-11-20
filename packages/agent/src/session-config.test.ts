@@ -12,6 +12,34 @@ function sessionConfig(): {
   return JSON.parse(readFileSync(path, 'utf8')) as ReturnType<typeof sessionConfig>;
 }
 
+/** The OpenCode config an Agent Job loads. */
+function agentConfig(): { skills?: unknown } {
+  const path = fileURLToPath(new URL('../opencode-agent.json', import.meta.url));
+  return JSON.parse(readFileSync(path, 'utf8')) as ReturnType<typeof agentConfig>;
+}
+
+describe('the Agent Job OpenCode config', () => {
+  it('registers the image-baked Agent skills', () => {
+    expect(agentConfig().skills).toEqual(['/app/skills']);
+  });
+});
+
+function dockerfile(): string {
+  return readFileSync(fileURLToPath(new URL('../Dockerfile', import.meta.url)), 'utf8');
+}
+
+describe('the Agent image', () => {
+  it('ships the Agent Job OpenCode config', () => {
+    expect(dockerfile()).toContain(
+      'COPY --from=build /app/packages/agent/opencode-agent.json ./opencode-agent.json',
+    );
+  });
+
+  it('does not ship the unused skill path setting', () => {
+    expect(dockerfile()).not.toContain('YAAABK_SKILL_PATH');
+  });
+});
+
 describe('the session OpenCode config', () => {
   it('registers the reporting MCP server on the model tool list', () => {
     const server = sessionConfig().mcp?.servers?.['yaaabk'];
@@ -21,7 +49,8 @@ describe('the session OpenCode config', () => {
     expect(server?.codemode).toBe(false);
   });
 
-  it('loads the image-baked skills from the grill-skills directory', () => {
+  it('loads both the Agent and Grill-Me image-baked skills', () => {
+    expect(sessionConfig().skills).toContain('/app/skills');
     expect(sessionConfig().skills).toContain('/app/grill-skills');
   });
 
