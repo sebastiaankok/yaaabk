@@ -2,6 +2,17 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { ApiError, login, verifyTwoFactor } from '#lib/api.js';
+  import BrandLockup from '#lib/components/brand/brand-lockup.svelte';
+  import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
+  import { Button } from '#lib/components/ui/button/index.js';
+  import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+  } from '#lib/components/ui/card/index.js';
+  import { Input } from '#lib/components/ui/input/index.js';
 
   let username = $state('');
   let password = $state('');
@@ -45,73 +56,99 @@
   }
 </script>
 
-<main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-8">
-  <div class="space-y-1 text-center">
-    <h1 class="text-2xl font-bold tracking-tight">Sign in to YAAABK</h1>
-    <p class="text-sm text-neutral-500">
-      {pendingToken === null
-        ? 'Enter your username and password.'
-        : 'Enter the code from your authenticator app.'}
-    </p>
-  </div>
+<svelte:head>
+  <title>Sign in · YAAABK</title>
+</svelte:head>
 
-  {#if error !== null}
-    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
-  {/if}
+<main class="flex min-h-dvh items-center justify-center bg-surface-tint p-4 sm:p-6">
+  <Card
+    data-testid="auth-card"
+    class="w-full max-w-md shadow-elevation-2 [--card-spacing:--spacing(6)] sm:[--card-spacing:--spacing(8)]"
+  >
+    <CardHeader class="items-center gap-4 text-center">
+      <BrandLockup />
+      <div class="space-y-1">
+        <CardTitle
+          ><h1 class="text-2xl font-semibold tracking-tight">Sign in to YAAABK</h1></CardTitle
+        >
+        <CardDescription>
+          {pendingToken === null
+            ? 'Enter your username and password.'
+            : 'Enter the 6-digit code from your authenticator app.'}
+        </CardDescription>
+      </div>
+    </CardHeader>
 
-  {#if pendingToken === null}
-    <form class="flex flex-col gap-4" onsubmit={submitCredentials}>
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Username</span>
-        <input
-          class="rounded-md border border-neutral-300 px-3 py-2"
-          name="username"
-          autocomplete="username"
-          bind:value={username}
-          required
-        />
-      </label>
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Password</span>
-        <input
-          class="rounded-md border border-neutral-300 px-3 py-2"
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          bind:value={password}
-          required
-        />
-      </label>
-      <button
-        class="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        type="submit"
-        disabled={busy}
-      >
-        {busy ? 'Checking…' : 'Continue'}
-      </button>
-    </form>
-  {:else}
-    <form class="flex flex-col gap-4" onsubmit={submitCode}>
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="font-medium">Verification code</span>
-        <input
-          class="rounded-md border border-neutral-300 px-3 py-2 tracking-widest"
-          name="code"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          pattern="[0-9]*"
-          maxlength="6"
-          bind:value={code}
-          required
-        />
-      </label>
-      <button
-        class="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        type="submit"
-        disabled={busy}
-      >
-        {busy ? 'Signing in…' : 'Sign in'}
-      </button>
-    </form>
-  {/if}
+    <CardContent>
+      {#if error !== null}
+        <Alert variant="destructive" class="mb-4 border-destructive/30 bg-destructive-subtle">
+          <AlertDescription class="text-destructive">{error}</AlertDescription>
+        </Alert>
+      {/if}
+
+      {#if pendingToken === null}
+        <form class="flex flex-col gap-5" onsubmit={submitCredentials}>
+          <label class="grid gap-2 text-sm font-medium" for="username">
+            Username
+            <Input
+              id="username"
+              class="h-12 px-4 text-base"
+              name="username"
+              autocomplete="username"
+              bind:value={username}
+              required
+            />
+          </label>
+          <label class="grid gap-2 text-sm font-medium" for="password">
+            Password
+            <Input
+              id="password"
+              class="h-12 px-4 text-base"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              bind:value={password}
+              required
+            />
+          </label>
+          <Button class="h-12 w-full text-base" type="submit" disabled={busy}>
+            {busy ? 'Checking…' : 'Continue'}
+          </Button>
+        </form>
+      {:else}
+        <form class="flex flex-col gap-5" onsubmit={submitCode}>
+          <label class="grid gap-2 text-sm font-medium" for="code">
+            Verification code
+            <Input
+              id="code"
+              class="h-12 px-4 text-center font-mono text-lg tracking-[0.3em]"
+              name="code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="[0-9]*"
+              maxlength={6}
+              bind:value={code}
+              required
+            />
+          </label>
+          <Button class="h-12 w-full text-base" type="submit" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </Button>
+          <Button
+            class="h-11 w-full"
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onclick={() => {
+              pendingToken = null;
+              error = null;
+              code = '';
+            }}
+          >
+            Use a different account
+          </Button>
+        </form>
+      {/if}
+    </CardContent>
+  </Card>
 </main>
