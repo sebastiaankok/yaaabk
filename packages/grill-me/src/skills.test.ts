@@ -1,6 +1,12 @@
+import { relabelUnverifiableIssues } from '@yaaabk/shared';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+/** Reads a fixture in this package's `__fixtures__` directory. */
+function readFixture(path: string): string {
+  return readFileSync(fileURLToPath(new URL(`./__fixtures__/${path}`, import.meta.url)), 'utf8');
+}
 
 /** Reads a bundled skill by its OpenCode id (the directory name). */
 function readSkill(id: string): string {
@@ -287,6 +293,35 @@ describe('to-issues skill', () => {
 });
 
 describe('visual acceptance policy', () => {
+  it('turns a plan with visual-only criteria into needs-human Issues', () => {
+    const plan = readFixture('to-issues-visual-only/plan.md');
+    const issues = JSON.parse(readFixture('to-issues-visual-only/issues.json')) as Array<{
+      title: string;
+      body: string;
+      labels: string[];
+    }>;
+
+    // The fixture is the todo-app Plan that produced visual-only ready Issues.
+    expect(plan).toMatch(/1280px and 375px/);
+    expect(plan).toMatch(/focus ring/i);
+
+    const result = relabelUnverifiableIssues(issues);
+
+    expect(result.relabelled).toEqual([
+      'Centre the bookmark card',
+      'Show a focus ring on every control',
+      'Follow the browser theme in the tab title',
+      'Show an alert when the API fails',
+    ]);
+    expect(result.issues.map((issue) => issue.labels)).toEqual([
+      ['needs-human'],
+      ['needs-human'],
+      ['needs-human'],
+      ['needs-human'],
+      ['ready'],
+    ]);
+  });
+
   it('records that visual checks are human-in-the-loop', () => {
     const adr = readRepoFile('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
 
@@ -305,6 +340,24 @@ describe('visual acceptance policy', () => {
     expect(skill).toMatch(/visual|look at the page|screenshot/i);
     expect(skill).toContain('`needs-human`');
     expect(skill).toContain('docs/adr/0002-visual-checks-are-human-in-the-loop.md');
+  });
+
+  it('validates every ready Issue before report_issues', () => {
+    const skill = readSkill('to-issues');
+
+    expect(skill).toMatch(/before (you call )?`?report_issues`?/i);
+    expect(skill).toMatch(/validation/i);
+    expect(skill).toMatch(/runnable command/i);
+    expect(skill).toMatch(/expected result/i);
+    expect(skill).toMatch(/relabel|change the label|set .*needs-human/i);
+  });
+
+  it('carries an Issue body template with a runnable acceptance check', () => {
+    const skill = readSkill('to-issues');
+
+    expect(skill).toMatch(/^## Acceptance criteria$/m);
+    expect(skill).toMatch(/- \[ \] `.+` .+/);
+    expect(skill).not.toMatch(/confirm visually|read the page|tab through/i);
   });
 });
 

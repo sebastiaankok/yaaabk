@@ -18,7 +18,32 @@ describe('normaliseGeneratedIssues', () => {
           depends_on: [],
         },
       ],
+      relabelled: [],
     });
+  });
+
+  it('moves ready issues without an executable acceptance check to needs-human', () => {
+    const acceptance = (check: string) =>
+      `## What to build\n\nPersist it.\n\n## Acceptance criteria\n\n- [ ] ${check}`;
+    const result = normaliseGeneratedIssues([
+      {
+        title: 'Centre the card',
+        summary: 'Centre the card on the page.',
+        body: acceptance('Read the page and confirm that the card is centred.'),
+        labels: ['ready'],
+      },
+      {
+        title: 'Persist a bookmark',
+        summary: 'Persist a bookmark.',
+        body: acceptance('`bun test` passes and reports the new test.'),
+        labels: ['ready'],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.relabelled).toEqual(['Centre the card']);
+    expect(result.value.map((issue) => issue.labels)).toEqual([['needs-human'], ['ready']]);
   });
 
   it('normalises the summary whitespace', () => {

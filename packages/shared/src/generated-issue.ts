@@ -3,6 +3,7 @@
  * server. Shared so the server and the backend validate it identically.
  */
 
+import { relabelUnverifiableIssues } from './acceptance-check';
 import { normaliseSummary } from './summary';
 
 /** An issue as the agent reports it, before validation. */
@@ -17,7 +18,13 @@ export interface GeneratedIssueReport {
 
 /** Whether the reported issue list is acceptable. */
 export type GeneratedIssueReportResult =
-  { ok: true; value: GeneratedIssueReport[] } | { ok: false; message: string };
+  | {
+      ok: true;
+      value: GeneratedIssueReport[];
+      /** Titles moved from `ready` to `needs-human` because no check is executable. */
+      relabelled: string[];
+    }
+  | { ok: false; message: string };
 
 function stringArray(value: unknown): string[] | undefined {
   if (value === undefined) return [];
@@ -32,7 +39,8 @@ function stringArray(value: unknown): string[] | undefined {
  *
  * Rejects the whole list when any entry is malformed, so a session never stores
  * a half-formed draft. Every issue needs a valid summary. Optional `body`,
- * `labels` and `depends_on` default to an empty value.
+ * `labels` and `depends_on` default to an empty value. A `ready` issue whose
+ * body lacks an executable acceptance check is relabelled `needs-human`.
  */
 export function normaliseGeneratedIssues(value: unknown): GeneratedIssueReportResult {
   if (!Array.isArray(value)) {
@@ -68,5 +76,6 @@ export function normaliseGeneratedIssues(value: unknown): GeneratedIssueReportRe
       depends_on: parsedDependencies,
     });
   }
-  return { ok: true, value: issues };
+  const reviewed = relabelUnverifiableIssues(issues);
+  return { ok: true, value: reviewed.issues, relabelled: reviewed.relabelled };
 }

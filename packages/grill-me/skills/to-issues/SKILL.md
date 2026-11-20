@@ -64,6 +64,25 @@ acceptance check that asks an Agent to install a browser, Playwright, Chromium,
 or to take screenshots. See
 `docs/adr/0002-visual-checks-are-human-in-the-loop.md`.
 
+### Issue body template
+
+Every Issue body uses this shape. Replace the examples with real commands and
+real expected results for the slice:
+
+```markdown
+## What to build
+
+The behaviour, the affected modules and the data change (or "none").
+
+## Acceptance criteria
+
+- [ ] `bun test` passes and reports the new tests.
+```
+
+The acceptance bullet must start with a command in backticks. It must also say
+what a passing or failing result looks like. A statement like "the page looks
+right" is not an acceptance check.
+
 Order the slices by what unblocks what. Express ordering only with
 `depends_on`: the titles of the Issues that must be implemented first. The graph
 must be acyclic.
@@ -94,13 +113,32 @@ Developer:
   `depends_on` references that named it. Reflect every piece of feedback before
   asking the next question.
 - Re-check that every dependency title still exists and the graph is acyclic.
+- Re-check every acceptance check with the Developer's changes in place.
 - Stop when the Developer confirms the breakdown. If the Developer has no notes,
   say so and report it.
 
-In autonomous mode, skip this quiz: validate every dependency title and the
-acyclic graph yourself, then report the breakdown without waiting for feedback.
+In autonomous mode, skip this quiz: validate every dependency title, the
+acyclic graph and every acceptance check yourself, then report the breakdown
+without waiting for feedback.
 
-## 5. Report the list
+## 5. Validate acceptance checks
+
+Run this validation before you call `report_issues`, in both modes. For every
+Issue labelled `ready`:
+
+- [ ] The body has an `## Acceptance criteria` section.
+- [ ] Every bullet in that section starts with a runnable command and names the
+      expected result.
+- [ ] No bullet asks for a visual or manual decision.
+- [ ] The command can run in the Agent image. Do not name a browser, Playwright,
+      Chromium or a screenshot.
+
+If a bullet fails, do not invent a command. Either replace the visual check with
+a real automated check that the slice adds, or change the label to
+`needs-human`. Relabel the whole Issue when its only checks are manual. Run this
+validation again after every edit, and do not call the tool until it passes.
+
+## 6. Report the list
 
 Call the `report_issues` tool from the `yaaabk` MCP server with one array. Each
 entry has exactly these fields:
@@ -109,7 +147,7 @@ entry has exactly these fields:
 | --- | --- | --- |
 | `title` | string | Short, unique, imperative title. |
 | `summary` | string | One or two plain sentences, no Markdown, at most 200 characters. |
-| `body` | string | What to build as Markdown: behaviour, modules, data, testing. |
+| `body` | string | What to build as Markdown, with an `## Acceptance criteria` section that names a runnable command and its expected result. |
 | `labels` | string[] | `["ready"]` or `["needs-human"]`. |
 | `depends_on` | string[] | Titles of Issues that must land first; `[]` when none. |
 
@@ -119,14 +157,14 @@ entry has exactly these fields:
     {
       "title": "Save a bookmark end to end",
       "summary": "Let a Developer save a link and find it again.",
-      "body": "Add the bookmarks table and migration, a repository function, the save form and its tests.",
+      "body": "## What to build\n\nAdd the bookmarks table and migration, a repository function, the save form and its tests.\n\n## Acceptance criteria\n\n- [ ] `bun test` passes and reports the new bookmark tests.",
       "labels": ["ready"],
       "depends_on": []
     },
     {
       "title": "Search saved bookmarks by title and tag",
       "summary": "Let a Developer search saved bookmarks by title and tag.",
-      "body": "Add the search query, API and list filter. Depends on saving bookmarks.",
+      "body": "## What to build\n\nAdd the search query, API and list filter.\n\n## Acceptance criteria\n\n- [ ] `bun test` passes and reports the new search tests.",
       "labels": ["ready"],
       "depends_on": ["Save a bookmark end to end"]
     }
@@ -142,7 +180,7 @@ If the call fails with a connection error ("Connection closed", a timeout or a
 before concluding that anything was lost; a retry replaces the draft and is
 safe.
 
-## 6. Finish
+## 7. Finish
 
 Tell the Developer the Plan and Issues are ready as drafts. The Project changes
 only when they click **Finish** in YAAABK, which publishes both together. A
