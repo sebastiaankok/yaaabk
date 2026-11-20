@@ -351,6 +351,26 @@ describe('POST /api/projects/:id/plans/:planId/accept', () => {
     expect(document).not.toContain(plan);
   });
 
+  it('links every pushed Issue to the accepted Plan\u2019s decision record', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+    await newPlan(context, projectId, '# Previous');
+    const plan = await newPlan(context, projectId, '# Active');
+    await addPlanIssue(context, projectId, plan, { title: 'Schema' });
+    await addPlanIssue(context, projectId, plan, { title: 'API' });
+
+    const res = await request(context, session, `/api/projects/${projectId}/plans/${plan}/accept`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    const bodies = context.github.issues('acme/todo-app').map((issue) => issue.body);
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(body.startsWith('Plan: docs/plans/v2.md\n\n')).toBe(true);
+    }
+  });
+
   it('reports a Plan commit failure as sync-failed and leaves the plan unaccepted', async () => {
     const { context, session } = await signedIn();
     const projectId = await createProject(context);

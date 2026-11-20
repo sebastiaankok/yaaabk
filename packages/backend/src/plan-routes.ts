@@ -1,6 +1,11 @@
 import type { GitHubContents, IssueSyncModule } from '@yaaabk/github';
 import type { IssuesModule } from '@yaaabk/issues';
-import { renderAcceptedPlan, type PlanError, type PlansModule } from '@yaaabk/plans';
+import {
+  planDocumentPath,
+  renderAcceptedPlan,
+  type PlanError,
+  type PlansModule,
+} from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import type { ProjectMode } from '@yaaabk/shared';
 import { Hono } from 'hono';
@@ -126,7 +131,7 @@ export function planRoutes(
         });
         const committed = await contents.writeFile(
           project.repoFullName,
-          `docs/plans/v${plan.version}.md`,
+          planDocumentPath(plan.version),
           {
             content: document,
             message: `docs: record accepted Plan v${plan.version} [skip ci]`,

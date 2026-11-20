@@ -28,6 +28,13 @@ export interface IssueSyncModuleOptions {
   maxAttempts?: number;
   /** Base back-off between retries, in milliseconds. Defaults to 250. */
   retryDelayMs?: number;
+  /**
+   * Resolves the repository path of a Plan's decision record, e.g.
+   * `docs/plans/v2.md`. `@yaaabk/github` does not own Plans, so the backend
+   * injects this. Returning `null` (or omitting the resolver) leaves Issues
+   * without a Plan line.
+   */
+  planPath?: (projectId: string, planId: string) => Promise<string | null>;
   logger?: GitHubLogger;
 }
 
@@ -56,6 +63,7 @@ export function createIssueSyncModule(options: IssueSyncModuleOptions): IssueSyn
     options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const resolvePlanPath = options.planPath ?? (async () => null);
 
   function nowIso(): string {
     return now().toISOString();
@@ -146,11 +154,24 @@ export function createIssueSyncModule(options: IssueSyncModuleOptions): IssueSyn
 
     let created = 0;
     let updated = 0;
+    // A Plan's path is resolved once per push, however many Issues it owns.
+    const planPaths = new Map<string, string | null>();
     for (const issue of targets) {
-      const body = encodeIssueBody(issue.body, {
-        dependsOn: issue.dependsOn,
-        budgetCents: issue.budgetCents,
-      });
+      let planPath: string | null = null;
+      if (issue.planId !== null) {
+        if (!planPaths.has(issue.planId)) {
+          planPaths.set(issue.planId, await resolvePlanPath(projectId, issue.planId));
+        }
+        planPath = planPaths.get(issue.planId) ?? null;
+      }
+      const body = encodeIssueBody(
+        issue.body,
+        {
+          dependsOn: issue.dependsOn,
+          budgetCents: issue.budgetCents,
+        },
+        planPath,
+      );
       if (issue.githubNumber === null) {
         const result = await withRetry('create-issue', () =>
           github.createIssue(repoFullName, { title: issue.title, body, labels: [issue.label] }),

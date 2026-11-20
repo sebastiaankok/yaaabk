@@ -68,6 +68,7 @@ import {
   type GitHubTokenRequest,
   type ResolvedGitHubToken,
 } from './github-token';
+import { createPlanPathResolver } from './plan-path';
 import {
   createOpenRouterAgentKeys,
   createOpenRouterSessionKeys,
@@ -462,7 +463,11 @@ const projects = createProjectsModule({
   githubToken: resolveGithubTokenForScaffold,
   onRemoved: removeProjectArtifacts,
 });
-const issueSync = createIssueSyncModule({ issues, github: resolveGitHubIssues(settings) });
+const issueSync = createIssueSyncModule({
+  issues,
+  github: resolveGitHubIssues(settings),
+  planPath: createPlanPathResolver(plans),
+});
 
 /** Model used when neither the request nor the Project chooses one. */
 const defaultModel = process.env['YAAABK_DEFAULT_MODEL'] ?? DEFAULT_GRILL_MODEL;
