@@ -166,7 +166,7 @@ export function createPlansModule(options: PlansModuleOptions): PlansModule {
           throw plansError('not-acceptable', reason);
         }
 
-        const pushed = await acceptance.push();
+        const pushed = await acceptance.push(plan);
         if (!pushed.ok) {
           throw plansError('sync-failed', pushed.message);
         }

@@ -18,9 +18,11 @@ import {
   type GrillSessionsModule,
 } from '@yaaabk/grill-me';
 import {
+  createFakeGitHubContents,
   createFakeGitHubIssues,
   createFakeGitHubPulls,
   createIssueSyncModule,
+  type FakeGitHubContents,
   type FakeGitHubIssues,
   type FakeGitHubPulls,
   type IssueSyncModule,
@@ -144,6 +146,7 @@ export interface TestContext {
   issues: IssuesModule;
   issueSync: IssueSyncModule;
   github: FakeGitHubIssues;
+  contents: FakeGitHubContents;
   grillSessions: GrillSessionsModule;
   sessionRuntime: FakeSessionRuntime;
   sessionKeys: FakeSessionKeys;
@@ -245,6 +248,7 @@ export function createTestContext(
   });
 
   const github = createFakeGitHubIssues();
+  const contents = createFakeGitHubContents();
   const issueSync = createIssueSyncModule({
     issues,
     github,
@@ -311,6 +315,7 @@ export function createTestContext(
       plans,
       issues,
       issueSync,
+      contents,
       grillSessions,
       ...(overrides.upgradeWebSocket === undefined
         ? {}
@@ -332,6 +337,7 @@ export function createTestContext(
     issues,
     issueSync,
     github,
+    contents,
     grillSessions,
     sessionRuntime,
     sessionKeys,

@@ -1,6 +1,6 @@
-import type { IssueSyncModule } from '@yaaabk/github';
+import type { GitHubContents, IssueSyncModule } from '@yaaabk/github';
 import type { IssuesModule } from '@yaaabk/issues';
-import type { PlanError, PlansModule } from '@yaaabk/plans';
+import { renderAcceptedPlan, type PlanError, type PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
 import type { ProjectMode } from '@yaaabk/shared';
 import { Hono } from 'hono';
@@ -28,6 +28,7 @@ export function planRoutes(
   plans: PlansModule,
   issues: IssuesModule,
   issueSync: IssueSyncModule,
+  contents: GitHubContents,
 ): Hono {
   const app = new Hono();
 
@@ -111,7 +112,30 @@ export function planRoutes(
           };
         }),
       },
-      async push() {
+      async push(plan) {
+        const document = renderAcceptedPlan({
+          version: plan.version,
+          projectName: project.name,
+          contentMarkdown: plan.contentMarkdown,
+          acceptedAt: new Date().toISOString(),
+          issues: planIssues.map((issue) => ({
+            title: issue.title,
+            label: issue.label,
+            dependsOn: issue.dependsOn,
+          })),
+        });
+        const committed = await contents.writeFile(
+          project.repoFullName,
+          `docs/plans/v${plan.version}.md`,
+          {
+            content: document,
+            message: `docs: record accepted Plan v${plan.version} [skip ci]`,
+          },
+        );
+        if (!committed.ok) {
+          return { ok: false, message: committed.error.message };
+        }
+
         const pushed = await issueSync.push(project.id, project.repoFullName, { planId });
         return pushed.ok ? { ok: true } : { ok: false, message: pushed.error.message };
       },

@@ -62,8 +62,11 @@ export type PlanAcceptPush = { ok: true } | { ok: false; message: string };
 /** The facts and side effects `accept` needs from its caller. */
 export interface PlanAcceptance {
   facts: PlanAcceptanceFacts;
-  /** Syncs only this Plan's Issues to GitHub. Runs after the checks pass. */
-  push(): Promise<PlanAcceptPush>;
+  /**
+   * Records the accepted Plan and syncs only this Plan's Issues to GitHub. Runs
+   * after the checks pass, receiving the Plan that is about to be accepted.
+   */
+  push(plan: Plan): Promise<PlanAcceptPush>;
 }
 
 /** The values needed to save a new Plan version. */

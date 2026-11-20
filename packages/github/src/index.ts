@@ -7,5 +7,8 @@ export * from './issue-sync';
 export * from './pulls';
 export * from './github-pulls-client';
 export * from './fake-github-pulls';
+export * from './contents';
+export * from './github-contents-client';
+export * from './fake-github-contents';
 export * from './credential-verifier';
 export * from './installation-token';
