@@ -180,6 +180,26 @@ describe('createOpenRouterApi', () => {
     });
   });
 
+  it('resolves the management key before every request', async () => {
+    const { calls, fetch } = recordingFetch([
+      jsonResponse({ data: { total_credits: 10, total_usage: 1 } }),
+      jsonResponse({ data: { total_credits: 10, total_usage: 2 } }),
+    ]);
+    const keys = ['sk-or-first', 'sk-or-second'];
+    const api = createOpenRouterApi({
+      managementKey: async () => keys.shift() ?? 'sk-or-exhausted',
+      fetch,
+    });
+
+    await api.getCredits();
+    await api.getCredits();
+
+    expect(calls.map((call) => call.authorization)).toEqual([
+      'Bearer sk-or-first',
+      'Bearer sk-or-second',
+    ]);
+  });
+
   it('reports a transport failure as a network error', async () => {
     const fetchImpl = (() => Promise.reject(new Error('connection refused'))) as typeof fetch;
     const api = createOpenRouterApi({ managementKey: MANAGEMENT_KEY, fetch: fetchImpl });

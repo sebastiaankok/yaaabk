@@ -549,6 +549,19 @@ if (!reconciled.ok) {
 }
 
 /**
+ * Resolves the OpenRouter Management key for each request. The Cost Control
+ * Module outlives a Settings change, so reading the credential per call lets a
+ * saved key take effect without a backend restart.
+ */
+const resolveOpenrouterManagementKey = async (): Promise<string> => {
+  const stored = await settings.credentials();
+  const configured = stored.openrouterManagementKey?.trim();
+  return configured !== undefined && configured !== ''
+    ? configured
+    : (costControlConfig.managementKey ?? '');
+};
+
+/**
  * The Cost Control Module, built from the Settings credential store with the
  * environment as fallback. Without either, an empty management key makes every
  * OpenRouter call fail with a clear `unauthorized` error. Its budget store is
@@ -556,10 +569,7 @@ if (!reconciled.ok) {
  * attempts spent.
  */
 const issueBudgets = createCostControlModule({
-  api: createOpenRouterApi({
-    managementKey:
-      bootstrapCredentials.openrouterManagementKey ?? costControlConfig.managementKey ?? '',
-  }),
+  api: createOpenRouterApi({ managementKey: resolveOpenrouterManagementKey }),
   store: createSqliteBudgetStore(database),
   defaultBudgetCents:
     bootstrapCredentials.defaultIssueBudgetCents ?? costControlConfig.defaultBudgetCents,

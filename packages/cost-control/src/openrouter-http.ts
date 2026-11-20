@@ -11,9 +11,18 @@ import type {
 /** OpenRouter's production API root. */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
+/**
+ * The Management API key, or a function that resolves it.
+ *
+ * A function lets a long-lived module pick up a key saved in Settings without
+ * a restart; it runs before every request, so a request never carries a key the
+ * caller has since replaced.
+ */
+export type ManagementKey = string | (() => string | Promise<string>);
+
 export interface OpenRouterApiOptions {
   /** The Management API key; never sent to the agent or logged. */
-  managementKey: string;
+  managementKey: ManagementKey;
   /** Overrides {@link OPENROUTER_BASE_URL}, mainly for tests and proxies. */
   baseUrl?: string;
   /** Injected HTTP client. Defaults to the global `fetch`. */
@@ -56,12 +65,16 @@ function toOpenRouterKey(data: KeyPayload): OpenRouterKey {
 export function createOpenRouterApi(options: OpenRouterApiOptions): OpenRouterApi {
   const baseUrl = (options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/$/, '');
   const doFetch = options.fetch ?? globalThis.fetch;
-  const headers = {
-    Authorization: `Bearer ${options.managementKey}`,
-    'Content-Type': 'application/json',
-  };
 
   async function request(path: string, init: RequestInit): Promise<unknown> {
+    const managementKey =
+      typeof options.managementKey === 'function'
+        ? await options.managementKey()
+        : options.managementKey;
+    const headers = {
+      Authorization: `Bearer ${managementKey}`,
+      'Content-Type': 'application/json',
+    };
     let response: Response;
     try {
       response = await doFetch(`${baseUrl}${path}`, { ...init, headers });
