@@ -146,7 +146,8 @@ test('lists the plan versions and shows the active plan with its issues by wave'
 
 test('renders the Plan and Issue Markdown with typography', async ({ page }) => {
   const state = await mockReview(page);
-  const contentMarkdown = '## Outcomes\n\n- Ship the board';
+  const contentMarkdown =
+    '## Outcomes\n\n- Ship the board\n\n<img src="x" onerror="window.__pwned = true">';
   state.plans = [{ ...PLAN, contentMarkdown }];
   state.issues = [
     issue({
@@ -181,6 +182,8 @@ test('renders the Plan and Issue Markdown with typography', async ({ page }) => 
     return getComputedStyle(element).listStyleType;
   });
   expect(listStyle).toBe('disc');
+
+  await expect.poll(() => page.evaluate(() => '__pwned' in window)).toBe(false);
 });
 
 test('shows every issue of the selected plan, including closed ones', async ({ page }) => {

@@ -212,7 +212,7 @@ async function mockTerminal(page: Page): Promise<TerminalMock> {
   };
 }
 
-test('shows the project and its active plan', async ({ page }) => {
+test('shows the project, its agent session and plan versions', async ({ page }) => {
   await mockProject(page);
 
   await page.goto('/projects/p1/plan');
@@ -220,49 +220,10 @@ test('shows the project and its active plan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
   await expect(page.getByText('A todo list')).toBeVisible();
   await expect(page.getByText('Guided', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
-  await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();
-});
-
-test('renders the Plan Markdown with typography and sanitizes it', async ({ page }) => {
-  await mockProject(page);
-  const contentMarkdown = [
-    '# Plan',
-    '',
-    '## Goals',
-    '',
-    '- Save bookmarks',
-    '- Search bookmarks',
-    '',
-    '| Field | Type |',
-    '| ----- | ---- |',
-    '| url   | text |',
-    '',
-    '<img src="x" onerror="window.__pwned = true">',
-  ].join('\n');
-  await page.route('**/api/projects/p1/plans', (route) =>
-    route.fulfill({ json: { plans: [{ ...PLAN, contentMarkdown }] } }),
-  );
-  await page.route('**/api/projects/p1/plans/active', (route) =>
-    route.fulfill({ json: { ...PLAN, contentMarkdown } }),
-  );
-
-  await page.goto('/projects/p1/plan');
-
-  const plan = page.locator('section[aria-labelledby="active-plan-heading"]');
-  await expect(plan.getByText('A plan for saving bookmarks.')).toBeVisible();
-  await expect(plan.getByRole('heading', { level: 2, name: 'Goals' })).toBeHidden();
-  await plan.getByText('Show full plan').click();
-  await expect(plan.getByRole('heading', { level: 2, name: 'Goals' })).toBeVisible();
-  await expect(plan.getByRole('listitem')).toHaveCount(2);
-  await expect(plan.getByRole('table')).toBeVisible();
-  const listStyle = await plan.locator('ul').evaluate((element) => {
-    return getComputedStyle(element).listStyleType;
-  });
-  expect(listStyle).toBe('disc');
-
-  await expect.poll(() => page.evaluate(() => '__pwned' in window)).toBe(false);
+  await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 2, name: 'Issues' })).toHaveCount(0);
 });
 
 test('preselects the Project model and starts the session with it', async ({ page }) => {
@@ -427,7 +388,7 @@ test('a refresh never lands in fullscreen', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Fullscreen terminal' })).toHaveCount(0);
 });
 
-test('finishes a session and shows the published Plan and Issues', async ({ page }) => {
+test('finishes a session and shows the published plan version', async ({ page }) => {
   await mockProject(page, { activeSession: SESSION, issues: [ISSUE] });
   await mockTerminal(page);
 
@@ -435,9 +396,7 @@ test('finishes a session and shows the published Plan and Issues', async ({ page
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
 
   await expect(page.getByText('Published Plan v1 and 1 issue.')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Issues' })).toBeVisible();
-  await expect(page.getByText('Save a bookmark')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
   await expect(page.getByLabel('Your idea')).toBeVisible();
 });
 
@@ -487,29 +446,26 @@ test('shows the reason a session could not start', async ({ page }) => {
 
 test('activates an earlier plan version', async ({ page }) => {
   await mockProject(page);
+  const versions = [
+    { ...PLAN, id: 'v2', version: 2, contentMarkdown: '# Plan v2' },
+    { ...PLAN, id: 'v1', version: 1, contentMarkdown: '# Plan v1' },
+  ].map((plan) => ({ ...plan, isActive: plan.id === 'v2' }));
   await page.route('**/api/projects/p1/plans', (route) =>
-    route.fulfill({
-      json: {
-        plans: [
-          { ...PLAN, id: 'v2', version: 2, isActive: true, contentMarkdown: '# Plan v2' },
-          { ...PLAN, id: 'v1', version: 1, isActive: false, contentMarkdown: '# Plan v1' },
-        ],
-      },
-    }),
+    route.fulfill({ json: { plans: versions } }),
   );
-  await page.route('**/api/projects/p1/plans/active', (route) =>
-    route.fulfill({
-      json: { ...PLAN, id: 'v2', version: 2, isActive: true, contentMarkdown: '# Plan v2' },
-    }),
-  );
-  await page.route('**/api/projects/p1/plans/v1/activate', (route) =>
-    route.fulfill({ json: { ...PLAN, id: 'v1', version: 1, isActive: true } }),
-  );
+  await page.route('**/api/projects/p1/plans/v1/activate', (route) => {
+    for (const version of versions) version.isActive = version.id === 'v1';
+    return route.fulfill({ json: versions.find((version) => version.id === 'v1') });
+  });
 
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Activate' }).click();
 
-  await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toBeVisible();
+  const previous = page
+    .locator('section[aria-labelledby="versions-heading"]')
+    .getByRole('listitem')
+    .filter({ hasText: 'v1' });
+  await expect(previous.getByText(/\bactive\b/)).toBeVisible();
 });
 
 test('shows each version\u2019s lifecycle status and links it to review', async ({ page }) => {
