@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canForceFinish, finishHint } from './grill-finish';
+import { canForceFinish, finishHint, isFinishReady } from './grill-finish';
 
 describe('canForceFinish', () => {
   it('offers a forced publish only when the PRD exists and just the Issues are missing', () => {
@@ -7,6 +7,16 @@ describe('canForceFinish', () => {
     expect(canForceFinish(['prd'])).toBe(false);
     expect(canForceFinish(['prd', 'issues'])).toBe(false);
     expect(canForceFinish([])).toBe(false);
+  });
+});
+
+describe('isFinishReady', () => {
+  it('is ready only when the agent has drafted both a Plan and at least one Issue', () => {
+    expect(isFinishReady({ hasPrd: true, issueCount: 1 })).toBe(true);
+    expect(isFinishReady({ hasPrd: true, issueCount: 3 })).toBe(true);
+    expect(isFinishReady({ hasPrd: true, issueCount: 0 })).toBe(false);
+    expect(isFinishReady({ hasPrd: false, issueCount: 1 })).toBe(false);
+    expect(isFinishReady({ hasPrd: false, issueCount: 0 })).toBe(false);
   });
 });
 

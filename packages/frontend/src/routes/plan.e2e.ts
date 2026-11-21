@@ -146,6 +146,13 @@ async function mockProject(page: Page, options: MockOptions = {}): Promise<void>
         : { json: active },
     );
   });
+  await page.route('**/api/projects/p1/grill/s1', (route) =>
+    route.fulfill(
+      active === null
+        ? { status: 404, json: { error: 'not-found', message: 'No active grill session' } }
+        : { json: active },
+    ),
+  );
   await page.route('**/api/projects/p1/grill/s1/cancel', (route) =>
     route.fulfill({
       json: {
@@ -342,6 +349,20 @@ test('shows the session toolbar with model, health, draft counts and actions', a
   await expect(toolbar.getByRole('button', { name: 'Cancel session' })).toBeVisible();
 });
 
+test('pulses Finish once the agent has drafted a Plan and its Issues', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+
+  const finish = page.getByRole('button', { name: 'Finish', exact: true });
+  await expect(finish).toHaveAttribute('data-finish-ready', 'true');
+  await expect(finish).toHaveClass(/animate-pulse/);
+  await expect(page.locator('[data-testid="finish-ready-announcement"]')).toHaveText(
+    /Plan and its Issues/,
+  );
+});
+
 test('reconnects to a running session after a refresh', async ({ page }) => {
   await mockProject(page, { activeSession: SESSION });
   await mockTerminal(page);
@@ -470,6 +491,10 @@ test('warns before publishing an incomplete session and forces on request', asyn
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
 
   await expect(page.getByText('Cannot finish: an issue list missing')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Finish', exact: true })).not.toHaveAttribute(
+    'data-finish-ready',
+    'true',
+  );
   await page.getByRole('button', { name: 'Publish anyway' }).click();
 
   await expect(page.getByText(/Published Plan/)).toBeVisible();
