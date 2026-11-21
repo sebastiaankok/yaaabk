@@ -2,7 +2,8 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { ArrowUpDown, SlidersHorizontal, X } from '@lucide/svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import type { AgentRun } from '@yaaabk/agents';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Plan } from '@yaaabk/plans';
@@ -34,6 +35,10 @@
   import { isAtBottom } from '#lib/scroll.js';
   import PageHeader from '#lib/components/page-header.svelte';
   import ProjectTabs from '#lib/components/project-tabs.svelte';
+  import { Badge } from '#lib/components/ui/badge/index.js';
+  import { Button } from '#lib/components/ui/button/index.js';
+  import { Input } from '#lib/components/ui/input/index.js';
+  import { Skeleton } from '#lib/components/ui/skeleton/index.js';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
   import { resolveShell } from '#lib/shell.js';
   import { SUMMARY_MAX_LENGTH, summaryForIssue, validateSummary } from '#lib/summary.js';
@@ -41,15 +46,17 @@
     BOARD_COLUMNS,
     BOARD_COLUMN_LABELS,
     BOARD_LABELS,
-    boardItems,
+    boardView,
     budgetRemaining,
     dependencyEdges,
     issueIdFromParam,
     pullRequestNumber,
     spendByIssue,
+    withoutChip,
     type BoardColumn,
-    type BoardItem,
+    type BoardFilterChip,
     type BoardSort,
+    type BoardViewFilters,
   } from '#lib/issue-board.js';
 
   const projectId = $derived(page.params.id);
@@ -65,14 +72,18 @@
   let busy = $state(false);
 
   let searchText = $state('');
-  let labelFilter = $state('');
-  let laneFilter = $state('');
+  let labelFilter = $state<IssueLabel | ''>('');
+  let laneFilter = $state<BoardColumn | ''>('');
   let waveFilter = $state('');
   let sort = $state<BoardSort>('wave');
   /** Whether the closed lane is shown; history is off by default. */
   let showClosed = $state(false);
   /** Whether earlier Plans are shown; the board follows the active Plan. */
   let showEarlierPlans = $state(false);
+  /** Whether the Filters popover is open. */
+  let filtersOpen = $state(false);
+  let filterButton = $state<HTMLButtonElement | null>(null);
+  let filtersPanel = $state<HTMLElement | null>(null);
   let selectedId = $state<string | null>(null);
   let editing = $state(false);
   let draftTitle = $state('');
@@ -106,54 +117,33 @@
   }
   let arrows = $state<Arrow[]>([]);
 
-  /** The waves the graph actually contains, ascending, for the filter options. */
-  const waves = $derived(
-    [
-      ...new Set(
-        (graph?.nodes ?? [])
-          .map((node) => node.wave)
-          .filter((wave): wave is number => wave !== null),
-      ),
-    ].sort((a, b) => a - b),
-  );
+  /** The narrowing filters, in the shape the board view model consumes. */
+  const filters = $derived<BoardViewFilters>({
+    text: searchText,
+    ...(labelFilter === '' ? {} : { label: labelFilter }),
+    ...(laneFilter === '' ? {} : { column: laneFilter }),
+    ...(waveFilter === '' ? {} : { wave: waveFilter === 'null' ? null : Number(waveFilter) }),
+  });
 
-  const hasUnordered = $derived((graph?.nodes ?? []).some((node) => node.wave === null));
-
-  /** The closed lane only exists while history is on screen. */
-  const includeClosed = $derived(showClosed || laneFilter === 'closed');
-
-  /** The lanes the board draws. */
-  const columns = $derived(BOARD_COLUMNS.filter((column) => column !== 'closed' || includeClosed));
-
-  /** The Plan the board follows; `undefined` means every Plan. */
-  const scopedPlanId = $derived(showEarlierPlans || plan === null ? undefined : plan.id);
-
-  const items = $derived<BoardItem[]>(
+  /**
+   * One model for the whole board: scope, filters, lanes, counts, chips and the
+   * earlier-Plan work the active Plan is hiding. The desktop columns and the
+   * later phone tabs are projections of this.
+   */
+  const view = $derived(
     graph === null
-      ? []
-      : boardItems(issues, graph, {
-          filters: {
-            text: searchText,
-            label: labelFilter === '' ? undefined : (labelFilter as IssueLabel),
-            column: laneFilter === '' ? undefined : (laneFilter as BoardColumn),
-            wave: waveFilter === '' ? undefined : waveFilter === 'null' ? null : Number(waveFilter),
-          },
+      ? null
+      : boardView(issues, graph, {
+          filters,
           sort,
-          includeClosed,
-          ...(scopedPlanId === undefined ? {} : { planId: scopedPlanId }),
+          showClosed,
+          showEarlierPlans,
+          activePlan: plan,
         }),
   );
 
-  /**
-   * Open Issues from earlier Plans. The board follows the active Plan but the
-   * Agent Manager still works the whole Project, so hiding these silently would
-   * hide work that is actually moving.
-   */
-  const earlierWork = $derived.by(() => {
-    const active = plan;
-    if (active === null || showEarlierPlans) return [];
-    return issues.filter((issue) => issue.status !== 'closed' && issue.planId !== active.id);
-  });
+  /** The lanes the page draws; the closed lane only while history is on. */
+  const lanes = $derived((view?.lanes ?? []).filter((lane) => lane.visible));
 
   const spend = $derived(spendByIssue(runs));
 
@@ -226,8 +216,41 @@
       : `in ${formatTokens(tokenSummary.breakdown.input)} · out ${formatTokens(tokenSummary.breakdown.output)} · cached ${formatTokens(tokenSummary.breakdown.cached)}`,
   );
 
-  function columnItems(column: BoardColumn): BoardItem[] {
-    return items.filter((item) => item.column === column);
+  /** Applies a filter state back to the toolbar, field by field. */
+  function applyFilters(next: BoardViewFilters): void {
+    searchText = next.text ?? '';
+    labelFilter = next.label ?? '';
+    laneFilter = next.column ?? '';
+    waveFilter = next.wave === undefined ? '' : next.wave === null ? 'null' : String(next.wave);
+  }
+
+  /** Removes one chip and leaves every other filter exactly as it was. */
+  function removeChip(chip: BoardFilterChip): void {
+    applyFilters(withoutChip(filters, chip));
+  }
+
+  function clearFilters(): void {
+    applyFilters({});
+  }
+
+  async function openFilters(): Promise<void> {
+    filtersOpen = true;
+    await tick();
+    filtersPanel?.querySelector<HTMLElement>('select, input')?.focus();
+  }
+
+  async function closeFilters(restoreFocus = true): Promise<void> {
+    filtersOpen = false;
+    if (!restoreFocus) return;
+    await tick();
+    filterButton?.focus();
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && filtersOpen) {
+      event.preventDefault();
+      void closeFilters();
+    }
   }
 
   /** Schedules a fresh agent attempt, then reloads the run history. */
@@ -364,7 +387,9 @@
    * simply have no arrow.
    */
   function measure(): void {
-    if (boardEl === null || graph === null) {
+    // Below `md` the lanes stack, so an arrow between them would point across
+    // a break rather than between side-by-side columns.
+    if (boardEl === null || graph === null || !window.matchMedia('(min-width: 768px)').matches) {
       arrows = [];
       return;
     }
@@ -379,17 +404,29 @@
       const from = rects[edge.from] as DOMRect | undefined;
       const to = rects[edge.to] as DOMRect | undefined;
       if (from === undefined || to === undefined) return [];
-      const x1 = from.left - base.left + from.width / 2;
-      const y1 = from.top - base.top + from.height / 2;
-      const x2 = to.left - base.left + to.width / 2;
-      const y2 = to.top - base.top + to.height / 2;
-      const midY = (y1 + y2) / 2;
-      return [
-        {
-          key: `${edge.from}->${edge.to}`,
-          d: `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`,
-        },
-      ];
+
+      const fromX = from.left - base.left;
+      const fromY = from.top - base.top;
+      const toX = to.left - base.left;
+      const toY = to.top - base.top;
+      const sideBySide = Math.abs(toX - fromX) >= 8;
+
+      // Anchor on the facing edges so a line never runs through a card. Cards
+      // in different lanes join side to side; cards stacked in one lane join
+      // bottom to top.
+      const x1 = sideBySide ? (toX > fromX ? fromX + from.width : fromX) : fromX + from.width / 2;
+      const y1 = sideBySide ? fromY + from.height / 2 : toY > fromY ? fromY + from.height : fromY;
+      const x2 = sideBySide ? (toX > fromX ? toX : toX + to.width) : toX + to.width / 2;
+      const y2 = sideBySide ? toY + to.height / 2 : toY > fromY ? toY : toY + to.height;
+
+      const reach = sideBySide
+        ? Math.min(48, Math.max(12, Math.abs(x2 - x1) / 2))
+        : Math.min(48, Math.max(12, Math.abs(y2 - y1) / 2));
+      const d = sideBySide
+        ? `M ${x1} ${y1} C ${x1 + (x2 > x1 ? reach : -reach)} ${y1}, ${x2 - (x2 > x1 ? reach : -reach)} ${y2}, ${x2} ${y2}`
+        : `M ${x1} ${y1} C ${x1} ${y1 + (y2 > y1 ? reach : -reach)}, ${x2} ${y2 - (y2 > y1 ? reach : -reach)}, ${x2} ${y2}`;
+
+      return [{ key: `${edge.from}->${edge.to}`, d }];
     });
   }
 
@@ -423,7 +460,7 @@
 
   // Re-measure after anything that can move a card: the visible set or layout.
   $effect(() => {
-    void items;
+    void view;
     void selectedId;
     void boardEl;
     void graph;
@@ -626,9 +663,20 @@
   <title>{project ? `${project.name} · Issues` : 'Issues'} · YAAABK</title>
 </svelte:head>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
   {#if loading}
-    <p class="text-sm text-muted-foreground">Loading the board…</p>
+    <div class="flex flex-col gap-4" aria-busy="true" aria-label="Loading the issue board">
+      <Skeleton class="h-9 w-64" />
+      <Skeleton class="h-5 w-96 max-w-full" />
+      <Skeleton class="h-14 w-full rounded-xl" />
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {#each [0, 1, 2, 3] as lane (lane)}
+          <Skeleton class="h-72 w-full rounded-xl" />
+        {/each}
+      </div>
+    </div>
   {:else if error !== null && project === null}
     <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
       {error}
@@ -679,102 +727,164 @@
       </div>
     {/if}
 
-    {#if earlierWork.length > 0}
-      <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
-        {earlierWork.length} open
-        {earlierWork.length === 1 ? 'issue belongs' : 'issues belong'} to an earlier Plan and
-        {earlierWork.length === 1 ? 'is' : 'are'} still being worked.
+    {#if view !== null && view.earlierWork.length > 0}
+      <p class="rounded-lg bg-warning-subtle px-3 py-2 text-sm text-warning" role="status">
+        {view.earlierWork.length} open
+        {view.earlierWork.length === 1 ? 'issue belongs' : 'issues belong'} to an earlier Plan and
+        {view.earlierWork.length === 1 ? 'is' : 'are'} still being worked.
       </p>
     {/if}
 
-    <section
-      class="grid gap-3 rounded-lg border border-neutral-200 p-3 sm:grid-cols-2 xl:grid-cols-4"
-      aria-label="Filters"
+    <div
+      class="sticky top-14 z-20 -mx-2 flex flex-col gap-2 rounded-xl border border-border-subtle bg-background/95 px-2 py-2 shadow-elevation-1 backdrop-blur lg:top-0"
+      data-testid="board-toolbar"
     >
-      <label class="flex flex-col gap-1 text-xs text-neutral-500">
-        Search
-        <input
+      <div class="flex flex-wrap items-center gap-2">
+        <Input
           type="search"
           aria-label="Search issues"
           bind:value={searchText}
-          placeholder="Search titles, summaries and bodies"
-          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+          placeholder="Search issues"
+          class="h-9 flex-1 sm:max-w-sm"
         />
-      </label>
 
-      <label class="flex flex-col gap-1 text-xs text-neutral-500">
-        Label
-        <select
-          aria-label="Filter by label"
-          bind:value={labelFilter}
-          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-        >
-          <option value="">All labels</option>
-          {#each BOARD_LABELS as label (label)}
-            <option value={label}>{label}</option>
-          {/each}
-        </select>
-      </label>
+        <div class="relative">
+          <Button
+            variant="outline"
+            size="lg"
+            bind:ref={filterButton}
+            aria-expanded={filtersOpen}
+            aria-controls="board-filters"
+            onclick={() => (filtersOpen ? void closeFilters(false) : void openFilters())}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            Filters
+            {#if view !== null && view.chips.length > 0}
+              <Badge variant="secondary">{view.chips.length}</Badge>
+            {/if}
+          </Button>
 
-      <label class="flex flex-col gap-1 text-xs text-neutral-500">
-        Lane
-        <select
-          aria-label="Filter by lane"
-          bind:value={laneFilter}
-          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-        >
-          <option value="">All lanes</option>
-          {#each BOARD_COLUMNS as column (column)}
-            <option value={column}>{BOARD_COLUMN_LABELS[column]}</option>
-          {/each}
-        </select>
-      </label>
+          {#if filtersOpen}
+            <button
+              type="button"
+              tabindex="-1"
+              aria-label="Close filters"
+              class="fixed inset-0 z-20 cursor-default"
+              onclick={() => void closeFilters(false)}
+            ></button>
+            <div
+              id="board-filters"
+              bind:this={filtersPanel}
+              role="group"
+              aria-label="Filters"
+              class="absolute left-0 z-30 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border border-border-subtle bg-popover p-3 shadow-elevation-overlay"
+            >
+              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Label
+                <select
+                  aria-label="Filter by label"
+                  bind:value={labelFilter}
+                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <option value="">All labels</option>
+                  {#each BOARD_LABELS as label (label)}
+                    <option value={label}>{label}</option>
+                  {/each}
+                </select>
+              </label>
 
-      <label class="flex flex-col gap-1 text-xs text-neutral-500">
-        Wave
-        <select
-          aria-label="Filter by wave"
-          bind:value={waveFilter}
-          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-        >
-          <option value="">All waves</option>
-          {#each waves as wave (wave)}
-            <option value={String(wave)}>Wave {wave}</option>
-          {/each}
-          {#if hasUnordered}
-            <option value="null">Unordered</option>
+              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Lane
+                <select
+                  aria-label="Filter by lane"
+                  bind:value={laneFilter}
+                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <option value="">All lanes</option>
+                  {#each BOARD_COLUMNS as column (column)}
+                    <option value={column}>{BOARD_COLUMN_LABELS[column]}</option>
+                  {/each}
+                </select>
+              </label>
+
+              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Wave
+                <select
+                  aria-label="Filter by wave"
+                  bind:value={waveFilter}
+                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <option value="">All waves</option>
+                  {#each view?.waves ?? [] as wave (wave)}
+                    <option value={String(wave)}>Wave {wave}</option>
+                  {/each}
+                  {#if view?.hasUnordered}
+                    <option value="null">Unordered</option>
+                  {/if}
+                </select>
+              </label>
+
+              <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" aria-label="Show closed issues" bind:checked={showClosed} />
+                Show closed
+              </label>
+
+              <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  aria-label="Show earlier plans"
+                  bind:checked={showEarlierPlans}
+                  disabled={plan === null}
+                />
+                Show earlier plans
+              </label>
+            </div>
           {/if}
-        </select>
-      </label>
+        </div>
 
-      <label class="flex flex-col gap-1 text-xs text-neutral-500">
-        Sort
-        <select
-          aria-label="Sort issues"
-          bind:value={sort}
-          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+        <div class="flex items-center gap-1.5">
+          <ArrowUpDown class="size-4 text-muted-foreground" aria-hidden="true" />
+          <select
+            aria-label="Sort issues"
+            bind:value={sort}
+            class="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            <option value="wave">Wave</option>
+            <option value="created">Creation date</option>
+            <option value="title">Title</option>
+          </select>
+        </div>
+
+        <p
+          class="ml-auto text-sm text-muted-foreground"
+          data-testid="board-count"
+          aria-live="polite"
         >
-          <option value="wave">Wave</option>
-          <option value="created">Creation date</option>
-          <option value="title">Title</option>
-        </select>
-      </label>
+          Showing {view?.count ?? 0} of {view?.total ?? 0} issues
+        </p>
+      </div>
 
-      <label class="flex items-center gap-2 pb-1 text-xs text-neutral-600">
-        <input type="checkbox" aria-label="Show closed issues" bind:checked={showClosed} />
-        Show closed
-      </label>
-
-      <label class="flex items-center gap-2 pb-1 text-xs text-neutral-600">
-        <input
-          type="checkbox"
-          aria-label="Show earlier plans"
-          bind:checked={showEarlierPlans}
-          disabled={plan === null}
-        />
-        Show earlier plans
-      </label>
-    </section>
+      {#if view !== null && view.chips.length > 0}
+        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Active filters">
+          {#each view.chips as chip (chip.kind)}
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+            >
+              {chip.label}
+              <button
+                type="button"
+                aria-label={`Remove filter ${chip.label}`}
+                onclick={() => removeChip(chip)}
+                class="rounded-full p-0.5 hover:bg-secondary-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <X class="size-3" aria-hidden="true" />
+              </button>
+            </span>
+          {/each}
+          <Button variant="ghost" size="xs" onclick={clearFilters}>Clear all</Button>
+        </div>
+      {/if}
+    </div>
 
     <div
       class="relative"
@@ -783,52 +893,65 @@
       bind:clientHeight={boardHeight}
     >
       <div
-        class="grid gap-4 md:grid-cols-2 {columns.length > 4 ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}"
+        class="grid items-start gap-4 md:grid-cols-2 {lanes.length > 4
+          ? 'xl:grid-cols-5'
+          : 'xl:grid-cols-4'}"
       >
-        {#each columns as column (column)}
-          {@const columnList = columnItems(column)}
+        {#each lanes as lane (lane.column)}
           <section
-            class="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3"
-            aria-label={BOARD_COLUMN_LABELS[column]}
+            class="flex min-h-40 flex-col gap-3 rounded-xl border border-border-subtle bg-surface p-3"
+            aria-labelledby={`lane-${lane.column}-heading`}
           >
-            <h2 class="flex items-center justify-between text-sm font-semibold">
-              {BOARD_COLUMN_LABELS[column]}
-              <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-                {columnList.length}
-              </span>
+            <h2
+              id={`lane-${lane.column}-heading`}
+              class="flex items-center justify-between gap-2 text-sm font-semibold text-foreground"
+            >
+              {lane.label}
+              <Badge variant="outline" class="bg-background">{lane.count}</Badge>
             </h2>
 
-            {#if columnList.length === 0}
-              <p class="text-xs text-neutral-400">Nothing here</p>
+            {#if lane.items.length === 0}
+              <p
+                class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-muted-foreground"
+              >
+                {view !== null && view.total === 0
+                  ? 'No Issues in this Plan yet.'
+                  : 'No Issues match the current filters.'}
+              </p>
             {:else}
               <ul class="flex flex-col gap-2">
-                {#each columnList as item (item.issue.id)}
+                {#each lane.items as item (item.issue.id)}
                   <li>
                     <button
                       type="button"
                       data-issue-id={item.issue.id}
                       onclick={() => open(item.issue.id)}
-                      class="w-full rounded-md border border-neutral-200 p-3 text-left text-sm hover:bg-neutral-50"
+                      class="relative z-10 flex w-full flex-col gap-2 rounded-lg border border-border-subtle bg-card p-3 text-left text-sm shadow-elevation-1 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                     >
                       <span class="flex flex-wrap items-center gap-2">
-                        <span class="font-medium">{item.issue.title}</span>
+                        <span class="font-medium text-foreground">{item.issue.title}</span>
                         <span
                           class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}"
                         >
                           {item.issue.label}
                         </span>
                       </span>
-                      <span class="mt-1 line-clamp-2 block text-xs text-neutral-600">
+                      <span class="line-clamp-2 text-xs text-muted-foreground">
                         {summaryForIssue(item.issue)}
                       </span>
-                      <span class="mt-1 block text-xs text-neutral-500">
-                        {item.wave === null ? 'Unordered' : `Wave ${item.wave}`} ·
-                        {(budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100).toFixed(
-                          2,
-                        )} left
+                      <span
+                        class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                      >
+                        <span>{item.wave === null ? 'Unordered' : `Wave ${item.wave}`}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          {(
+                            budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100
+                          ).toFixed(2)} left
+                        </span>
                       </span>
                       {#if item.issue.dependsOn.length > 0}
-                        <span class="mt-1 block text-xs text-neutral-500">
+                        <span class="text-xs text-muted-foreground">
                           Depends on: {item.issue.dependsOn.join(', ')}
                         </span>
                       {/if}
@@ -842,7 +965,7 @@
       </div>
 
       <svg
-        class="pointer-events-none absolute inset-0 text-neutral-400"
+        class="pointer-events-none absolute inset-0 z-0 hidden text-muted-foreground md:block"
         width={boardWidth}
         height={boardHeight}
         aria-hidden="true"

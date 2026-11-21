@@ -1,4 +1,5 @@
 import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
+import type { Plan } from '@yaaabk/plans';
 import { summaryForIssue } from './summary';
 
 /** The kanban lanes an Issue can sit in on the board. */
@@ -74,17 +75,70 @@ export interface BoardItem {
   wave: number | null;
 }
 
-/** The filters the board applies to its cards. Omitted fields match everything. */
-export interface BoardFilters {
-  /** Only cards in this lane. */
-  column?: BoardColumn;
+/** The narrowing filters the board applies. Omitted fields match everything. */
+export interface BoardViewFilters {
+  /** Case-insensitive substring matched against the title, summary or body. */
+  text?: string;
   /** Only cards carrying this label. */
   label?: IssueLabel;
+  /** Only cards in this lane. */
+  column?: BoardColumn;
   /** Only cards in this wave; `null` selects the cycle/missing cards. */
   wave?: number | null;
-  /** Case-insensitive substring matched against the title or body. */
-  text?: string;
 }
+
+/** One active filter, rendered as a removable chip above the lanes. */
+export type BoardFilterChip =
+  | { kind: 'text'; label: string; value: string }
+  | { kind: 'label'; label: string; value: IssueLabel }
+  | { kind: 'column'; label: string; value: BoardColumn }
+  | { kind: 'wave'; label: string; value: number | null };
+
+/** A lane and the cards the current filters leave in it. */
+export interface BoardLane {
+  column: BoardColumn;
+  label: string;
+  items: BoardItem[];
+  count: number;
+  /** False for the closed lane while history is hidden. */
+  visible: boolean;
+}
+
+/** What the whole board is showing, for the toolbar and the lanes to project. */
+export interface BoardView {
+  /** Every lane the page may draw, including hidden and empty ones. */
+  lanes: BoardLane[];
+  /** The matching cards, in board order. */
+  items: BoardItem[];
+  /** Cards on the board after filtering. */
+  count: number;
+  /** Cards in scope before the narrowing filters, for "3 of 8". */
+  total: number;
+  /** The active narrowing filters, in toolbar order. */
+  chips: BoardFilterChip[];
+  /** Open Issues from earlier Plans that the active-Plan board is hiding. */
+  earlierWork: Issue[];
+  /** The waves the dependency graph contains, ascending. */
+  waves: number[];
+  /** Whether the graph has an Issue that sits on a cycle or outside it. */
+  hasUnordered: boolean;
+}
+
+/** Everything that can narrow or scope the board, in one query. */
+export interface BoardViewQuery {
+  filters?: BoardViewFilters;
+  /** Defaults to `wave`. */
+  sort?: BoardSort;
+  /** Whether closed Issues and the closed lane are shown. Defaults to `false`. */
+  showClosed?: boolean;
+  /** Whether Issues from earlier Plans are shown. Defaults to `false`. */
+  showEarlierPlans?: boolean;
+  /** The active Plan; `null` or omitted when the Project has none. */
+  activePlan?: Pick<Plan, 'id' | 'version'> | null;
+}
+
+/** The filters the card-level helper applies. */
+export type BoardFilters = BoardViewFilters;
 
 /** How the board orders its cards. */
 export type BoardSort = 'wave' | 'created' | 'title';
@@ -156,6 +210,118 @@ export function boardItems(
     }))
     .filter((item) => matchesFilters(item, filters))
     .sort((a, b) => compareItems(a, b, query.sort ?? 'wave'));
+}
+
+/** The removable chips for the filters that are narrowing the board. */
+export function boardChips(filters: BoardViewFilters = {}): BoardFilterChip[] {
+  const chips: BoardFilterChip[] = [];
+  const text = filters.text?.trim() ?? '';
+  if (text !== '') chips.push({ kind: 'text', label: `Search: ${text}`, value: text });
+  if (filters.label !== undefined) {
+    chips.push({ kind: 'label', label: `Label: ${filters.label}`, value: filters.label });
+  }
+  if (filters.column !== undefined) {
+    chips.push({
+      kind: 'column',
+      label: `Lane: ${BOARD_COLUMN_LABELS[filters.column]}`,
+      value: filters.column,
+    });
+  }
+  if (filters.wave !== undefined) {
+    chips.push({
+      kind: 'wave',
+      label: filters.wave === null ? 'Unordered' : `Wave ${filters.wave}`,
+      value: filters.wave,
+    });
+  }
+  return chips;
+}
+
+/**
+ * Drops exactly the filter a chip represents, leaving every other filter in
+ * place. The page applies the result back to its state, so removing one chip
+ * restores the cards that filter alone was hiding.
+ */
+export function withoutChip(filters: BoardViewFilters, chip: BoardFilterChip): BoardViewFilters {
+  const next: BoardViewFilters = { ...filters };
+  switch (chip.kind) {
+    case 'text':
+      delete next.text;
+      break;
+    case 'label':
+      delete next.label;
+      break;
+    case 'column':
+      delete next.column;
+      break;
+    case 'wave':
+      delete next.wave;
+      break;
+  }
+  return next;
+}
+
+/**
+ * The single view model for the board: scopes to the active Plan, combines the
+ * narrowing filters with the closed and earlier-Plan choices, then returns the
+ * lanes, counts, chips and earlier-Plan work that both the desktop columns and
+ * the phone tabs project.
+ */
+export function boardView(
+  issues: Issue[],
+  graph: IssueGraph,
+  query: BoardViewQuery = {},
+): BoardView {
+  const filters = query.filters ?? {};
+  const showClosed = query.showClosed ?? false;
+  const showEarlierPlans = query.showEarlierPlans ?? false;
+  const activePlan = query.activePlan ?? null;
+  const includeClosed = showClosed || filters.column === 'closed';
+  const planId = showEarlierPlans || activePlan === null ? undefined : activePlan.id;
+
+  const scoped = issues.filter(
+    (issue) =>
+      (includeClosed || issue.status !== 'closed') &&
+      (planId === undefined || issue.planId === planId),
+  );
+  const items = boardItems(issues, graph, {
+    filters,
+    sort: query.sort,
+    includeClosed,
+    ...(planId === undefined ? {} : { planId }),
+  });
+  const lanes = BOARD_COLUMNS.map((column) => {
+    const laneItems = items.filter((item) => item.column === column);
+    return {
+      column,
+      label: BOARD_COLUMN_LABELS[column],
+      items: laneItems,
+      count: laneItems.length,
+      visible: column !== 'closed' || includeClosed,
+    };
+  });
+
+  const earlierWork =
+    activePlan === null || showEarlierPlans
+      ? []
+      : issues.filter((issue) => issue.status !== 'closed' && issue.planId !== activePlan.id);
+
+  const waves = [
+    ...new Set(
+      graph.nodes.map((node) => node.wave).filter((wave): wave is number => wave !== null),
+    ),
+  ].sort((a, b) => a - b);
+
+  return {
+    lanes,
+    items,
+    count: items.length,
+    total: scoped.length,
+    chips: boardChips(filters),
+    earlierWork,
+    waves,
+    hasUnordered: graph.nodes.some((node) => node.wave === null),
+  };
 }
 
 /** Just enough of an Agent run for the board to total an Issue's spend. */
