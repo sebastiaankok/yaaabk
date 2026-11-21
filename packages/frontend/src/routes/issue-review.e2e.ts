@@ -123,18 +123,17 @@ async function mockReview(page: Page, overrides: Partial<Mocks> = {}): Promise<M
   return state;
 }
 
-test('lists the plan versions and shows the active plan with its issues by wave', async ({
-  page,
-}) => {
+test('shows Plan versions beside the selected Plan and marks the selection', async ({ page }) => {
   await mockReview(page);
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /v1.*Active.*Not accepted.*0\/2 closed/ }),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan v1' })).toBeVisible();
+  const versions = page.getByRole('navigation', { name: 'Plan versions' });
+  await expect(versions).toBeVisible();
+  const selected = versions.getByRole('button', { name: /v1.*Active.*Not accepted.*0\/2 closed/ });
+  await expect(selected).toBeVisible();
+  await expect(selected).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByRole('heading', { name: 'Plan v1', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 0' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 1' })).toBeVisible();
   await expect(page.getByText('A plan for saving bookmarks.')).toBeVisible();

@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { AlertTriangle, RefreshCw } from '@lucide/svelte';
   import type { Issue, IssueGraph, IssueLabel } from '@yaaabk/issues';
   import type { Plan } from '@yaaabk/plans';
   import type { Project } from '@yaaabk/projects';
@@ -19,6 +20,18 @@
   import Markdown from '#lib/markdown.svelte';
   import PageHeader from '#lib/components/page-header.svelte';
   import ProjectTabs from '#lib/components/project-tabs.svelte';
+  import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+  import { Badge } from '#lib/components/ui/badge/index.js';
+  import { Button } from '#lib/components/ui/button/index.js';
+  import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+  import {
+    Close as DialogClose,
+    Content as DialogContent,
+    Description as DialogDescription,
+    Root as DialogRoot,
+    Title as DialogTitle,
+  } from '#lib/components/ui/dialog/index.js';
+  import { Skeleton } from '#lib/components/ui/skeleton/index.js';
   import { resolveShell } from '#lib/shell.js';
   import {
     pendingGithubSync,
@@ -80,16 +93,16 @@
   );
 
   const labelClass: Record<IssueLabel, string> = {
-    ready: 'bg-emerald-100 text-emerald-800',
-    'refinement-needed': 'bg-amber-100 text-amber-800',
-    blocked: 'bg-neutral-200 text-neutral-700',
-    'needs-human': 'bg-red-100 text-red-800',
+    ready: 'bg-success-subtle text-success',
+    'refinement-needed': 'bg-warning-subtle text-warning',
+    blocked: 'bg-muted text-muted-foreground',
+    'needs-human': 'bg-destructive-subtle text-destructive',
   };
 
   const statusClass: Record<PlanLifecycleStatus, string> = {
-    'not-accepted': 'bg-neutral-100 text-neutral-600',
-    'in-progress': 'bg-amber-100 text-amber-800',
-    completed: 'bg-emerald-100 text-emerald-800',
+    'not-accepted': 'bg-muted text-muted-foreground',
+    'in-progress': 'bg-warning-subtle text-warning',
+    completed: 'bg-success-subtle text-success',
   };
 
   function describe(cause: unknown): string {
@@ -195,13 +208,21 @@
   <title>{project ? `${project.name} · Review plan` : 'Review plan'} · YAAABK</title>
 </svelte:head>
 
-<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
+<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
   {#if loading}
-    <p class="text-sm text-muted-foreground">Loading plans…</p>
+    <div class="flex flex-col gap-4" aria-busy="true" aria-label="Loading plan review">
+      <Skeleton class="h-9 w-64" />
+      <Skeleton class="h-5 w-96 max-w-full" />
+      <div class="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <Skeleton class="h-64 w-full rounded-xl" />
+        <Skeleton class="h-96 w-full rounded-xl" />
+      </div>
+    </div>
   {:else if error !== null && project === null}
-    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
-      {error}
-    </p>
+    <Alert variant="destructive">
+      <AlertTitle>Could not load the Plan review</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
   {:else if project !== null}
     {@const currentProjectId = project.id}
     <PageHeader
@@ -215,329 +236,377 @@
     </PageHeader>
 
     {#if error !== null}
-      <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+      <Alert variant="destructive">
+        <AlertTitle>Something went wrong</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     {/if}
     {#if notice !== null}
-      <p class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+      <p class="bg-success-subtle text-success rounded-lg px-3 py-2 text-sm" role="status">
         {notice}
       </p>
     {/if}
 
-    {#if plans.length > 0}
-      <section
-        class="rounded-lg border border-neutral-200 p-4"
-        aria-labelledby="plan-versions-heading"
-      >
-        <h2 id="plan-versions-heading" class="mb-2 text-sm font-semibold">Plan versions</h2>
-        <ul class="flex flex-col gap-2">
-          {#each plans as version (version.id)}
-            {@const progress = progressOf(version)}
-            <li>
-              <button
-                type="button"
-                onclick={() => select(version.id)}
-                aria-pressed={version.id === selectedId}
-                class="flex w-full flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-left text-sm hover:bg-neutral-50 {version.id ===
-                selectedId
-                  ? 'border-neutral-900'
-                  : 'border-neutral-200'}"
-              >
-                <span class="flex flex-wrap items-center gap-2">
-                  <span class="font-medium">v{version.version}</span>
-                  <span class="text-xs text-neutral-500">
-                    {version.isActive ? 'Active' : 'Previous'}
+    {#if plans.length === 0}
+      <Card aria-labelledby="no-plans-heading">
+        <CardHeader>
+          <h2 id="no-plans-heading" class="text-lg font-medium tracking-tight">
+            No Plan has been published yet
+          </h2>
+          <p class="text-sm text-muted-foreground">
+            Finish an agent session to publish the first Plan and its Issues.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Button href={resolve('/projects/[id]/plan', { id: project.id })}>
+            Start an agent session
+          </Button>
+        </CardContent>
+      </Card>
+    {:else}
+      <div class="grid min-w-0 items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <nav aria-labelledby="versions-heading" class="min-w-0">
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <h2 id="versions-heading" class="text-lg font-medium tracking-tight">Plan versions</h2>
+            <Badge variant="outline">{plans.length}</Badge>
+          </div>
+          <ul class="flex flex-col gap-2">
+            {#each plans as version (version.id)}
+              {@const progress = progressOf(version)}
+              {@const current = version.id === selectedId}
+              <li>
+                <button
+                  type="button"
+                  onclick={() => select(version.id)}
+                  aria-current={current ? 'true' : undefined}
+                  class="flex w-full flex-col gap-2 rounded-xl border p-3 text-left text-sm transition-colors focus-visible:ring-ring/50 focus-visible:ring-3 focus-visible:outline-none {current
+                    ? 'border-primary bg-secondary'
+                    : 'border-border-subtle bg-card hover:bg-muted/60'}"
+                >
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium">v{version.version}</span>
+                    <span class="text-muted-foreground text-xs">
+                      {version.isActive ? 'Active' : 'Previous'}
+                    </span>
+                    <span class="rounded-full px-2 py-0.5 text-xs {statusClass[progress.status]}">
+                      {planStatusLabel(progress.status)}
+                    </span>
+                    {#if version.acceptedAt !== null}
+                      <span class="text-muted-foreground text-xs">
+                        Accepted {acceptedDate(version)}
+                      </span>
+                    {/if}
                   </span>
-                  <span class="rounded-full px-2 py-0.5 text-xs {statusClass[progress.status]}">
-                    {planStatusLabel(progress.status)}
+                  <span class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                    <span>{progress.closed}/{progress.total} closed</span>
+                    {#if progress.failed > 0}
+                      <span class="text-destructive">{progress.failed} failed</span>
+                    {/if}
                   </span>
-                  {#if version.acceptedAt !== null}
-                    <span class="text-xs text-neutral-500">
-                      Accepted {acceptedDate(version)}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </nav>
+
+        <div class="flex min-w-0 flex-col gap-6">
+          {#if selectedPlan !== null}
+            <section
+              data-testid="plan-detail"
+              aria-labelledby="plan-detail-heading"
+              class="bg-card min-w-0 rounded-xl p-4 ring-1 ring-border-subtle sm:p-6"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 id="plan-detail-heading" class="text-lg font-medium tracking-tight">
+                    Plan v{selectedPlan.version}
+                  </h2>
+                  <Badge variant="outline">
+                    {selectedPlan.isActive ? 'Active' : 'Previous'}
+                  </Badge>
+                  {#if selectedStatus !== null}
+                    <span class="rounded-full px-2 py-0.5 text-xs {statusClass[selectedStatus]}">
+                      {planStatusLabel(selectedStatus)}
                     </span>
                   {/if}
-                </span>
-                <span class="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-                  <span>{progress.closed}/{progress.total} closed</span>
-                  {#if progress.failed > 0}
-                    <span class="text-red-700">{progress.failed} failed</span>
-                  {/if}
-                </span>
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
+                </div>
+                {#if selectedPlan.acceptedAt !== null}
+                  <span class="text-muted-foreground text-xs">
+                    Accepted {acceptedDate(selectedPlan)}
+                  </span>
+                {/if}
+              </div>
 
-    {#if selectedPlan !== null}
-      <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="plan-heading">
-        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <h2 id="plan-heading" class="text-sm font-semibold">Plan v{selectedPlan.version}</h2>
-            <span class="text-xs text-neutral-500">
-              {selectedPlan.isActive ? 'Active' : 'Previous'}
-            </span>
-            {#if selectedStatus !== null}
-              <span class="rounded-full px-2 py-0.5 text-xs {statusClass[selectedStatus]}">
-                {planStatusLabel(selectedStatus)}
-              </span>
+              <p class="mt-3 text-sm text-foreground">{summaryForPlan(selectedPlan)}</p>
+              <details class="mt-3">
+                <summary class="text-muted-foreground hover:text-foreground cursor-pointer text-sm">
+                  Show full plan
+                </summary>
+                <div class="mt-2"><Markdown markdown={selectedPlan.contentMarkdown} /></div>
+              </details>
+
+              {#if readOnly}
+                <div class="bg-muted mt-4 rounded-lg px-3 py-2 text-sm" role="status">
+                  <p class="text-foreground font-medium">This previous Plan is read-only.</p>
+                  <p class="text-muted-foreground mt-0.5">
+                    Its Issues and labels cannot be changed here.
+                    <a
+                      href={resolve('/projects/[id]/plan', { id: project.id })}
+                      class="text-link font-medium hover:underline"
+                    >
+                      Reactivate it on the Plan page</a
+                    >
+                    to continue this version.
+                  </p>
+                </div>
+              {/if}
+            </section>
+
+            {#if graph !== null && graph.cycles.length > 0}
+              <Alert variant="destructive" data-testid="cycles">
+                <AlertTriangle aria-hidden="true" />
+                <AlertTitle>Circular dependencies</AlertTitle>
+                <AlertDescription>
+                  <p>Break these before accepting, or the Issues cannot be ordered into waves.</p>
+                  <ul class="mt-2 list-inside list-disc">
+                    {#each graph.cycles as cycle (cycle.join('-'))}
+                      <li>{cycle.join(' → ')} → {cycle[0]}</li>
+                    {/each}
+                  </ul>
+                </AlertDescription>
+              </Alert>
             {/if}
-          </div>
-          {#if selectedPlan.acceptedAt !== null}
-            <span class="text-xs text-neutral-500">
-              Accepted {acceptedDate(selectedPlan)}
-            </span>
+
+            <section
+              data-testid="issue-list"
+              aria-labelledby="issues-heading"
+              class="bg-card min-w-0 rounded-xl p-4 ring-1 ring-border-subtle sm:p-6"
+            >
+              <h3 id="issues-heading" class="text-lg font-medium tracking-tight">
+                Issues ({reviewList.length})
+              </h3>
+
+              {#if zeroIssuePlan}
+                <p class="text-muted-foreground mt-2 text-sm">
+                  This Plan was published without Issues, so it cannot be accepted. A new agent
+                  session is needed to publish a revised Plan.
+                  <a
+                    href={resolve('/projects/[id]/plan', { id: project.id })}
+                    class="text-link font-medium hover:underline"
+                  >
+                    Start a new agent session</a
+                  >.
+                </p>
+              {:else if reviewList.length === 0}
+                <p class="text-muted-foreground mt-2 text-sm">
+                  No issues yet. Finish an agent session to publish a Plan and its Issues.
+                  <a
+                    href={resolve('/projects/[id]/plan', { id: project.id })}
+                    class="text-link font-medium hover:underline"
+                  >
+                    Start a new agent session</a
+                  >.
+                </p>
+              {:else}
+                <div class="mt-3 flex flex-col gap-5">
+                  {#each groups as group (group.wave)}
+                    <div>
+                      <h4
+                        class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase"
+                      >
+                        {group.wave === null ? 'Unordered (cycle)' : `Wave ${group.wave}`}
+                      </h4>
+                      <ul class="flex flex-col gap-2">
+                        {#each group.items as item (item.issue.id)}
+                          <li class="rounded-lg border border-border-subtle p-3 text-sm">
+                            <div class="flex flex-wrap items-center gap-2">
+                              <p class="font-medium">{item.issue.title}</p>
+                              {#if item.issue.status === 'closed'}
+                                <span
+                                  class="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs"
+                                >
+                                  closed
+                                </span>
+                              {:else if item.issue.status === 'failed'}
+                                <span
+                                  class="bg-destructive-subtle text-destructive rounded-full px-2 py-0.5 text-xs"
+                                >
+                                  failed
+                                </span>
+                              {:else}
+                                <span
+                                  class="rounded-full px-2 py-0.5 text-xs {labelClass[
+                                    item.issue.label
+                                  ]}"
+                                >
+                                  {item.issue.label}
+                                </span>
+                              {/if}
+                              {#if item.issue.githubNumber !== null}
+                                <span class="text-muted-foreground text-xs">
+                                  GitHub #{item.issue.githubNumber}
+                                </span>
+                              {/if}
+                            </div>
+                            {#if item.issue.body !== ''}
+                              <p class="mt-1 text-sm text-foreground">
+                                {summaryForIssue(item.issue)}
+                              </p>
+                              <details class="mt-1">
+                                <summary
+                                  class="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
+                                >
+                                  Show full issue
+                                </summary>
+                                <Markdown markdown={item.issue.body} class="mt-1" />
+                              </details>
+                            {:else}
+                              <p class="mt-1 text-sm text-foreground">
+                                {summaryForIssue(item.issue)}
+                              </p>
+                            {/if}
+                            {#if item.issue.dependsOn.length > 0}
+                              <p class="text-muted-foreground mt-1 text-xs">
+                                Depends on: {item.issue.dependsOn.join(', ')}
+                              </p>
+                            {/if}
+                            {#if item.missing.length > 0}
+                              <p class="text-destructive mt-1 text-xs">
+                                Missing dependency: {item.missing.join(', ')}
+                              </p>
+                            {/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </section>
+
+            {#if needsSync && selectedPlan !== null}
+              <Alert data-testid="sync-retry">
+                <RefreshCw aria-hidden="true" />
+                <AlertTitle>GitHub sync incomplete</AlertTitle>
+                <AlertDescription>
+                  <p>Some Issues of the accepted Plan are not on GitHub yet.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="mt-2"
+                    onclick={() => void retrySync()}
+                    disabled={busy}
+                  >
+                    Retry GitHub sync
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            {/if}
+
+            {#if acceptError !== null}
+              <Alert variant="destructive" data-testid="accept-error">
+                <AlertTitle>The Plan was not accepted</AlertTitle>
+                <AlertDescription>
+                  <p>{acceptError}</p>
+                  <p>Its Issues are safe to sync again.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="mt-2"
+                    onclick={() => void accept()}
+                    disabled={busy}
+                  >
+                    Retry accept
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            {/if}
+          {:else}
+            <Card aria-labelledby="no-active-plan-heading">
+              <CardHeader>
+                <h2 id="no-active-plan-heading" class="text-lg font-medium tracking-tight">
+                  This project has no active Plan yet
+                </h2>
+                <p class="text-sm text-muted-foreground">
+                  Start a new agent session to draft and publish a Plan.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Button href={resolve('/projects/[id]/plan', { id: project.id })}>
+                  Start an agent session
+                </Button>
+              </CardContent>
+            </Card>
           {/if}
         </div>
-        <p class="text-sm text-neutral-700">{summaryForPlan(selectedPlan)}</p>
-        <details class="mt-2">
-          <summary class="cursor-pointer text-sm text-neutral-600">Show full plan</summary>
-          <div class="mt-2"><Markdown markdown={selectedPlan.contentMarkdown} /></div>
-        </details>
-        {#if readOnly}
-          <p
-            class="mt-3 rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-600"
-            role="status"
-          >
-            This is a previous Plan. It is shown read-only; activate it on the Plan page to change
-            it.
-          </p>
-        {/if}
-      </section>
-    {:else}
-      <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
-        This project has no active plan yet.
-        <a href={resolve('/projects/[id]/plan', { id: project.id })} class="font-medium underline">
-          Start a new agent session</a
-        >
-        first.
-      </p>
-    {/if}
-
-    {#if graph !== null && graph.cycles.length > 0}
-      <section
-        class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-        aria-labelledby="cycles-heading"
-      >
-        <h2 id="cycles-heading" class="mb-1 font-semibold">Circular dependencies</h2>
-        <p class="mb-2">
-          Break these before accepting, or the issues cannot be ordered into waves.
-        </p>
-        <ul class="list-inside list-disc">
-          {#each graph.cycles as cycle (cycle.join('-'))}
-            <li>{cycle.join(' → ')} → {cycle[0]}</li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
-    {#if selectedPlan !== null}
-      <section class="rounded-lg border border-neutral-200 p-4" aria-labelledby="issues-heading">
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h2 id="issues-heading" class="text-sm font-semibold">Issues ({reviewList.length})</h2>
-        </div>
-
-        {#if zeroIssuePlan}
-          <p class="text-sm text-neutral-500">
-            This Plan was published without Issues, so it cannot be accepted. A new agent session is
-            needed to publish a revised Plan.
-            <a
-              href={resolve('/projects/[id]/plan', { id: project.id })}
-              class="font-medium underline"
-            >
-              Start a new agent session</a
-            >.
-          </p>
-        {:else if reviewList.length === 0}
-          <p class="text-sm text-neutral-500">
-            No issues yet. Finish an agent session to publish a Plan and its Issues.
-            <a
-              href={resolve('/projects/[id]/plan', { id: project.id })}
-              class="font-medium underline"
-            >
-              Start a new agent session</a
-            >.
-          </p>
-        {:else}
-          <div class="flex flex-col gap-4">
-            {#each groups as group (group.wave)}
-              <div>
-                <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  {group.wave === null ? 'Unordered (cycle)' : `Wave ${group.wave}`}
-                </h3>
-                <ul class="flex flex-col gap-2">
-                  {#each group.items as item (item.issue.id)}
-                    <li class="rounded-md border border-neutral-200 p-3 text-sm">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <p class="font-medium">{item.issue.title}</p>
-                        {#if item.issue.status === 'closed'}
-                          <span
-                            class="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-700"
-                          >
-                            closed
-                          </span>
-                        {:else if item.issue.status === 'failed'}
-                          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
-                            failed
-                          </span>
-                        {:else}
-                          <span
-                            class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}"
-                          >
-                            {item.issue.label}
-                          </span>
-                        {/if}
-                        {#if item.issue.githubNumber !== null}
-                          <span class="text-xs text-neutral-500">
-                            GitHub #{item.issue.githubNumber}
-                          </span>
-                        {/if}
-                      </div>
-                      {#if item.issue.body !== ''}
-                        <p class="mt-1 text-sm text-neutral-700">{summaryForIssue(item.issue)}</p>
-                        <details class="mt-1">
-                          <summary class="cursor-pointer text-xs text-neutral-600">
-                            Show full issue
-                          </summary>
-                          <Markdown markdown={item.issue.body} class="mt-1" />
-                        </details>
-                      {:else}
-                        <p class="mt-1 text-sm text-neutral-700">{summaryForIssue(item.issue)}</p>
-                      {/if}
-                      {#if item.issue.dependsOn.length > 0}
-                        <p class="mt-1 text-xs text-neutral-500">
-                          Depends on: {item.issue.dependsOn.join(', ')}
-                        </p>
-                      {/if}
-                      {#if item.missing.length > 0}
-                        <p class="mt-1 text-xs text-red-700">
-                          Missing dependency: {item.missing.join(', ')}
-                        </p>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {/if}
-
-    {#if acceptError !== null}
-      <div class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-        <p>{acceptError}</p>
-        <p class="mt-1">The Plan was not accepted. Its Issues are safe to sync again.</p>
-        <button
-          type="button"
-          onclick={() => void accept()}
-          disabled={busy}
-          class="mt-2 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
-          Retry accept
-        </button>
       </div>
-    {/if}
 
-    {#if canAccept && selectedPlan !== null}
-      <section
-        class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-4"
-        aria-labelledby="accept-heading"
-      >
-        <div>
-          <h2 id="accept-heading" class="text-sm font-semibold">Accept this plan</h2>
-          <p class="text-xs text-neutral-500">
-            Accepting records the Plan, creates or updates its Issues on GitHub, and lets agents
-            start on its ready Issues.
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onclick={() => {
-              acceptError = null;
-              confirmOpen = true;
-            }}
-            disabled={busy}
-            class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-          >
-            Accept plan
-          </button>
-          <a
-            href={resolve('/projects/[id]/plan', { id: project.id })}
-            class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-          >
-            Start a new agent session
-          </a>
-        </div>
-      </section>
-    {/if}
-
-    {#if needsSync && selectedPlan !== null}
-      <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <p class="text-xs text-neutral-500">
-          Some Issues of the accepted Plan are not on GitHub yet.
-        </p>
-        <button
-          type="button"
-          onclick={() => void retrySync()}
-          disabled={busy}
-          class="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
+      {#if canAccept && selectedPlan !== null}
+        <section
+          data-testid="accept-bar"
+          aria-labelledby="accept-heading"
+          class="bg-card/95 sticky bottom-0 z-20 flex flex-col gap-3 rounded-xl border border-border-subtle p-4 shadow-elevation-1 backdrop-blur sm:flex-row sm:items-center sm:justify-between"
         >
-          Retry GitHub sync
-        </button>
-      </div>
-    {/if}
-
-    {#if confirmOpen && selectedPlan !== null}
-      <div
-        class="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4"
-        role="presentation"
-        onclick={(event) => {
-          if (event.target === event.currentTarget) confirmOpen = false;
-        }}
-        onkeydown={(event) => {
-          if (event.key === 'Escape') confirmOpen = false;
-        }}
-      >
-        <div
-          class="flex w-full max-w-md flex-col gap-3 rounded-lg bg-white p-5 shadow-xl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="accept-dialog-heading"
-          tabindex="-1"
-        >
-          <h2 id="accept-dialog-heading" class="text-lg font-bold tracking-tight">
-            Accept Plan v{selectedPlan.version}?
-          </h2>
-          <p class="text-sm text-neutral-700">
-            Accepting records this Plan and creates or updates its Issues on GitHub. It also lets
-            agents start on the Issues labelled <span class="font-medium">ready</span>.
-          </p>
-          <p class="text-sm text-neutral-700">
-            Issues labelled <span class="font-medium">needs-human</span> stay as they are for you to handle.
-            Issue labels do not change.
-          </p>
-          <div class="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onclick={() => (confirmOpen = false)}
-              disabled={busy}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onclick={() => void accept()}
-              disabled={busy}
-              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
+          <div class="min-w-0">
+            <h2 id="accept-heading" class="text-base font-medium tracking-tight">
               Accept Plan v{selectedPlan.version}
-            </button>
+            </h2>
+            <p class="text-muted-foreground mt-0.5 text-xs">
+              Accepting records this version, creates or updates its Issues on GitHub, and lets
+              agents start on its ready Issues.
+            </p>
           </div>
-        </div>
-      </div>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              href={resolve('/projects/[id]/plan', { id: project.id })}
+              class="h-11 sm:h-9"
+            >
+              Start a new agent session
+            </Button>
+            <Button
+              class="h-11 w-full px-4 sm:h-9 sm:w-auto"
+              data-testid="open-accept-dialog"
+              onclick={() => {
+                acceptError = null;
+                confirmOpen = true;
+              }}
+              disabled={busy}
+            >
+              Accept plan
+            </Button>
+          </div>
+        </section>
+      {/if}
     {/if}
+
+    <DialogRoot bind:open={confirmOpen}>
+      <DialogContent>
+        <DialogTitle>Accept Plan v{selectedPlan?.version ?? ''}?</DialogTitle>
+        <DialogDescription>
+          Accepting records this Plan and creates or updates its Issues on GitHub. It also lets
+          agents start on the Issues labelled <span class="font-medium">ready</span>.
+        </DialogDescription>
+        <p class="text-sm text-foreground">
+          Issues labelled <span class="font-medium">needs-human</span> stay as they are for you to handle.
+          Issue labels do not change.
+        </p>
+        <div class="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <DialogClose>
+            {#snippet child({ props })}
+              <Button {...props} variant="outline" class="h-11">Cancel</Button>
+            {/snippet}
+          </DialogClose>
+          <Button
+            class="h-11"
+            disabled={busy}
+            onclick={() => void accept()}
+            data-testid="confirm-accept"
+          >
+            Accept Plan v{selectedPlan?.version ?? ''}
+          </Button>
+        </div>
+      </DialogContent>
+    </DialogRoot>
   {/if}
 </div>
