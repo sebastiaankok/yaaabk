@@ -265,49 +265,72 @@
       </Card>
     {:else}
       <div class="grid min-w-0 items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <nav aria-labelledby="versions-heading" class="min-w-0">
+        <div class="min-w-0">
           <div class="mb-3 flex items-center justify-between gap-2">
             <h2 id="versions-heading" class="text-lg font-medium tracking-tight">Plan versions</h2>
             <Badge variant="outline">{plans.length}</Badge>
           </div>
-          <ul class="flex flex-col gap-2">
-            {#each plans as version (version.id)}
-              {@const progress = progressOf(version)}
-              {@const current = version.id === selectedId}
-              <li>
-                <button
-                  type="button"
-                  onclick={() => select(version.id)}
-                  aria-current={current ? 'true' : undefined}
-                  class="flex w-full flex-col gap-2 rounded-xl border p-3 text-left text-sm transition-colors focus-visible:ring-ring/50 focus-visible:ring-3 focus-visible:outline-none {current
-                    ? 'border-primary bg-secondary'
-                    : 'border-border-subtle bg-card hover:bg-muted/60'}"
-                >
-                  <span class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium">v{version.version}</span>
-                    <span class="text-muted-foreground text-xs">
-                      {version.isActive ? 'Active' : 'Previous'}
-                    </span>
-                    <span class="rounded-full px-2 py-0.5 text-xs {statusClass[progress.status]}">
-                      {planStatusLabel(progress.status)}
-                    </span>
-                    {#if version.acceptedAt !== null}
+
+          <div class="lg:hidden">
+            <label for="plan-version-select" class="mb-1 block text-sm font-medium">
+              Plan version
+            </label>
+            <select
+              id="plan-version-select"
+              value={selectedId ?? ''}
+              onchange={(event) => select(event.currentTarget.value)}
+              class="border-input bg-background focus-visible:ring-ring/50 h-11 w-full rounded-lg border px-3 text-sm focus-visible:ring-3 focus-visible:outline-none"
+            >
+              {#each plans as version (version.id)}
+                <option value={version.id}>
+                  v{version.version} · {version.isActive ? 'Active' : 'Previous'} · {planStatusLabel(
+                    progressOf(version).status,
+                  )}
+                </option>
+              {/each}
+            </select>
+          </div>
+
+          <nav aria-labelledby="versions-heading" class="hidden min-w-0 lg:block">
+            <ul class="flex flex-col gap-2">
+              {#each plans as version (version.id)}
+                {@const progress = progressOf(version)}
+                {@const current = version.id === selectedId}
+                <li>
+                  <button
+                    type="button"
+                    onclick={() => select(version.id)}
+                    aria-current={current ? 'true' : undefined}
+                    class="flex w-full flex-col gap-2 rounded-xl border p-3 text-left text-sm transition-colors focus-visible:ring-ring/50 focus-visible:ring-3 focus-visible:outline-none {current
+                      ? 'border-primary bg-secondary'
+                      : 'border-border-subtle bg-card hover:bg-muted/60'}"
+                  >
+                    <span class="flex flex-wrap items-center gap-2">
+                      <span class="font-medium">v{version.version}</span>
                       <span class="text-muted-foreground text-xs">
-                        Accepted {acceptedDate(version)}
+                        {version.isActive ? 'Active' : 'Previous'}
                       </span>
-                    {/if}
-                  </span>
-                  <span class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-                    <span>{progress.closed}/{progress.total} closed</span>
-                    {#if progress.failed > 0}
-                      <span class="text-destructive">{progress.failed} failed</span>
-                    {/if}
-                  </span>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </nav>
+                      <span class="rounded-full px-2 py-0.5 text-xs {statusClass[progress.status]}">
+                        {planStatusLabel(progress.status)}
+                      </span>
+                      {#if version.acceptedAt !== null}
+                        <span class="text-muted-foreground text-xs">
+                          Accepted {acceptedDate(version)}
+                        </span>
+                      {/if}
+                    </span>
+                    <span class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                      <span>{progress.closed}/{progress.total} closed</span>
+                      {#if progress.failed > 0}
+                        <span class="text-destructive">{progress.failed} failed</span>
+                      {/if}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </nav>
+        </div>
 
         <div class="flex min-w-0 flex-col gap-6">
           {#if selectedPlan !== null}
@@ -508,7 +531,7 @@
                 <AlertTitle>The Plan was not accepted</AlertTitle>
                 <AlertDescription>
                   <p>{acceptError}</p>
-                  <p>Its Issues are safe to sync again.</p>
+                  <p>The Plan was not accepted. Its Issues are safe to sync again.</p>
                   <Button
                     variant="outline"
                     size="sm"

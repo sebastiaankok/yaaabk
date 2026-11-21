@@ -123,16 +123,35 @@ async function mockReview(page: Page, overrides: Partial<Mocks> = {}): Promise<M
   return state;
 }
 
+/** Picks a Plan version through the control the current viewport renders. */
+async function selectVersion(page: Page, planId: string, desktopName: RegExp): Promise<void> {
+  if (test.info().project.name === 'mobile') {
+    await page.getByLabel('Plan version', { exact: true }).selectOption(planId);
+    return;
+  }
+  await page
+    .getByRole('navigation', { name: 'Plan versions' })
+    .getByRole('button', { name: desktopName })
+    .click();
+}
+
 test('shows Plan versions beside the selected Plan and marks the selection', async ({ page }) => {
   await mockReview(page);
 
   await page.goto('/projects/p1/issues/review');
 
-  const versions = page.getByRole('navigation', { name: 'Plan versions' });
-  await expect(versions).toBeVisible();
-  const selected = versions.getByRole('button', { name: /v1.*Active.*Not accepted.*0\/2 closed/ });
-  await expect(selected).toBeVisible();
-  await expect(selected).toHaveAttribute('aria-current', 'true');
+  const mobile = test.info().project.name === 'mobile';
+  if (mobile) {
+    await expect(page.getByLabel('Plan version', { exact: true })).toHaveValue('v1');
+  } else {
+    const versions = page.getByRole('navigation', { name: 'Plan versions' });
+    await expect(versions).toBeVisible();
+    const selected = versions.getByRole('button', {
+      name: /v1.*Active.*Not accepted.*0\/2 closed/,
+    });
+    await expect(selected).toBeVisible();
+    await expect(selected).toHaveAttribute('aria-current', 'true');
+  }
   await expect(page.getByRole('heading', { name: 'Plan v1', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 0' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wave 1' })).toBeVisible();
@@ -141,6 +160,80 @@ test('shows Plan versions beside the selected Plan and marks the selection', asy
   await expect(page.getByText('Expose the bookmark endpoints.')).toBeVisible();
   await expect(page.getByText('refinement-needed')).toBeVisible();
   await expect(page.getByText('Depends on: Schema')).toBeVisible();
+});
+
+test('switches Plans from the desktop list and the phone select', async ({ page }) => {
+  const previous = {
+    ...PLAN,
+    id: 'v0',
+    version: 1,
+    isActive: false,
+    acceptedAt: ACCEPTED_AT,
+    contentMarkdown: '# Previous plan',
+    summary: 'The previous plan.',
+  };
+  const active = {
+    ...PLAN,
+    id: 'v2',
+    version: 2,
+    isActive: true,
+    contentMarkdown: '# Active plan',
+    summary: 'The active plan.',
+  };
+  await mockReview(page, {
+    plans: [active, previous],
+    issues: [
+      issue({ id: 'old', title: 'Old work', planId: 'v0', status: 'closed' }),
+      issue({ id: 'new', title: 'New work', planId: 'v2', label: 'ready' }),
+    ],
+    graph: {
+      nodes: [
+        { id: 'old', title: 'Old work', dependsOn: [], missing: [], wave: 0 },
+        { id: 'new', title: 'New work', dependsOn: [], missing: [], wave: 0 },
+      ],
+      cycles: [],
+    },
+  });
+
+  await page.goto('/projects/p1/issues/review');
+
+  const mobile = test.info().project.name === 'mobile';
+  const select = page.getByLabel('Plan version', { exact: true });
+  if (mobile) {
+    await expect(page.getByRole('navigation', { name: 'Plan versions' })).toBeHidden();
+    await expect(select).toBeVisible();
+    await expect(select).toHaveValue('v2');
+    await select.selectOption('v0');
+  } else {
+    await expect(select).toBeHidden();
+    const versions = page.getByRole('navigation', { name: 'Plan versions' });
+    const previousButton = versions.getByRole('button', { name: /v1.*Previous.*Completed/ });
+    await previousButton.click();
+    await expect(previousButton).toHaveAttribute('aria-current', 'true');
+  }
+
+  await expect(page.getByRole('heading', { name: 'Plan v1', exact: true })).toBeVisible();
+  await expect(page.getByText('The previous plan.')).toBeVisible();
+  await expect(page.getByText(/This previous Plan is read-only/)).toBeVisible();
+
+  if (mobile) {
+    await select.selectOption('v2');
+    await expect(page.getByText('The active plan.')).toBeVisible();
+
+    const acceptBar = page.getByTestId('accept-bar');
+    await expect(acceptBar).toBeVisible();
+    const accept = acceptBar.getByRole('button', { name: 'Accept plan' });
+    await accept.scrollIntoViewIfNeeded();
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflows).toBe(false);
+    const withinViewport = await accept.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left >= 0 && rect.right <= window.innerWidth;
+    });
+    expect(withinViewport).toBe(true);
+  }
 });
 
 test('renders the Plan and Issue Markdown with typography', async ({ page }) => {
@@ -164,14 +257,14 @@ test('renders the Plan and Issue Markdown with typography', async ({ page }) => 
 
   await page.goto('/projects/p1/issues/review');
 
-  const plan = page.locator('section[aria-labelledby="plan-heading"]');
+  const plan = page.getByTestId('plan-detail');
   await expect(plan.getByText('A plan for saving bookmarks.')).toBeVisible();
   await expect(plan.getByRole('heading', { level: 2, name: 'Outcomes' })).toBeHidden();
   await plan.getByText('Show full plan').click();
   await expect(plan.getByRole('heading', { level: 2, name: 'Outcomes' })).toBeVisible();
   await expect(plan.getByRole('listitem')).toHaveCount(1);
 
-  const issueItem = page.locator('section[aria-labelledby="issues-heading"] li');
+  const issueItem = page.getByTestId('issue-list').locator('li').first();
   await expect(issueItem.getByText('Create the bookmark tables.')).toBeVisible();
   await expect(issueItem.getByRole('heading', { level: 2, name: 'Context' })).toBeHidden();
   await issueItem.getByText('Show full issue').click();
@@ -217,12 +310,16 @@ test('shows a completed plan once it was accepted and every issue is closed', as
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(
-    page.getByRole('button', { name: /v1.*Active.*Completed.*2\/2 closed/ }),
-  ).toBeVisible();
-  const plan = page.locator('section[aria-labelledby="plan-heading"]');
+  if (test.info().project.name === 'mobile') {
+    await expect(page.getByLabel('Plan version', { exact: true })).toHaveValue('v1');
+  } else {
+    await expect(
+      page.getByRole('button', { name: /v1.*Active.*Completed.*2\/2 closed/ }),
+    ).toBeVisible();
+  }
+  const plan = page.getByTestId('plan-detail');
   await expect(plan.getByText('Completed')).toBeVisible();
-  await expect(plan.getByText('Accept plan')).toHaveCount(0);
+  await expect(page.getByTestId('accept-bar')).toHaveCount(0);
 });
 
 test('warns about circular dependencies', async ({ page }) => {
@@ -237,8 +334,21 @@ test('warns about circular dependencies', async ({ page }) => {
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByRole('heading', { name: 'Circular dependencies' })).toBeVisible();
+  await expect(page.getByTestId('cycles')).toContainText('Circular dependencies');
   await expect(page.getByText('i1 → i2 → i1')).toBeVisible();
+  // Cycles are called out before the accept action, which stays available
+  // because an unorderable Plan can still be accepted today.
+  await expect(page.getByTestId('accept-bar')).toBeVisible();
+  const cyclesBeforeAccept = await page.evaluate(() => {
+    const cycles = document.querySelector('[data-testid="cycles"]');
+    const accept = document.querySelector('[data-testid="accept-bar"]');
+    return (
+      cycles !== null &&
+      accept !== null &&
+      Boolean(cycles.compareDocumentPosition(accept) & Node.DOCUMENT_POSITION_FOLLOWING)
+    );
+  });
+  expect(cyclesBeforeAccept).toBe(true);
 });
 
 test('offers no one-shot generation or prompt refinement', async ({ page }) => {
@@ -260,7 +370,7 @@ test('lands on the issue board after accepting the plan', async ({ page }) => {
   });
 
   await page.goto('/projects/p1/issues/review');
-  await page.getByRole('button', { name: 'Accept plan', exact: true }).click();
+  await page.getByTestId('open-accept-dialog').click();
 
   const dialog = page.getByRole('dialog', { name: 'Accept Plan v1?' });
   await expect(dialog).toBeVisible();
@@ -274,6 +384,53 @@ test('lands on the issue board after accepting the plan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Issue board' })).toBeVisible();
   await expect(page.getByText('Plan v1 accepted and synced to GitHub')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Review plan' })).toHaveCount(0);
+});
+
+test('names the version in the accept bar and confirms in an accessible dialog', async ({
+  page,
+}) => {
+  await mockReview(page);
+
+  await page.goto('/projects/p1/issues/review');
+
+  const bar = page.getByTestId('accept-bar');
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText('Accept Plan v1');
+
+  const trigger = bar.getByTestId('open-accept-dialog');
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Accept Plan v1?');
+  await expect(dialog).toContainText('creates or updates its Issues on GitHub');
+  await expect(dialog).toContainText('agents start on the Issues labelled');
+  await expect(dialog).toContainText('needs-human');
+  await expect(dialog).toContainText('Issue labels do not change');
+
+  // Focus starts inside the dialog and Tab cannot leave it.
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null))
+    .toBe(true);
+  for (let index = 0; index < 6; index += 1) {
+    await page.keyboard.press('Tab');
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null))
+      .toBe(true);
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  // Cancel closes without accepting and also restores the trigger.
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(bar).toBeVisible();
 });
 
 test('offers Retry accept with the failure reason and keeps the plan unaccepted', async ({
@@ -295,7 +452,7 @@ test('offers Retry accept with the failure reason and keeps the plan unaccepted'
   });
 
   await page.goto('/projects/p1/issues/review');
-  await page.getByRole('button', { name: 'Accept plan', exact: true }).click();
+  await page.getByTestId('open-accept-dialog').click();
   await page.getByRole('button', { name: 'Accept Plan v1' }).click();
 
   await expect(page.getByRole('alert').getByText('Bad credentials')).toBeVisible();
@@ -304,7 +461,7 @@ test('offers Retry accept with the failure reason and keeps the plan unaccepted'
       .getByRole('alert')
       .getByText('The Plan was not accepted. Its Issues are safe to sync again.'),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: /v1.*Active.*Not accepted/ })).toBeVisible();
+  await expect(page.getByTestId('accept-bar')).toContainText('Plan v1');
 
   await page.getByRole('button', { name: 'Retry accept' }).click();
 
@@ -373,21 +530,25 @@ test('defaults to the active plan and shows a previous plan read-only', async ({
 
   await page.goto('/projects/p1/issues/review');
 
-  await expect(page.getByRole('heading', { name: 'Plan v2' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan v2', exact: true })).toBeVisible();
   await expect(page.getByText('The active plan.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toBeVisible();
+  await expect(page.getByTestId('open-accept-dialog')).toBeVisible();
 
-  await page.getByRole('button', { name: /v1.*Previous.*Completed/ }).click();
+  await selectVersion(page, 'v0', /v1.*Previous.*Completed/);
 
-  await expect(page.getByRole('heading', { name: 'Plan v1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan v1', exact: true })).toBeVisible();
   await expect(page.getByText('The previous plan.')).toBeVisible();
-  await expect(page.getByText(/This is a previous Plan/)).toBeVisible();
+  await expect(page.getByText(/This previous Plan is read-only/)).toBeVisible();
+  await expect(page.getByRole('link', { name: /Reactivate it on the Plan page/ })).toHaveAttribute(
+    'href',
+    '/projects/p1/plan',
+  );
   await expect(page.getByText('Old work', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('New work', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('open-accept-dialog')).toHaveCount(0);
 
-  await page.getByRole('button', { name: /v2.*Active/ }).click();
-  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toBeVisible();
+  await selectVersion(page, 'v2', /v2.*Active/);
+  await expect(page.getByTestId('open-accept-dialog')).toBeVisible();
   expect(state.plans).toHaveLength(2);
 });
 
@@ -401,10 +562,8 @@ test('explains a Plan published without Issues and offers no Accept', async ({ p
       'This Plan was published without Issues, so it cannot be accepted. A new agent session is needed to publish a revised Plan.',
     ),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Accept plan', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('open-accept-dialog')).toHaveCount(0);
   await expect(
-    page
-      .locator('section[aria-labelledby="issues-heading"]')
-      .getByRole('link', { name: 'Start a new agent session' }),
+    page.getByTestId('issue-list').getByRole('link', { name: 'Start a new agent session' }),
   ).toHaveAttribute('href', '/projects/p1/plan');
 });
