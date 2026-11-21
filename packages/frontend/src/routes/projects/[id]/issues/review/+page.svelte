@@ -604,7 +604,7 @@
     {/if}
 
     <DialogRoot bind:open={confirmOpen}>
-      <DialogContent>
+      <DialogContent class="max-sm:flex max-sm:flex-col">
         <DialogTitle>Accept Plan v{selectedPlan?.version ?? ''}?</DialogTitle>
         <DialogDescription>
           Accepting records this Plan and creates or updates its Issues on GitHub. It also lets
@@ -614,7 +614,7 @@
           Issues labelled <span class="font-medium">needs-human</span> stay as they are for you to handle.
           Issue labels do not change.
         </p>
-        <div class="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div class="mt-auto flex flex-col gap-2 sm:mt-2 sm:flex-row sm:justify-end">
           <DialogClose>
             {#snippet child({ props })}
               <Button {...props} variant="outline" class="h-11">Cancel</Button>

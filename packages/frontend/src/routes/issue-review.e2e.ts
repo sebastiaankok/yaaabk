@@ -336,6 +336,7 @@ test('warns about circular dependencies', async ({ page }) => {
 
   await expect(page.getByTestId('cycles')).toContainText('Circular dependencies');
   await expect(page.getByText('i1 → i2 → i1')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Unordered (cycle)' })).toBeVisible();
   // Cycles are called out before the accept action, which stays available
   // because an unorderable Plan can still be accepted today.
   await expect(page.getByTestId('accept-bar')).toBeVisible();
@@ -349,6 +350,21 @@ test('warns about circular dependencies', async ({ page }) => {
     );
   });
   expect(cyclesBeforeAccept).toBe(true);
+});
+
+test('warns when an Issue depends on something that is not in the Plan', async ({ page }) => {
+  const state = await mockReview(page);
+  state.graph = {
+    nodes: [
+      { id: 'i1', title: 'Schema', dependsOn: [], missing: [], wave: 0 },
+      { id: 'i2', title: 'Api', dependsOn: ['Schema', 'Ghost'], missing: ['Ghost'], wave: 1 },
+    ],
+    cycles: [],
+  };
+
+  await page.goto('/projects/p1/issues/review');
+
+  await expect(page.getByText('Missing dependency: Ghost')).toBeVisible();
 });
 
 test('offers no one-shot generation or prompt refinement', async ({ page }) => {
@@ -552,6 +568,46 @@ test('defaults to the active plan and shows a previous plan read-only', async ({
   expect(state.plans).toHaveLength(2);
 });
 
+test('opens the Plan named in the query string', async ({ page }) => {
+  const previous = {
+    ...PLAN,
+    id: 'v0',
+    version: 1,
+    isActive: false,
+    acceptedAt: ACCEPTED_AT,
+    summary: 'The previous plan.',
+  };
+  const active = { ...PLAN, id: 'v2', version: 2, isActive: true, summary: 'The active plan.' };
+  await mockReview(page, {
+    plans: [active, previous],
+    issues: [
+      issue({ id: 'old', title: 'Old work', planId: 'v0', status: 'closed' }),
+      issue({ id: 'new', title: 'New work', planId: 'v2', label: 'ready' }),
+    ],
+    graph: {
+      nodes: [
+        { id: 'old', title: 'Old work', dependsOn: [], missing: [], wave: 0 },
+        { id: 'new', title: 'New work', dependsOn: [], missing: [], wave: 0 },
+      ],
+      cycles: [],
+    },
+  });
+
+  await page.goto('/projects/p1/issues/review?plan=v0');
+
+  await expect(page.getByRole('heading', { name: 'Plan v1', exact: true })).toBeVisible();
+  await expect(page.getByText('The previous plan.')).toBeVisible();
+  if (test.info().project.name === 'mobile') {
+    await expect(page.getByLabel('Plan version', { exact: true })).toHaveValue('v0');
+  } else {
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Plan versions' })
+        .getByRole('button', { name: /v1.*Previous.*Completed/ }),
+    ).toHaveAttribute('aria-current', 'true');
+  }
+});
+
 test('explains a Plan published without Issues and offers no Accept', async ({ page }) => {
   await mockReview(page, { issues: [], graph: { nodes: [], cycles: [] } });
 
@@ -563,6 +619,7 @@ test('explains a Plan published without Issues and offers no Accept', async ({ p
     ),
   ).toBeVisible();
   await expect(page.getByTestId('open-accept-dialog')).toHaveCount(0);
+  await expect(page.getByTestId('accept-bar')).toHaveCount(0);
   await expect(
     page.getByTestId('issue-list').getByRole('link', { name: 'Start a new agent session' }),
   ).toHaveAttribute('href', '/projects/p1/plan');
