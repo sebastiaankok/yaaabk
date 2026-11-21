@@ -218,10 +218,15 @@ test('shows the project, its agent session and plan versions', async ({ page }) 
   await page.goto('/projects/p1/plan');
 
   await expect(page.getByRole('heading', { name: 'todo-app' })).toBeVisible();
-  await expect(page.getByText('A todo list')).toBeVisible();
-  await expect(page.getByText('Guided', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Agent session', exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Interview the agent in the terminal, then publish one Plan with its Issues.'),
+  ).toBeVisible();
+  await expect(page.getByText('Guided mode')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Start a Grill-Me Session', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
+  await expect(page.getByText('v1')).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Plan', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 2, name: 'Issues' })).toHaveCount(0);
 });
@@ -243,6 +248,33 @@ test('preselects the Project model and starts the session with it', async ({ pag
   await page.getByRole('button', { name: 'Start agent' }).click();
 
   await expect.poll(() => startedWith).toBe('openrouter/chosen-model');
+});
+
+test('filters the model combobox and starts with the keyboard choice', async ({ page }) => {
+  await mockProject(page);
+  await mockTerminal(page);
+  let startedWith: string | undefined;
+  await page.route('**/api/projects/p1/grill', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    startedWith = (route.request().postDataJSON() as { model?: string }).model;
+    await route.fulfill({ status: 201, json: SESSION });
+  });
+
+  await page.goto('/projects/p1/plan');
+
+  const model = page.getByRole('combobox', { name: 'Model' });
+  await model.fill('other');
+  await expect(page.getByRole('option', { name: /Other model/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Chosen model/ })).toHaveCount(0);
+
+  await model.press('ArrowDown');
+  await model.press('Enter');
+  await expect(model).toHaveValue('openrouter/other-model');
+
+  await page.getByLabel('Your idea').fill('A todo app');
+  await page.getByRole('button', { name: 'Start agent' }).click();
+
+  await expect.poll(() => startedWith).toBe('openrouter/other-model');
 });
 
 test('starts a live terminal session and cancels it after confirmation', async ({ page }) => {
@@ -285,6 +317,22 @@ test('keeps the session when the Developer dismisses the cancel confirmation', a
   expect(await page.locator('.xterm').count()).toBe(1);
 });
 
+test('shows the session toolbar with model, health, draft counts and actions', async ({ page }) => {
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+
+  const toolbar = page.getByRole('toolbar', { name: 'Session controls' });
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar.getByText('openrouter/default-model')).toBeVisible();
+  await expect(toolbar.getByRole('status', { name: 'Live' })).toBeVisible();
+  await expect(toolbar.getByText('Plan drafted')).toBeVisible();
+  await expect(toolbar.getByText('1 Issue drafted')).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Finish', exact: true })).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Cancel session' })).toBeVisible();
+});
+
 test('reconnects to a running session after a refresh', async ({ page }) => {
   await mockProject(page, { activeSession: SESSION });
   await mockTerminal(page);
@@ -293,7 +341,8 @@ test('reconnects to a running session after a refresh', async ({ page }) => {
 
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
-  await expect(page.getByText('Plan drafted · 1 issue drafted')).toBeVisible();
+  await expect(page.getByText('Plan drafted', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 Issue drafted')).toBeVisible();
   expect(await page.locator('.xterm').count()).toBe(1);
 });
 
@@ -395,7 +444,8 @@ test('finishes a session and shows the published plan version', async ({ page })
   await page.goto('/projects/p1/plan');
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
 
-  await expect(page.getByText('Published Plan v1 and 1 issue.')).toBeVisible();
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast.getByText('Published Plan v1 with 1 Issue.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan versions' })).toBeVisible();
   await expect(page.getByLabel('Your idea')).toBeVisible();
 });
@@ -429,7 +479,7 @@ test('does not offer a forced publish when the Plan is missing', async ({ page }
   await expect(page.getByText('Cannot finish: a Plan and an issue list missing')).toBeVisible();
   await expect(page.getByText(/Plan has not been drafted yet/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Publish anyway' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Finish again' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try Finish again' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel session' })).toBeVisible();
 });
 
@@ -465,7 +515,48 @@ test('activates an earlier plan version', async ({ page }) => {
     .locator('section[aria-labelledby="versions-heading"]')
     .getByRole('listitem')
     .filter({ hasText: 'v1' });
-  await expect(previous.getByText(/\bactive\b/)).toBeVisible();
+  await expect(previous.getByText('Active', { exact: true })).toBeVisible();
+});
+
+test('puts the Plan versions rail beside the terminal at wide widths', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+
+  const terminal = page.getByTestId('terminal-card');
+  const rail = page.locator('section[aria-labelledby="versions-heading"]');
+  await expect(terminal).toBeVisible();
+  await expect(rail).toBeVisible();
+
+  const terminalBox = await terminal.boundingBox();
+  const railBox = await rail.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(terminalBox).not.toBeNull();
+  expect(railBox!.x).toBeGreaterThanOrEqual(terminalBox!.x + terminalBox!.width);
+});
+
+test('stacks the Plan versions below the terminal at 360px without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await mockProject(page, { activeSession: SESSION });
+  await mockTerminal(page);
+
+  await page.goto('/projects/p1/plan');
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+
+  const terminal = page.getByTestId('terminal-card');
+  const rail = page.locator('section[aria-labelledby="versions-heading"]');
+  const terminalBox = await terminal.boundingBox();
+  const railBox = await rail.boundingBox();
+  expect(railBox!.y).toBeGreaterThanOrEqual(terminalBox!.y + terminalBox!.height);
+
+  const overflow = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    body: document.body.scrollWidth - document.body.clientWidth,
+  }));
+  expect(overflow.document).toBeLessThanOrEqual(0);
+  expect(overflow.body).toBeLessThanOrEqual(0);
 });
 
 test('shows each version\u2019s lifecycle status and links it to review', async ({ page }) => {
@@ -509,10 +600,15 @@ test('shows each version\u2019s lifecycle status and links it to review', async 
   const versions = page.locator('section[aria-labelledby="versions-heading"]');
   const previous = versions.getByRole('listitem').filter({ hasText: 'v1' });
   await expect(previous.getByText('Completed')).toBeVisible();
-  await expect(previous.getByText('1/1 closed')).toBeVisible();
+  await expect(previous.getByText('1/1 Issues closed')).toBeVisible();
+  await expect(previous.getByText('Grill-Me Session')).toBeVisible();
   await expect(previous.getByRole('link', { name: 'Review' })).toHaveAttribute(
     'href',
     '/projects/p1/issues/review?plan=v1',
+  );
+  await expect(previous.getByRole('link', { name: /docs\/plans\/v1\.md/ })).toHaveAttribute(
+    'href',
+    'https://github.com/acme/todo-app/blob/main/docs/plans/v1.md',
   );
 
   const active = versions.getByRole('listitem').filter({ hasText: 'v2' });
