@@ -172,6 +172,15 @@ export interface SpendMeter {
 }
 
 export interface Checks {
+  /**
+   * Installs the project's dependencies from its lockfile.
+   *
+   * The clone has no `node_modules`, so the harness runs this once after
+   * checkout and before OpenCode. A failure is reported but not fatal: the
+   * post-run `run` performs the same install and is the authority on whether
+   * the checks can proceed.
+   */
+  install(directory: string): Promise<{ passed: boolean; output: string }>;
   /** Runs the project's checks; reports whether they passed. */
   run(directory: string): Promise<{ passed: boolean; output: string }>;
 }

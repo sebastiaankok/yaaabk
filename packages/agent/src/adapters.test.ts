@@ -648,6 +648,28 @@ describe('createChecks', () => {
     }
   });
 
+  it('exposes install separately for the harness to run before OpenCode', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'yaaabk-checks-'));
+    try {
+      const calls: string[] = [];
+      const checks = createChecks({
+        now: () => 0,
+        run: async (_directory, script, args) => {
+          calls.push(`${script} ${args.join(' ')}`);
+          return { exitCode: 0, stdout: 'installed', stderr: '' };
+        },
+      });
+
+      const result = await checks.install(directory);
+
+      expect(result.passed).toBe(true);
+      expect(calls).toEqual(['install --frozen-lockfile --prefer-offline']);
+      expect(result.output).toContain('installed');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('installs once more without the frozen lockfile when it is stale', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'yaaabk-checks-'));
     try {

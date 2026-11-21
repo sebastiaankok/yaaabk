@@ -703,37 +703,59 @@ function isLockfileFailure(output: string): boolean {
   return /frozen|lockfile/i.test(output);
 }
 
+/** The install step's result, reused by the early install and the checks run. */
+interface InstallOutcome {
+  passed: boolean;
+  output: string;
+}
+
+/** Installs dependencies, retrying without the frozen lockfile when it is stale. */
+async function installDependencies(
+  run: ChecksRunner,
+  now: () => number,
+  directory: string,
+): Promise<InstallOutcome> {
+  const output: string[] = [];
+  const installStarted = now();
+  let install = await run(directory, 'install', ['--frozen-lockfile', '--prefer-offline']);
+  output.push(
+    `[yaaabk] bun install --frozen-lockfile (${((now() - installStarted) / 1000).toFixed(1)}s)`,
+    install.stdout,
+    install.stderr,
+  );
+
+  if (install.exitCode !== 0 && isLockfileFailure(`${install.stdout}\n${install.stderr}`)) {
+    // The template ships a lockfile, but an agent adding a dependency (or
+    // an older project without one) still has to be able to run its
+    // checks. Updating the lockfile here is committed with the change.
+    output.push('[yaaabk] lockfile is missing or stale; installing without --frozen-lockfile');
+    const retryStarted = now();
+    install = await run(directory, 'install', ['--prefer-offline']);
+    output.push(
+      `[yaaabk] bun install (${((now() - retryStarted) / 1000).toFixed(1)}s)`,
+      install.stdout,
+      install.stderr,
+    );
+  }
+
+  return { passed: install.exitCode === 0, output: output.join('\n') };
+}
+
 /** The real checks adapter: install, then the project's own checks. */
 export function createChecks(options: ChecksOptions = {}): Checks {
   const run = options.run ?? defaultChecksRunner;
   const now = options.now ?? Date.now;
 
   return {
+    install(directory) {
+      return installDependencies(run, now, directory);
+    },
+
     async run(directory) {
-      const output: string[] = [];
-      const installStarted = now();
-      let install = await run(directory, 'install', ['--frozen-lockfile', '--prefer-offline']);
-      output.push(
-        `[yaaabk] bun install --frozen-lockfile (${((now() - installStarted) / 1000).toFixed(1)}s)`,
-        install.stdout,
-        install.stderr,
-      );
+      const installed = await installDependencies(run, now, directory);
+      if (!installed.passed) return { passed: false, output: installed.output };
 
-      if (install.exitCode !== 0 && isLockfileFailure(`${install.stdout}\n${install.stderr}`)) {
-        // The template ships a lockfile, but an agent adding a dependency (or
-        // an older project without one) still has to be able to run its
-        // checks. Updating the lockfile here is committed with the change.
-        output.push('[yaaabk] lockfile is missing or stale; installing without --frozen-lockfile');
-        const retryStarted = now();
-        install = await run(directory, 'install', ['--prefer-offline']);
-        output.push(
-          `[yaaabk] bun install (${((now() - retryStarted) / 1000).toFixed(1)}s)`,
-          install.stdout,
-          install.stderr,
-        );
-      }
-      if (install.exitCode !== 0) return { passed: false, output: output.join('\n') };
-
+      const output: string[] = [installed.output];
       const commands = checksForScripts(await projectScripts(directory));
       for (const command of commands) {
         const started = now();

@@ -84,6 +84,8 @@ function fakes(
     checksPassed?: boolean;
     reviewExitCode?: number;
     verdict?: { event: 'approve' | 'request-changes'; body: string };
+    /** Whether the pre-OpenCode dependency install succeeded. */
+    installPassed?: boolean;
     /** Whether the base-branch merge leaves conflicts behind. */
     mergeConflicted?: boolean;
     /** Conflicted paths the first `unmergedPaths` call reports. */
@@ -259,6 +261,10 @@ function fakes(
     },
   };
   const checks: Checks = {
+    async install(directory) {
+      calls.push(`install:${directory}`);
+      return { passed: overrides.installPassed ?? true, output: 'install output' };
+    },
     async run(directory) {
       calls.push(`checks:${directory}`);
       return { passed: overrides.checksPassed ?? true, output: 'checks ok' };
@@ -314,6 +320,7 @@ describe('runAgent', () => {
       'fetch:42',
       'clone:https://github.com/acme/todo-app->/work/repo',
       'branch:/work/repo:agent/issue-42',
+      'install:/work/repo',
       'implement:/work/repo',
       'checks:/work/repo',
       'commit:/work/repo:Add login (#42)',
@@ -327,6 +334,16 @@ describe('runAgent', () => {
       branch: 'agent/issue-42',
     });
     expect(reports).toEqual([{ prUrl: pullRequests.url, logs: 'implemented\nchecks ok' }]);
+  });
+
+  it('installs dependencies before OpenCode and continues when the install fails', async () => {
+    const { deps, calls, reports } = fakes({ installPassed: false });
+
+    const outcome = await runAgent(CONFIG, deps);
+
+    expect(calls.indexOf('install:/work/repo')).toBeLessThan(calls.indexOf('implement:/work/repo'));
+    expect(outcome).toMatchObject({ ok: true });
+    expect(reports[0]?.logs).toContain('bun install failed');
   });
 
   it('reports the LLM spend of the attempt in whole cents', async () => {
@@ -397,6 +414,7 @@ describe('runAgent', () => {
       'fetch:42',
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout:/work/repo:agent/issue-42',
+      'install:/work/repo',
       'implement:/work/repo',
       'checks:/work/repo',
       'commit:/work/repo:Add login (#42)',
@@ -418,6 +436,7 @@ describe('runAgent', () => {
       'fetch:42',
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout:/work/repo:agent/issue-42',
+      'install:/work/repo',
       'diff:/work/repo',
       'review:/work/repo',
       'review-post:7:request-changes',
@@ -497,6 +516,7 @@ describe('runAgent', () => {
       'fetch:42',
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout:/work/repo:agent/issue-42',
+      'install:/work/repo',
       'merge:/work/repo',
       'unmerged:/work/repo',
       'resolve:/work/repo',
@@ -538,6 +558,7 @@ describe('runAgent', () => {
       'fetch:42',
       'clone:https://github.com/acme/todo-app->/work/repo',
       'checkout:/work/repo:agent/issue-42',
+      'install:/work/repo',
       'merge:/work/repo',
       'unmerged:/work/repo',
       'checks:/work/repo',

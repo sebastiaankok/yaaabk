@@ -1,7 +1,13 @@
 import type { TokenUsage } from '@yaaabk/shared';
 import { parseRepoUrl } from './adapters';
 import type { AgentConfig } from './config';
-import { AUTOMERGE_LABEL, defaultBranch, type AgentDependencies, type AgentOutcome } from './ports';
+import {
+  AUTOMERGE_LABEL,
+  defaultBranch,
+  type AgentDependencies,
+  type AgentOutcome,
+  type Checks,
+} from './ports';
 import {
   buildImplementPrompt,
   buildResolveConflictsPrompt,
@@ -47,6 +53,28 @@ function centsFromUsd(usd: number): number {
 /** The report field for measured token usage, omitted when unmeasured. */
 function tokenReport(tokens: TokenUsage | null): { tokens?: TokenUsage } {
   return tokens === null ? {} : { tokens };
+}
+
+/**
+ * Installs the project's dependencies once the repository is checked out.
+ *
+ * Every clone starts without `node_modules`, and OpenCode runs before the
+ * post-run checks. Installing here lets the Agent read library sources, run
+ * `bun run check` and use project scripts without discovering the missing
+ * install itself. A failure is logged but not fatal: the checks run installs
+ * again and is the authority on whether the attempt can proceed.
+ */
+async function installDependencies(
+  checks: Checks,
+  directory: string,
+  logs: string[],
+): Promise<void> {
+  progress('installing dependencies');
+  const installed = await checks.install(directory);
+  if (!installed.passed) {
+    logs.push(`bun install failed:\n${installed.output}`);
+    progress('dependency install failed; continuing so the checks report it');
+  }
 }
 
 /**
@@ -136,6 +164,8 @@ async function runImplement(config: AgentConfig, deps: AgentDependencies): Promi
     await deps.git.createBranch(directory, branch);
   }
 
+  await installDependencies(deps.checks, directory, logs);
+
   progress(`branch ${branch}: running OpenCode (${config.model ?? 'default model'})`);
   const implemented = await measureSpend(deps.spend, () =>
     deps.openCode.implement({
@@ -213,6 +243,8 @@ async function runReview(config: AgentConfig, deps: AgentDependencies): Promise<
   await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
   await deps.git.checkoutBranch(directory, branch);
 
+  await installDependencies(deps.checks, directory, logs);
+
   progress(`reviewing pull request #${pullNumber} (${config.model ?? 'default model'})`);
   const diff = await deps.git.diff(directory);
   const reviewed = await measureSpend(deps.spend, () =>
@@ -279,6 +311,8 @@ async function runResolveConflicts(
   progress(`resolving conflicts on ${branch} against the default branch`);
   await deps.git.clone({ repoUrl: config.repoUrl, token: config.githubToken, directory });
   await deps.git.checkoutBranch(directory, branch);
+
+  await installDependencies(deps.checks, directory, logs);
 
   const merged = await deps.git.mergeDefaultBranch(directory);
   if (merged.output.trim() !== '') logs.push(merged.output.trimEnd());
