@@ -213,6 +213,37 @@ async function gotoHydrated(page: Page, path: string): Promise<void> {
   await hydrated;
 }
 
+/** Whether the current project shows the run history as cards instead of a table. */
+function usesRunCards(): boolean {
+  return test.info().project.name === 'mobile';
+}
+
+function runCards(page: Page) {
+  return page.getByTestId('run-card');
+}
+
+function runRows(page: Page) {
+  return page.getByTestId('run-table').locator('tbody tr');
+}
+
+/** The run-history item the current layout renders first. */
+function firstRun(page: Page) {
+  return usesRunCards() ? runCards(page).first() : runRows(page).first();
+}
+
+/** Asserts which history layout is visible and how many runs it shows. */
+async function expectRunCount(page: Page, count: number): Promise<void> {
+  if (usesRunCards()) {
+    await expect(page.getByTestId('run-cards')).toBeVisible();
+    await expect(page.getByTestId('run-table')).toBeHidden();
+    await expect(runCards(page)).toHaveCount(count);
+  } else {
+    await expect(page.getByTestId('run-table')).toBeVisible();
+    await expect(page.getByTestId('run-cards')).toBeHidden();
+    await expect(runRows(page)).toHaveCount(count);
+  }
+}
+
 test('shows KPI tiles, accessible charts and the run history', async ({ page }) => {
   await mockStats(page);
 
@@ -267,34 +298,120 @@ test('shows KPI tiles, accessible charts and the run history', async ({ page }) 
   await expect(duration).toContainText('1m 30s');
   await expect(duration).toContainText('1 run');
 
-  const rows = page.locator('section[aria-labelledby="history-heading"] tbody tr');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText('Api');
-  await expect(rows.first()).toContainText('success');
-  await expect(rows.first()).toContainText('1m 30s');
-  await expect(rows.first()).toContainText('$9.00');
-  await expect(rows.first().locator('td').nth(5)).toHaveText('41.7k');
-  await expect(rows.nth(1).locator('td').nth(5)).toHaveText('—');
+  await expectRunCount(page, 2);
+  await expect(firstRun(page)).toContainText('Api');
+  await expect(firstRun(page)).toContainText('success');
+  await expect(firstRun(page)).toContainText('1m 30s');
+  await expect(firstRun(page)).toContainText('$9.00');
+  await expect(firstRun(page)).toContainText('41.7k');
+  await expect(firstRun(page)).toContainText('2026-02-01');
+  if (usesRunCards()) {
+    for (const label of ['Attempt', 'Duration', 'Cost', 'Tokens', 'PR', 'Started']) {
+      await expect(firstRun(page)).toContainText(label);
+    }
+    await expect(runCards(page).nth(1)).toContainText('—');
+  } else {
+    await expect(runRows(page).first().locator('td').nth(5)).toHaveText('41.7k');
+    await expect(runRows(page).nth(1).locator('td').nth(5)).toHaveText('—');
+  }
   await expect(page.getByRole('link', { name: 'Open PR' })).toHaveAttribute(
     'href',
     'https://github.com/acme/todo-app/pull/7',
   );
 });
 
-test('sorts and filters the run history', async ({ page }) => {
-  await mockStats(page);
+test('sorts and filters the run history alongside the range switcher', async ({ page }) => {
+  const urls: string[] = [];
+  await mockStats(page, {
+    onStats: (url) => urls.push(url),
+    respond: (url) => (requestedDays(url) === 7 ? SHORT_STATS : STATS),
+  });
   await gotoHydrated(page, '/projects/p1/stats');
 
   await page.getByLabel('Sort runs').selectOption('duration');
 
-  const rows = page.locator('section[aria-labelledby="history-heading"] tbody tr');
-  await expect(rows.first()).toContainText('Schema');
-  await expect(rows.first()).toContainText('2m');
+  await expectRunCount(page, 2);
+  await expect(firstRun(page)).toContainText('Schema');
+  await expect(firstRun(page)).toContainText('2m');
 
   await page.getByLabel('Filter by status').selectOption('failed');
 
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Schema');
+  await expectRunCount(page, 1);
+  await expect(firstRun(page)).toContainText('Schema');
+
+  await page.getByRole('button', { name: '7 days' }).click();
+
+  await expect(page.getByRole('button', { name: '7 days' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByTestId('run-history-empty')).toBeVisible();
+  await expect(
+    page.getByText('No runs with status failed in the last 7 days', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      '1 run in this range has another status. Clear the filter or change the range.',
+      {
+        exact: true,
+      },
+    ),
+  ).toBeVisible();
+  await expect.poll(() => urls.filter((url) => requestedDays(url) === 7).length).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Clear status filter' }).click();
+
+  await expect(page.getByLabel('Filter by status')).toHaveValue('all');
+  await expect(page.getByTestId('run-history-empty')).toHaveCount(0);
+  await expectRunCount(page, 1);
+  await expect(firstRun(page)).toContainText('Schema');
+});
+
+test('uses a table at 720px and summary cards below it', async ({ page }) => {
+  await page.setViewportSize({ width: 719, height: 900 });
+  await mockStats(page);
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  await expect(page.getByTestId('run-cards')).toBeVisible();
+  await expect(page.getByTestId('run-table')).toBeHidden();
+  const card = runCards(page).first();
+  for (const text of ['Api', 'Attempt', '2', 'success', '1m 30s', '$9.00', '41.7k', 'Started']) {
+    await expect(card).toContainText(text);
+  }
+  await expect(card.getByRole('link', { name: 'Open PR' })).toHaveAttribute(
+    'href',
+    'https://github.com/acme/todo-app/pull/7',
+  );
+
+  await page.setViewportSize({ width: 720, height: 900 });
+
+  await expect(page.getByTestId('run-table')).toBeVisible();
+  await expect(page.getByTestId('run-cards')).toBeHidden();
+});
+
+test('explains a status filter that matches nothing and clears it', async ({ page }) => {
+  await mockStats(page);
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  await page.getByLabel('Filter by status').selectOption('queued');
+
+  await expect(page.getByTestId('run-history-empty')).toBeVisible();
+  await expect(
+    page.getByText('No runs with status queued in the last 30 days', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      '2 runs in this range have another status. Clear the filter or change the range.',
+      {
+        exact: true,
+      },
+    ),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Clear status filter' }).click();
+
+  await expect(page.getByTestId('run-history-empty')).toHaveCount(0);
+  await expectRunCount(page, 2);
 });
 
 test('refetches KPIs and charts when the date range changes', async ({ page }) => {
@@ -362,7 +479,13 @@ test('explains an empty range instead of drawing hollow charts', async ({ page }
   await expect(
     page.getByText('No completed agent runs in the last 30 days.', { exact: false }),
   ).toBeVisible();
-  await expect(page.getByText('No agent runs in the last 30 days.')).toBeVisible();
+  await expect(page.getByText('No agent runs in the last 30 days', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Widen the range or start an agent to see runs here.', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId('run-history-empty')).toBeVisible();
+  await expect(page.getByTestId('run-cards')).toBeHidden();
+  await expect(page.getByTestId('run-table')).toBeHidden();
 });
 
 test('inspects chart points with the pointer and restores the hint', async ({ page }) => {
@@ -398,6 +521,9 @@ test('reflows chart cards and tiles at 360px without horizontal overflow', async
 
   await expect(page.getByRole('heading', { level: 1, name: 'todo-app stats' })).toBeVisible();
   await expect(page.getByRole('slider', { name: /Issues closed per day/ })).toBeVisible();
+  await expect(page.getByTestId('run-cards')).toBeVisible();
+  await expect(page.getByTestId('run-table')).toBeHidden();
+  await expect(runCards(page)).toHaveCount(2);
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

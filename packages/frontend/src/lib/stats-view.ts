@@ -214,6 +214,9 @@ export function nearestChartIndex(points: readonly ChartPoint[], x: number): num
 /** How the run history table is ordered. */
 export type RunSort = 'newest' | 'cost' | 'duration';
 
+/** The statuses the run history can be narrowed to. */
+export type RunStatusFilter = 'all' | RunHistoryEntry['status'];
+
 /** Returns a new run history list ordered by the chosen column, newest first by default. */
 export function sortRuns(runs: readonly RunHistoryEntry[], sort: RunSort): RunHistoryEntry[] {
   const byNewest = (a: RunHistoryEntry, b: RunHistoryEntry) =>
@@ -224,6 +227,44 @@ export function sortRuns(runs: readonly RunHistoryEntry[], sort: RunSort): RunHi
       return (b.durationSeconds ?? -1) - (a.durationSeconds ?? -1) || byNewest(a, b);
     return byNewest(a, b);
   });
+}
+
+/** The runs the history shows for a sort order and status filter. */
+export function visibleRuns(
+  runs: readonly RunHistoryEntry[],
+  sort: RunSort,
+  filter: RunStatusFilter,
+): RunHistoryEntry[] {
+  return sortRuns(runs, sort).filter((run) => filter === 'all' || run.status === filter);
+}
+
+/** What the run history says when it has nothing to show, and how to recover. */
+export interface RunHistoryEmptyState {
+  title: string;
+  hint: string;
+}
+
+/**
+ * Explains an empty run history: either the range held no runs, or the status
+ * filter excluded every run in it. The two cases need different remedies.
+ */
+export function runHistoryEmptyState(
+  runs: readonly RunHistoryEntry[],
+  filter: RunStatusFilter,
+  days: number,
+): RunHistoryEmptyState {
+  if (filter === 'all' || runs.length === 0) {
+    return {
+      title: `No agent runs in the last ${days} days`,
+      hint: 'Widen the range or start an agent to see runs here.',
+    };
+  }
+  return {
+    title: `No runs with status ${filter} in the last ${days} days`,
+    hint: `${runs.length} ${runs.length === 1 ? 'run' : 'runs'} in this range ${
+      runs.length === 1 ? 'has' : 'have'
+    } another status. Clear the filter or change the range.`,
+  };
 }
 
 /** A bar in the run-duration chart. */
