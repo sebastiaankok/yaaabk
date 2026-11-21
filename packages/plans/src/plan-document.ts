@@ -48,9 +48,15 @@ export function planDocumentPath(version: number): string {
   return `docs/plans/v${version}.md`;
 }
 
-/** Renders the Markdown committed to `docs/plans/v<N>.md` on acceptance. */
+/**
+ * Renders the Markdown committed to `docs/plans/v<N>.md` on acceptance.
+ *
+ * The document ends with exactly one newline: the file is committed to the
+ * Project repository and a missing final newline fails the scaffold's
+ * `prettier --check`.
+ */
 export function renderAcceptedPlan(plan: AcceptedPlanDocument): string {
-  return [
+  const document = [
     '---',
     `version: ${plan.version}`,
     `accepted: ${dateOf(plan.acceptedAt)}`,
@@ -64,4 +70,6 @@ export function renderAcceptedPlan(plan: AcceptedPlanDocument): string {
     '',
     ...plan.issues.map(issueLine),
   ].join('\n');
+
+  return `${document.replace(/\n+$/, '')}\n`;
 }

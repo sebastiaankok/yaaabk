@@ -31,6 +31,28 @@ describe('renderAcceptedPlan', () => {
     expect(document).toContain(contentMarkdown);
   });
 
+  it('ends with exactly one newline so the committed file passes Prettier', () => {
+    const withIssues = renderAcceptedPlan({
+      version: 1,
+      projectName: 'todo-app',
+      contentMarkdown: '# Overview',
+      acceptedAt: ACCEPTED_AT,
+      issues: [{ title: 'Schema', label: 'ready', dependsOn: [] }],
+    });
+    const withoutIssues = renderAcceptedPlan({
+      version: 1,
+      projectName: 'todo-app',
+      contentMarkdown: '# Overview\n',
+      acceptedAt: ACCEPTED_AT,
+      issues: [],
+    });
+
+    expect(withIssues.endsWith('\n')).toBe(true);
+    expect(withIssues.endsWith('\n\n')).toBe(false);
+    expect(withoutIssues.endsWith('\n')).toBe(true);
+    expect(withoutIssues.endsWith('\n\n')).toBe(false);
+  });
+
   it('appends each published Issue with its label and dependencies', () => {
     const document = renderAcceptedPlan({
       version: 3,
