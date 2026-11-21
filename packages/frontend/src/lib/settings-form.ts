@@ -51,6 +51,70 @@ export function validateBudgetDollars(dollars: string): string | undefined {
   return undefined;
 }
 
+/** The parts of the form that are saved and can be compared against a snapshot. */
+export interface SettingsFormSnapshot {
+  githubMode: GitHubCredentialMode;
+  defaultIssueBudgetDollars: string;
+}
+
+/**
+ * Whether the Developer has typed something that a save would send.
+ *
+ * Stored secrets never enter the form, so any non-blank credential is a change.
+ */
+export function hasUnsavedChanges(
+  input: SettingsFormInput,
+  snapshot: SettingsFormSnapshot,
+): boolean {
+  const credentials = [
+    input.githubAppId,
+    input.githubPrivateKey,
+    input.githubInstallationId,
+    input.githubPat,
+    input.openrouterManagementKey,
+  ];
+  if (credentials.some((value) => value !== undefined && value !== '')) {
+    return true;
+  }
+  if (input.githubMode !== undefined && input.githubMode !== snapshot.githubMode) {
+    return true;
+  }
+
+  const budget = input.defaultIssueBudgetDollars?.trim() ?? '';
+  if (budget === '') return false;
+  const cents = dollarsToCents(budget);
+  if (cents === undefined) return true;
+  return cents !== dollarsToCents(snapshot.defaultIssueBudgetDollars);
+}
+
+/**
+ * Where the save bar's state is in its lifecycle. Unlike the status shown in
+ * the bar, this is what the page knows: saved and failed are outcomes of the
+ * last save, not form contents.
+ */
+export type SettingsSavePhase = 'idle' | 'saving' | 'saved' | 'failed';
+
+/** The states the sticky save bar must never hide. */
+export type SaveBarStatus = 'clean' | 'unsaved' | 'saving' | 'saved' | 'failed';
+
+/**
+ * Resolves what the sticky save bar reports. A save in flight and a failed save
+ * outrank form dirtiness, but a posted saved state only survives while the form
+ * is still clean.
+ */
+export function saveBarStatus({
+  dirty,
+  phase,
+}: {
+  dirty: boolean;
+  phase: SettingsSavePhase;
+}): SaveBarStatus {
+  if (phase === 'saving') return 'saving';
+  if (phase === 'failed') return 'failed';
+  if (dirty) return 'unsaved';
+  return phase === 'saved' ? 'saved' : 'clean';
+}
+
 /**
  * Builds the PUT body from what the Developer typed.
  *
