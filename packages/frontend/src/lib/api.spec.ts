@@ -16,6 +16,7 @@ import {
   listProjects,
   login,
   spawnAgent,
+  startGrill,
   syncIssues,
   updateProject,
 } from './api';
@@ -437,6 +438,39 @@ describe('getProjectStats', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/projects\/p1\/stats$/),
       expect.anything(),
+    );
+  });
+});
+
+describe('startGrill', () => {
+  it('sends the selected session mode with the idea and model', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: 's1' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await startGrill('p1', 'A todo app', 'openrouter/chosen', 'autonomous');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/grill$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          idea: 'A todo app',
+          model: 'openrouter/chosen',
+          mode: 'autonomous',
+        }),
+      }),
+    );
+  });
+
+  it('omits the mode when the caller leaves it to the Project', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: 's1' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await startGrill('p1', 'A todo app');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/projects\/p1\/grill$/),
+      expect.objectContaining({ body: JSON.stringify({ idea: 'A todo app' }) }),
     );
   });
 });

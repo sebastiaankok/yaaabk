@@ -25,7 +25,7 @@
     type ProvisioningEvent,
     type StepStatus,
   } from '#lib/creation-progress.js';
-  import { projectModeLabel } from '#lib/project-mode.js';
+  import { projectModeHint, projectModeLabel } from '#lib/project-mode.js';
   import {
     hasErrors,
     validateProjectDetails,
@@ -35,13 +35,6 @@
   import { projectWizardSteps, type WizardStepId } from '#lib/wizard-steps.js';
 
   type Step = 'details' | 'mode' | 'creating';
-
-  const MODE_HINTS: Record<ProjectMode, string> = {
-    guided:
-      'The agent interviews you one question at a time, then checks the module sketch and issue breakdown with you.',
-    autonomous:
-      'The agent decides everything itself and only shows you the finished Plan and Issues.',
-  };
 
   const STATUS_TEXT: Record<StepStatus, string> = {
     pending: 'Pending',
@@ -226,7 +219,7 @@
                 <span class="flex min-w-0 flex-col gap-1">
                   <span class="font-medium text-foreground">{projectModeLabel(option)}</span>
                   <span id={`mode-${option}-description`} class="text-sm text-muted-foreground">
-                    {MODE_HINTS[option]}
+                    {projectModeHint(option)}
                   </span>
                 </span>
               </label>
