@@ -27,9 +27,10 @@ branch once you finish. Do not push, open a pull request, or merge anything.
    revert either side wholesale, and do not reimplement the Issue.
 3. **Keep the change focused.** Only touch files needed to resolve the merge.
    Match the surrounding code's structure, naming and style.
-4. **Run the project's checks.** Run `bun run check` — lint, type-check, tests
-   and build — and `bun run smoke` when the project exposes it, then iterate
-   until they pass.
+4. **Run the project's checks.** Run `bun run check` — lint, type-check, tests,
+   build and smoke when the project exposes it — and iterate until it passes.
+   Dependencies are installed before you start; run
+   `bun install --frozen-lockfile` if `node_modules` is missing.
 5. **Stage the resolution.** Every conflict must be resolved and staged (`git
    add`) so no unmerged path remains. YAAABK commits and force-pushes; do not
    push yourself.

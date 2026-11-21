@@ -15,6 +15,8 @@ reviewing, not implementing.
 - the **pull request number and branch** under review;
 - the **issue number, title and body** the change is meant to deliver;
 - the **pull request diff**;
+- the **repository**, already on the pull request's branch, with its
+  dependencies installed;
 - an **OpenRouter key** scoped to a per-review budget, exposed as
   `OPENROUTER_API_KEY`;
 - **`kubectl`** read-only plus `pods/exec` access to your **Project's
@@ -41,6 +43,9 @@ reviewing, not implementing.
    - Only run extra commands when a specific concern in the diff requires it.
 4. **Be specific.** Name the files and lines you are concerned about, and say
    what would resolve each concern. Do not post vague feedback.
+5. **Mind the shell.** `npx` is not installed; use `bun x`. The shell's `grep`
+   is BusyBox and rejects `--include` and `--exclude-dir`; use the Grep tool or
+   `git grep`.
 
 ## Verdict protocol
 

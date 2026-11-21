@@ -16,7 +16,8 @@ request once you finish. Do not open a pull request yourself.
 - the **accepted Plan** at the `docs/plans/v<N>.md` path named by the Issue
   body, when the Issue came from a Plan. Read it before editing for the module
   boundaries, data decisions and out-of-scope constraints the Issue must respect;
-- the **repository** you are working in, already on your branch;
+- the **repository** you are working in, already on your branch, with its
+  dependencies installed;
 - an **OpenRouter key** scoped to a per-issue budget, exposed as
   `OPENROUTER_API_KEY`;
 - **`kubectl`** access to your **Project's Kubernetes namespace** as the
@@ -49,6 +50,14 @@ request once you finish. Do not open a pull request yourself.
    - Never try to read Secret values or touch any other namespace.
 5. **Leave the work committed.** Commit onto the branch you were given. YAAABK
    pushes the branch and opens the pull request.
+
+## Environment notes
+
+- Dependencies are installed before you start. If `node_modules` is missing,
+  run `bun install --frozen-lockfile` first; Bun's package cache is pre-warmed.
+- Use `bun x` for one-off CLIs (`npx` is not installed; `curl` is).
+- The shell's `grep` is BusyBox and rejects GNU flags such as `--include` and
+  `--exclude-dir`. Prefer the Grep tool or `git grep`.
 
 ## Budget
 

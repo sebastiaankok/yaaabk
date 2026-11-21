@@ -3,9 +3,12 @@
  * End-to-end smoke check for the scaffolded app.
  *
  * Starts the real server entry point on an ephemeral port, waits for `/health`,
- * checks the health and hello endpoints, and always stops the process again.
- * Exits non-zero on any failure, so `bun run smoke` is safe to use in CI and in
- * an Agent run.
+ * checks the health, hello and SPA root responses, and always stops the process
+ * again. Exits non-zero on any failure, so `bun run smoke` is safe to use in CI
+ * and in an Agent run.
+ *
+ * The SPA root is served from `web/build`, which `bun run build` creates. Run
+ * `bun run check` (which builds first) or `bun run build` before this script.
  */
 
 import { createServer } from 'node:net';
@@ -86,7 +89,20 @@ async function main(): Promise<void> {
       throw new Error(`/api/hello returned ${JSON.stringify(helloBody)}, expected a message`);
     }
 
-    console.log(`smoke: /health and /api/hello answered on ${baseUrl}`);
+    const page = await fetch(baseUrl);
+    if (!page.ok) {
+      throw new Error(`/ returned HTTP ${page.status}; run \`bun run build\` so web/build exists`);
+    }
+    const contentType = page.headers.get('content-type') ?? '';
+    if (!contentType.includes('text/html')) {
+      throw new Error(`/ returned content-type ${contentType || '(none)'}, expected text/html`);
+    }
+    const html = await page.text();
+    if (!html.toLowerCase().includes('<!doctype html')) {
+      throw new Error('/ did not return the SPA shell');
+    }
+
+    console.log(`smoke: /health, /api/hello and / answered on ${baseUrl}`);
   } catch (error) {
     failure = error;
   } finally {

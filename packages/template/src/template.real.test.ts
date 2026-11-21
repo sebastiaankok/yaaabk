@@ -128,6 +128,20 @@ describe('scaffold against the bundled svelte-bun template', () => {
     const rootPkg = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
     expect(rootPkg.name).toBe('todo-app');
     expect(rootPkg.scripts.build).toContain('@todo-app/web');
+    expect(rootPkg.scripts.check).toContain('bun run smoke');
+
+    const viteConfig = await readFile(join(directory, 'web/vite.config.ts'), 'utf8');
+    expect(viteConfig).toContain("'/api': 'http://localhost:3000'");
+
+    const webPkg = JSON.parse(await readFile(join(directory, 'web/package.json'), 'utf8'));
+    expect(webPkg.imports['#lib']).toBe('./src/lib');
+    expect(webPkg.imports['#lib/*']).toBe('./src/lib/*');
+
+    const serverApp = await readFile(join(directory, 'server/src/app.ts'), 'utf8');
+    expect(serverApp).toContain("path.startsWith('/api/')");
+
+    const prettierIgnore = await readFile(join(directory, '.prettierignore'), 'utf8');
+    expect(prettierIgnore).toContain('docs/plans');
 
     const httprouteManifest = await readFile(join(directory, 'deploy/httproute.yaml'), 'utf8');
     expect(httprouteManifest).toContain('kind: HTTPRoute');
