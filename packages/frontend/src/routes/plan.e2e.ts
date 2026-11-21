@@ -266,6 +266,28 @@ test('preselects the Project model and starts the session with it', async ({ pag
   await expect.poll(() => startedWith).toBe('openrouter/chosen-model');
 });
 
+test('starts the session in the mode selected on the Plan page', async ({ page }) => {
+  await mockProject(page);
+  await mockTerminal(page);
+  let startedWith: string | undefined;
+  await page.route('**/api/projects/p1/grill', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const body = route.request().postDataJSON() as { mode?: string };
+    startedWith = body.mode;
+    await route.fulfill({ status: 201, json: { ...SESSION, mode: body.mode } });
+  });
+
+  await page.goto('/projects/p1/plan');
+
+  await expect(page.getByRole('radio', { name: 'Guided' })).toBeChecked();
+  await page.getByRole('radio', { name: 'Autonomous' }).check();
+  await page.getByLabel('Your idea').fill('A todo app');
+  await page.getByRole('button', { name: 'Start agent' }).click();
+
+  await expect.poll(() => startedWith).toBe('autonomous');
+  await expect(page.getByText('Autonomous mode')).toBeVisible();
+});
+
 test('filters the model combobox and starts with the keyboard choice', async ({ page }) => {
   await mockProject(page);
   await mockTerminal(page);

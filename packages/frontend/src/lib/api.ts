@@ -389,9 +389,11 @@ export function startGrill(
   projectId: string,
   idea: string,
   model?: string,
+  mode?: ProjectMode,
 ): Promise<GrillSessionView> {
   const body: Record<string, string> = { idea };
   if (model !== undefined && model.trim() !== '') body.model = model.trim();
+  if (mode !== undefined) body.mode = mode;
   return request<GrillSessionView>(`/api/projects/${encodeURIComponent(projectId)}/grill`, {
     method: 'POST',
     body: JSON.stringify(body),

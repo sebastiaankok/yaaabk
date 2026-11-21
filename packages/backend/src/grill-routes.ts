@@ -10,6 +10,7 @@ import {
 } from '@yaaabk/grill-me';
 import type { PlansModule } from '@yaaabk/plans';
 import type { ProjectsModule } from '@yaaabk/projects';
+import { isProjectMode } from '@yaaabk/shared';
 import { Hono } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -175,11 +176,21 @@ export function grillRoutes(
       if (invalid !== null) return invalid;
     }
 
+    // The Plan page may override the Project's mode for one session, so a
+    // Project set to autonomous can still be run guided when needed.
+    const mode = input.mode ?? project.mode;
+    if (!isProjectMode(mode)) {
+      return c.json(
+        { error: 'invalid-input', message: 'Mode must be "guided" or "autonomous"' },
+        400,
+      );
+    }
+
     const result = await sessions.start({
       projectId: project.id,
       projectName: project.name,
       idea: asString(input.idea ?? input.message),
-      mode: project.mode,
+      mode,
       model: model === '' ? null : model,
       lastModel: project.lastModel,
       activePlan: active.value?.contentMarkdown ?? null,

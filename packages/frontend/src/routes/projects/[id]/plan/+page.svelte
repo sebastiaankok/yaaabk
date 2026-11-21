@@ -4,6 +4,7 @@
   import type { Plan } from '@yaaabk/plans';
   import type { Issue } from '@yaaabk/issues';
   import type { Project } from '@yaaabk/projects';
+  import { PROJECT_MODES, type ProjectMode } from '@yaaabk/shared';
   import { toast } from 'svelte-sonner';
   import {
     ApiError,
@@ -40,7 +41,7 @@
   import { planFilePath, planFileUrl } from '#lib/plan-file.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
   import { pollWhileVisible } from '#lib/polling.js';
-  import { projectModeLabel } from '#lib/project-mode.js';
+  import { projectModeHint, projectModeLabel } from '#lib/project-mode.js';
   import { resolveShell } from '#lib/shell.js';
   import Terminal from '#lib/terminal.svelte';
   import { terminalStatusLabel, type TerminalConnectionStatus } from '#lib/terminal-client.js';
@@ -60,6 +61,7 @@
   let idea = $state('');
   let catalogue = $state<ModelCatalogueView | null>(null);
   let modelChoice = $state('');
+  let mode = $state<ProjectMode>('guided');
   let modelError = $state<string | null>(null);
   let busy = $state(false);
   let terminalStatus = $state<TerminalConnectionStatus>('connecting');
@@ -137,6 +139,7 @@
         issues = nextIssues;
         session = nextSession;
         catalogue = nextCatalogue;
+        mode = nextProject.mode;
         modelError =
           nextCatalogue === null
             ? 'Could not load the model catalogue. The default model will be used.'
@@ -228,7 +231,7 @@
     confirmingCancel = false;
     busy = true;
     try {
-      session = await startGrill(projectId, idea.trim(), modelChoice.trim());
+      session = await startGrill(projectId, idea.trim(), modelChoice.trim(), mode);
       if (project !== null) project = { ...project, lastModel: session.model };
       idea = '';
       terminalStatus = 'connecting';
@@ -389,6 +392,7 @@
                   </p>
                 </div>
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{projectModeLabel(session.mode)} mode</Badge>
                   <Badge variant="outline" class="max-w-[14rem] font-mono">
                     <span class="truncate">{session.model}</span>
                   </Badge>
@@ -496,7 +500,8 @@
               Start a Grill-Me Session
             </h2>
             <p class="text-sm text-muted-foreground">
-              Describe your idea and pick the model the agent should interview you with.
+              Describe your idea, pick the model, and choose how the agent should work with you this
+              session.
             </p>
           </CardHeader>
           <CardContent>
@@ -517,6 +522,41 @@
                   placeholder="Describe the app you want to build…"
                 />
               </div>
+              <fieldset class="flex flex-col gap-2">
+                <legend class="text-sm font-medium">Mode</legend>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  {#each PROJECT_MODES as option (option)}
+                    <label
+                      class="flex cursor-pointer items-start gap-3 rounded-xl border border-border-subtle p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary"
+                    >
+                      <input
+                        type="radio"
+                        name="mode"
+                        value={option}
+                        aria-label={projectModeLabel(option)}
+                        aria-describedby={`session-mode-${option}-description`}
+                        bind:group={mode}
+                        class="mt-1 size-4 shrink-0 accent-primary"
+                      />
+                      <span class="flex min-w-0 flex-col gap-1">
+                        <span class="text-sm font-medium text-foreground"
+                          >{projectModeLabel(option)}</span
+                        >
+                        <span
+                          id={`session-mode-${option}-description`}
+                          class="text-xs text-muted-foreground"
+                        >
+                          {projectModeHint(option)}
+                        </span>
+                      </span>
+                    </label>
+                  {/each}
+                </div>
+                <p class="text-muted-foreground text-xs">
+                  The Project default is {projectModeLabel(project.mode)}. Your choice applies to
+                  this session only.
+                </p>
+              </fieldset>
               <div class="flex flex-col gap-1">
                 <label class="text-sm font-medium" for="model">Model</label>
                 <ModelCombobox

@@ -21,7 +21,7 @@ A Kubernetes namespace that hosts a **Project**'s deployed application and agent
 _Avoid_: project-<name>, <user>-<project>
 
 **Project mode**:
-A per-Project setting that decides how the agent works. `guided` interviews the Developer one question at a time, then checks the module sketch and the issue breakdown with them. `autonomous` decides every checkpoint itself and only shows the finished **Plan** and **Issues**. In both modes the agent only reports drafts; the Developer publishes them with **Finish**.
+A per-Project setting that decides how the agent works by default. `guided` interviews the Developer one question at a time, then checks the module sketch and the issue breakdown with them. `autonomous` decides every checkpoint itself and only shows the finished **Plan** and **Issues**. The Plan page can override the mode for one session, so a Project set to autonomous can still have a guided run when needed. In both modes the agent only reports drafts; the Developer publishes them with **Finish**.
 _Avoid_: Experience level, difficulty
 
 **Grill-Me Session**:

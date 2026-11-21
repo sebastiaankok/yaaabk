@@ -43,6 +43,7 @@ interface SessionBody {
   id: string;
   projectId: string;
   status: string;
+  mode: string;
   model: string;
   terminalPath: string;
 }
@@ -180,6 +181,33 @@ describe('POST /api/projects/:id/grill', () => {
       repoFullName: expect.stringContaining('/'),
     });
     expect(runtimeRequest?.prompt).toContain('A todo app');
+  });
+
+  it('lets the start request override the Project mode for one session', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const started = await startSession(context, session, projectId, {
+      idea: 'A todo app',
+      mode: 'autonomous',
+    });
+
+    expect(started.mode).toBe('autonomous');
+    expect(context.sessionRuntime.requests[0]).toMatchObject({ mode: 'autonomous' });
+  });
+
+  it('rejects a mode outside guided and autonomous', async () => {
+    const { context, session } = await signedIn();
+    const projectId = await createProject(context);
+
+    const res = await request(context, session, `/api/projects/${projectId}/grill`, {
+      method: 'POST',
+      body: JSON.stringify({ idea: 'A todo app', mode: 'ninja' }),
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid-input' });
+    expect(context.sessionRuntime.requests).toHaveLength(0);
   });
 
   it('uses a requested model and carries the active plan into the prompt', async () => {

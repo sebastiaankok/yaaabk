@@ -293,7 +293,7 @@ writes outside the workspace.
 | Route | Purpose |
 | --- | --- |
 | `GET /api/models` | The live OpenRouter catalogue filtered to tool-capable models, plus the default model |
-| `POST /api/projects/:id/grill` | Start a session with an optional model, replacing the Project's previous one |
+| `POST /api/projects/:id/grill` | Start a session with an optional model and mode, replacing the Project's previous one |
 | `GET /api/projects/:id/grill` | The live session, or 404 when none is running |
 | `GET /api/projects/:id/grill/:sessionId/terminal` | Upgrade to the terminal WebSocket |
 | `POST /api/grill-sessions/:sessionId/report` | Store a PRD and/or Issue list as drafts (session bearer token) |
@@ -329,11 +329,14 @@ directly. `YAAABK_SESSION_OPENCODE_CONFIG` scopes the config to sessions, so
 Agent Jobs never register a server they have no token for.
 
 The opening prompt tells the agent to load the image-baked `grill-me` skill
-before anything else. The prompt prints `Mode: <mode>` and the skill decides how
-many checkpoints the agent asks about. In guided mode the interview hands off
-automatically: `grill-me` confirms the settled plan, `to-prd` synthesises the PRD
-and checks its module sketch with the Developer, and `to-issues` cuts the PRD
-into vertical slices and quizzes the Developer on granularity and dependencies.
+before anything else. The start form on the Plan page lets the Developer pick
+`guided` or `autonomous` for that session, defaulting to the Project's mode, so
+an autonomous Project can still have a guided run when needed. The prompt prints
+`Mode: <mode>` and the skill decides how many checkpoints the agent asks about.
+In guided mode the interview hands off automatically: `grill-me` confirms the
+settled plan, `to-prd` synthesises the PRD and checks its module sketch with the
+Developer, and `to-issues` cuts the PRD into vertical slices and quizzes the
+Developer on granularity and dependencies.
 In autonomous mode those three checkpoints are decided by the agent without a
 question. Both modes label every generated slice `ready` and order them with
 `depends_on`; `needs-human` is reserved for an Agent or CI run that gets stuck. The Developer can say "write the PRD now" to skip
