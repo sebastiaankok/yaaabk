@@ -324,6 +324,17 @@ export function boardView(
   };
 }
 
+/**
+ * The lane the phone tablist selects: the lane the Developer asked for while
+ * it is on screen, otherwise the first lane that is. The board keeps the
+ * active tab through filter and search changes until that lane disappears.
+ */
+export function resolveLaneTab(lanes: readonly BoardLane[], requested: BoardColumn): BoardColumn {
+  const visible = lanes.filter((lane) => lane.visible);
+  if (visible.some((lane) => lane.column === requested)) return requested;
+  return visible[0]?.column ?? 'ready';
+}
+
 /** Just enough of an Agent run for the board to total an Issue's spend. */
 export interface RunCost {
   issueId: string;

@@ -38,6 +38,7 @@
   import { Badge } from '#lib/components/ui/badge/index.js';
   import { Button } from '#lib/components/ui/button/index.js';
   import { Input } from '#lib/components/ui/input/index.js';
+  import { Sheet } from '#lib/components/ui/sheet/index.js';
   import { Skeleton } from '#lib/components/ui/skeleton/index.js';
   import { dollarsToCents, validateBudgetDollars } from '#lib/settings-form.js';
   import { resolveShell } from '#lib/shell.js';
@@ -51,10 +52,12 @@
     dependencyEdges,
     issueIdFromParam,
     pullRequestNumber,
+    resolveLaneTab,
     spendByIssue,
     withoutChip,
     type BoardColumn,
     type BoardFilterChip,
+    type BoardLane,
     type BoardSort,
     type BoardViewFilters,
   } from '#lib/issue-board.js';
@@ -110,6 +113,13 @@
   let boardWidth = $state(0);
   let boardHeight = $state(0);
 
+  /** Whether the board is wide enough to show its lanes side by side. */
+  let wide = $state(false);
+  /** The lane a phone is looking at, projected from the same board view. */
+  let activeLane = $state<BoardColumn>('ready');
+  /** The lane filter already followed into {@link activeLane}. */
+  let followedLaneFilter = $state<BoardColumn | ''>('');
+
   /** One SVG path per dependency arrow, in board-relative coordinates. */
   interface Arrow {
     key: string;
@@ -144,6 +154,9 @@
 
   /** The lanes the page draws; the closed lane only while history is on. */
   const lanes = $derived((view?.lanes ?? []).filter((lane) => lane.visible));
+
+  /** The lane a phone renders behind its selected tab. */
+  const activeLaneView = $derived(lanes.find((lane) => lane.column === activeLane) ?? null);
 
   const spend = $derived(spendByIssue(runs));
 
@@ -454,9 +467,52 @@
 
   /** Closes the detail panel and drops the deep link that opened it. */
   function close(): void {
+    if (selectedId === null) return;
     selectedId = null;
     clearParams('issue');
   }
+
+  /** Moves between phone lane tabs with the arrow, Home and End keys. */
+  function handleLaneTabKeydown(event: KeyboardEvent, index: number): void {
+    const last = lanes.length - 1;
+    if (last < 0) return;
+    let next: number;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      next = index === last ? 0 : index + 1;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      next = index === 0 ? last : index - 1;
+    } else if (event.key === 'Home') {
+      next = 0;
+    } else if (event.key === 'End') {
+      next = last;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const column = lanes[next]?.column;
+    if (column === undefined) return;
+    activeLane = column;
+    void tick().then(() => document.getElementById(`lane-tab-${column}`)?.focus());
+  }
+
+  // Keep the phone's lane tab valid when filters hide a lane or the Developer
+  // picks one in the Filters popover. Every other change preserves the tab.
+  $effect(() => {
+    const current = untrack(() => activeLane);
+    const next = resolveLaneTab(lanes, current);
+    if (next !== current) activeLane = next;
+  });
+
+  $effect(() => {
+    const filter = laneFilter;
+    if (filter === '') {
+      followedLaneFilter = '';
+      return;
+    }
+    if (filter === followedLaneFilter || !lanes.some((lane) => lane.column === filter)) return;
+    followedLaneFilter = filter;
+    activeLane = filter;
+  });
 
   // Re-measure after anything that can move a card: the visible set or layout.
   $effect(() => {
@@ -469,9 +525,18 @@
   });
 
   onMount(() => {
+    const wideQuery = window.matchMedia('(min-width: 768px)');
+    const updateWide = () => {
+      wide = wideQuery.matches;
+    };
+    updateWide();
+    wideQuery.addEventListener('change', updateWide);
     const handler = () => measure();
     window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
+    return () => {
+      wideQuery.removeEventListener('change', updateWide);
+      window.removeEventListener('resize', handler);
+    };
   });
 
   // Load the project and everything the board renders once the route is known.
@@ -745,7 +810,7 @@
           aria-label="Search issues"
           bind:value={searchText}
           placeholder="Search issues"
-          class="h-9 flex-1 sm:max-w-sm"
+          class="h-9 flex-1 basis-full sm:max-w-sm sm:basis-auto"
         />
 
         <div class="relative">
@@ -777,7 +842,7 @@
               bind:this={filtersPanel}
               role="group"
               aria-label="Filters"
-              class="absolute left-0 z-30 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border border-border-subtle bg-popover p-3 shadow-elevation-overlay"
+              class="absolute left-0 z-30 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border border-border-subtle bg-popover p-3 shadow-elevation-overlay max-md:fixed max-md:left-2 max-md:right-2 max-md:mt-2 max-md:max-h-[calc(100dvh-7rem)] max-md:w-auto max-md:max-w-none max-md:overflow-y-auto"
             >
               <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 Label
@@ -886,83 +951,124 @@
       {/if}
     </div>
 
+    {#snippet laneSection(lane: BoardLane)}
+      <section
+        class="flex min-h-40 flex-col gap-3 rounded-xl border border-border-subtle bg-surface p-3"
+        aria-labelledby={`lane-${lane.column}-heading`}
+      >
+        <h2
+          id={`lane-${lane.column}-heading`}
+          class="flex items-center justify-between gap-2 text-sm font-semibold text-foreground"
+        >
+          {lane.label}
+          <Badge variant="outline" class="bg-background">{lane.count}</Badge>
+        </h2>
+
+        {#if lane.items.length === 0}
+          <p
+            class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-muted-foreground"
+          >
+            {view !== null && view.total === 0
+              ? 'No Issues in this Plan yet.'
+              : 'No Issues match the current filters.'}
+          </p>
+        {:else}
+          <ul class="flex flex-col gap-2">
+            {#each lane.items as item (item.issue.id)}
+              <li>
+                <button
+                  type="button"
+                  data-issue-id={item.issue.id}
+                  onclick={() => open(item.issue.id)}
+                  class="relative z-10 flex w-full flex-col gap-2 rounded-lg border border-border-subtle bg-card p-3 text-left text-sm shadow-elevation-1 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-foreground">{item.issue.title}</span>
+                    <span class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}">
+                      {item.issue.label}
+                    </span>
+                  </span>
+                  <span class="line-clamp-2 text-xs text-muted-foreground">
+                    {summaryForIssue(item.issue)}
+                  </span>
+                  <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{item.wave === null ? 'Unordered' : `Wave ${item.wave}`}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {(budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100).toFixed(
+                        2,
+                      )} left
+                    </span>
+                  </span>
+                  {#if item.issue.dependsOn.length > 0}
+                    <span class="text-xs text-muted-foreground">
+                      Depends on: {item.issue.dependsOn.join(', ')}
+                    </span>
+                  {/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/snippet}
+
     <div
       class="relative"
       bind:this={boardEl}
       bind:clientWidth={boardWidth}
       bind:clientHeight={boardHeight}
     >
-      <div
-        class="grid items-start gap-4 md:grid-cols-2 {lanes.length > 4
-          ? 'xl:grid-cols-5'
-          : 'xl:grid-cols-4'}"
-      >
-        {#each lanes as lane (lane.column)}
-          <section
-            class="flex min-h-40 flex-col gap-3 rounded-xl border border-border-subtle bg-surface p-3"
-            aria-labelledby={`lane-${lane.column}-heading`}
+      {#if wide}
+        <div
+          class="grid items-start gap-4 md:grid-cols-2 {lanes.length > 4
+            ? 'xl:grid-cols-5'
+            : 'xl:grid-cols-4'}"
+        >
+          {#each lanes as lane (lane.column)}
+            {@render laneSection(lane)}
+          {/each}
+        </div>
+      {:else}
+        <div class="flex flex-col gap-3">
+          <div
+            class="grid grid-cols-2 gap-2"
+            role="tablist"
+            aria-label="Issue lanes"
+            data-testid="lane-tabs"
           >
-            <h2
-              id={`lane-${lane.column}-heading`}
-              class="flex items-center justify-between gap-2 text-sm font-semibold text-foreground"
-            >
-              {lane.label}
-              <Badge variant="outline" class="bg-background">{lane.count}</Badge>
-            </h2>
-
-            {#if lane.items.length === 0}
-              <p
-                class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-muted-foreground"
+            {#each lanes as lane, index (lane.column)}
+              <button
+                type="button"
+                role="tab"
+                id={`lane-tab-${lane.column}`}
+                aria-selected={activeLane === lane.column}
+                aria-controls={`lane-panel-${lane.column}`}
+                tabindex={activeLane === lane.column ? 0 : -1}
+                onclick={() => (activeLane = lane.column)}
+                onkeydown={(event) => handleLaneTabKeydown(event, index)}
+                class="flex min-h-11 w-full items-center justify-between gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none {activeLane ===
+                lane.column
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border-subtle bg-surface text-muted-foreground hover:text-foreground'}"
               >
-                {view !== null && view.total === 0
-                  ? 'No Issues in this Plan yet.'
-                  : 'No Issues match the current filters.'}
-              </p>
-            {:else}
-              <ul class="flex flex-col gap-2">
-                {#each lane.items as item (item.issue.id)}
-                  <li>
-                    <button
-                      type="button"
-                      data-issue-id={item.issue.id}
-                      onclick={() => open(item.issue.id)}
-                      class="relative z-10 flex w-full flex-col gap-2 rounded-lg border border-border-subtle bg-card p-3 text-left text-sm shadow-elevation-1 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                    >
-                      <span class="flex flex-wrap items-center gap-2">
-                        <span class="font-medium text-foreground">{item.issue.title}</span>
-                        <span
-                          class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}"
-                        >
-                          {item.issue.label}
-                        </span>
-                      </span>
-                      <span class="line-clamp-2 text-xs text-muted-foreground">
-                        {summaryForIssue(item.issue)}
-                      </span>
-                      <span
-                        class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
-                      >
-                        <span>{item.wave === null ? 'Unordered' : `Wave ${item.wave}`}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>
-                          {(
-                            budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100
-                          ).toFixed(2)} left
-                        </span>
-                      </span>
-                      {#if item.issue.dependsOn.length > 0}
-                        <span class="text-xs text-muted-foreground">
-                          Depends on: {item.issue.dependsOn.join(', ')}
-                        </span>
-                      {/if}
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </section>
-        {/each}
-      </div>
+                {lane.label}
+                <Badge variant="outline" class="bg-background">{lane.count}</Badge>
+              </button>
+            {/each}
+          </div>
+
+          {#if activeLaneView !== null}
+            <div
+              role="tabpanel"
+              id={`lane-panel-${activeLaneView.column}`}
+              aria-labelledby={`lane-tab-${activeLaneView.column}`}
+            >
+              {@render laneSection(activeLaneView)}
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       <svg
         class="pointer-events-none absolute inset-0 z-0 hidden text-muted-foreground md:block"
@@ -988,323 +1094,295 @@
       </svg>
     </div>
 
-    {#if selected !== null}
-      <div
-        class="fixed inset-0 z-40 flex justify-end bg-black/30"
-        role="presentation"
-        onclick={(event) => {
-          if (event.target === event.currentTarget) close();
-        }}
-        onkeydown={(event) => {
-          if (event.key === 'Escape') close();
-        }}
-      >
-        <div
-          class="flex h-full w-full max-w-lg flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
-          role="dialog"
-          aria-modal="true"
-          aria-label={selected.title}
-          tabindex="-1"
-        >
-          <header class="flex items-start justify-between gap-3">
-            <div class="space-y-1">
-              <h2 class="text-lg font-bold tracking-tight">{selected.title}</h2>
-              <span class="rounded-full px-2 py-0.5 text-xs {labelClass[selected.label]}">
-                {selected.label}
-              </span>
-            </div>
-            <button
-              type="button"
-              aria-label="Close details"
-              onclick={() => close()}
-              class="rounded-md border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-100"
-            >
-              ✕
-            </button>
-          </header>
+    <Sheet
+      open={selected !== null}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+      title={selected?.title ?? 'Issue details'}
+      class="gap-4"
+    >
+      {#if selected !== null}
+        <span class="w-fit rounded-full px-2 py-0.5 text-xs {labelClass[selected.label]}">
+          {selected.label}
+        </span>
 
-          {#if selected.githubNumber !== null}
-            <p class="text-xs text-neutral-500">GitHub #{selected.githubNumber}</p>
-          {/if}
+        {#if selected.githubNumber !== null}
+          <p class="text-xs text-neutral-500">GitHub #{selected.githubNumber}</p>
+        {/if}
 
-          <dl class="grid grid-cols-3 gap-3 text-sm">
-            <div>
-              <dt class="text-neutral-500">Attempts</dt>
-              <dd>{selected.attemptCount} / {selected.maxAttempts}</dd>
-            </div>
-            <div>
-              <dt class="text-neutral-500">Budget</dt>
-              <dd>{usd(selectedBudget?.budgetCents ?? selected.budgetCents)}</dd>
-            </div>
-            <div>
-              <dt class="text-neutral-500">Spent</dt>
-              <dd>{usd(selectedBudget?.spentCents ?? spend.get(selected.id) ?? 0)}</dd>
-            </div>
-            <div>
-              <dt class="text-neutral-500">Left</dt>
-              <dd>{usd(selectedBudget?.remainingCents ?? selected.budgetCents)}</dd>
-            </div>
-          </dl>
-
-          {#if selectedBudget?.exhausted}
-            <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
-              This Issue’s budget is spent. Raise it to allow another attempt.
-            </p>
-          {/if}
-
-          <section aria-label="Token usage" class="space-y-1">
-            <h3 class="text-sm font-semibold">Tokens</h3>
-            {#if selectedRuns.length === 0}
-              <p class="text-sm text-neutral-500">No agent runs yet.</p>
-            {:else}
-              <p class="text-sm" data-testid="issue-tokens">Total: {tokenTotalLabel}</p>
-              {#if tokenBreakdownLabel !== null}
-                <p class="text-xs text-neutral-500" data-testid="issue-token-breakdown">
-                  {tokenBreakdownLabel}
-                </p>
-              {/if}
-              {#if tokenSummary.partial}
-                <p class="text-xs text-neutral-500">Some model runs did not report token usage.</p>
-              {/if}
-            {/if}
-          </section>
-
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
-            <select
-              id="issue-agent-model"
-              bind:value={modelChoice}
-              onchange={() => void saveModel()}
-              class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-            >
-              <option value="">Use project default ({effectiveDefault})</option>
-              {#each catalogue?.models ?? [] as option (option.id)}
-                <option value={option.id}>{option.name}</option>
-              {/each}
-              {#if modelChoice !== '' && !(catalogue?.models ?? []).some((m) => m.id === modelChoice)}
-                <option value={modelChoice}>{modelChoice}</option>
-              {/if}
-            </select>
-            <p class="text-xs text-neutral-500">
-              Runs use {selected.agentModel ?? effectiveDefault}.
-            </p>
-            {#if modelSaving}
-              <p class="text-xs text-neutral-500" role="status">Saving…</p>
-            {:else if modelStatus !== null}
-              <p class="text-xs text-emerald-700" role="status">{modelStatus}</p>
-            {/if}
-            {#if modelError !== null}
-              <p class="text-xs text-red-700" role="alert">{modelError}</p>
-            {/if}
-            {#if catalogueError !== null}
-              <p class="text-xs text-amber-700">{catalogueError}</p>
-            {/if}
+        <dl class="grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <dt class="text-neutral-500">Attempts</dt>
+            <dd>{selected.attemptCount} / {selected.maxAttempts}</dd>
           </div>
+          <div>
+            <dt class="text-neutral-500">Budget</dt>
+            <dd>{usd(selectedBudget?.budgetCents ?? selected.budgetCents)}</dd>
+          </div>
+          <div>
+            <dt class="text-neutral-500">Spent</dt>
+            <dd>{usd(selectedBudget?.spentCents ?? spend.get(selected.id) ?? 0)}</dd>
+          </div>
+          <div>
+            <dt class="text-neutral-500">Left</dt>
+            <dd>{usd(selectedBudget?.remainingCents ?? selected.budgetCents)}</dd>
+          </div>
+        </dl>
 
-          {#if editing}
-            <div class="flex flex-col gap-2">
-              <label class="flex flex-col gap-1 text-xs text-neutral-500">
-                Title
-                <input
-                  aria-label="Issue title"
-                  bind:value={draftTitle}
-                  class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-                />
-              </label>
-              <label class="flex flex-col gap-1 text-xs text-neutral-500">
-                Summary
-                <textarea
-                  aria-label="Issue summary"
-                  rows="2"
-                  maxlength={SUMMARY_MAX_LENGTH}
-                  bind:value={draftSummary}
-                  class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-                ></textarea>
-                <span class="text-neutral-400">
-                  One or two plain sentences, at most {SUMMARY_MAX_LENGTH} characters.
-                </span>
-              </label>
-              <label class="flex flex-col gap-1 text-xs text-neutral-500">
-                Body
-                <textarea
-                  aria-label="Issue body"
-                  rows="6"
-                  bind:value={draftBody}
-                  class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-                ></textarea>
-              </label>
-              <label class="flex flex-col gap-1 text-xs text-neutral-500">
-                Issue budget (USD)
-                <input
-                  aria-label="Issue budget (USD)"
-                  inputmode="decimal"
-                  bind:value={draftBudget}
-                  class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-                />
-                <span class="text-neutral-400">
-                  Between $0.01 and $5.00. Raising it lets the next attempt spend the difference.
-                </span>
-              </label>
-            </div>
-          {:else if selected.body !== ''}
-            <Markdown markdown={selected.body} class="mt-1" />
+        {#if selectedBudget?.exhausted}
+          <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+            This Issue’s budget is spent. Raise it to allow another attempt.
+          </p>
+        {/if}
+
+        <section aria-label="Token usage" class="space-y-1">
+          <h3 class="text-sm font-semibold">Tokens</h3>
+          {#if selectedRuns.length === 0}
+            <p class="text-sm text-neutral-500">No agent runs yet.</p>
+          {:else}
+            <p class="text-sm" data-testid="issue-tokens">Total: {tokenTotalLabel}</p>
+            {#if tokenBreakdownLabel !== null}
+              <p class="text-xs text-neutral-500" data-testid="issue-token-breakdown">
+                {tokenBreakdownLabel}
+              </p>
+            {/if}
+            {#if tokenSummary.partial}
+              <p class="text-xs text-neutral-500">Some model runs did not report token usage.</p>
+            {/if}
           {/if}
+        </section>
 
-          <section aria-label="Agent runs" class="space-y-2">
-            <h3 class="text-sm font-semibold">Agent runs</h3>
-            {#if selectedRuns.length === 0}
-              <p class="text-sm text-neutral-500">No agent runs yet.</p>
-            {:else}
-              <ul class="flex flex-col gap-2">
-                {#each selectedRuns as run (run.id)}
-                  <li
-                    class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
-                  >
-                    <span class="font-medium">{runLabel(run)}</span>
-                    <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
-                      {run.status}
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
+          <select
+            id="issue-agent-model"
+            bind:value={modelChoice}
+            onchange={() => void saveModel()}
+            class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+          >
+            <option value="">Use project default ({effectiveDefault})</option>
+            {#each catalogue?.models ?? [] as option (option.id)}
+              <option value={option.id}>{option.name}</option>
+            {/each}
+            {#if modelChoice !== '' && !(catalogue?.models ?? []).some((m) => m.id === modelChoice)}
+              <option value={modelChoice}>{modelChoice}</option>
+            {/if}
+          </select>
+          <p class="text-xs text-neutral-500">
+            Runs use {selected.agentModel ?? effectiveDefault}.
+          </p>
+          {#if modelSaving}
+            <p class="text-xs text-neutral-500" role="status">Saving…</p>
+          {:else if modelStatus !== null}
+            <p class="text-xs text-emerald-700" role="status">{modelStatus}</p>
+          {/if}
+          {#if modelError !== null}
+            <p class="text-xs text-red-700" role="alert">{modelError}</p>
+          {/if}
+          {#if catalogueError !== null}
+            <p class="text-xs text-amber-700">{catalogueError}</p>
+          {/if}
+        </div>
+
+        {#if editing}
+          <div class="flex flex-col gap-2">
+            <label class="flex flex-col gap-1 text-xs text-neutral-500">
+              Title
+              <input
+                aria-label="Issue title"
+                bind:value={draftTitle}
+                class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-neutral-500">
+              Summary
+              <textarea
+                aria-label="Issue summary"
+                rows="2"
+                maxlength={SUMMARY_MAX_LENGTH}
+                bind:value={draftSummary}
+                class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+              ></textarea>
+              <span class="text-neutral-400">
+                One or two plain sentences, at most {SUMMARY_MAX_LENGTH} characters.
+              </span>
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-neutral-500">
+              Body
+              <textarea
+                aria-label="Issue body"
+                rows="6"
+                bind:value={draftBody}
+                class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+              ></textarea>
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-neutral-500">
+              Issue budget (USD)
+              <input
+                aria-label="Issue budget (USD)"
+                inputmode="decimal"
+                bind:value={draftBudget}
+                class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+              />
+              <span class="text-neutral-400">
+                Between $0.01 and $5.00. Raising it lets the next attempt spend the difference.
+              </span>
+            </label>
+          </div>
+        {:else if selected.body !== ''}
+          <Markdown markdown={selected.body} class="mt-1" />
+        {/if}
+
+        <section aria-label="Agent runs" class="space-y-2">
+          <h3 class="text-sm font-semibold">Agent runs</h3>
+          {#if selectedRuns.length === 0}
+            <p class="text-sm text-neutral-500">No agent runs yet.</p>
+          {:else}
+            <ul class="flex flex-col gap-2">
+              {#each selectedRuns as run (run.id)}
+                <li
+                  class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
+                >
+                  <span class="font-medium">{runLabel(run)}</span>
+                  <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                    {run.status}
+                  </span>
+                  {#if run.reviewVerdict != null}
+                    <span
+                      class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-100 text-amber-800'}"
+                    >
+                      {run.reviewVerdict === 'approve' ? 'approved' : 'changes requested'}
                     </span>
-                    {#if run.reviewVerdict != null}
-                      <span
-                        class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'}"
-                      >
-                        {run.reviewVerdict === 'approve' ? 'approved' : 'changes requested'}
-                      </span>
-                    {/if}
-                    <span class="text-xs text-neutral-500">
-                      {(run.costCents / 100).toFixed(2)}
-                    </span>
-                    <span class="text-xs text-neutral-500" data-testid="run-tokens">
-                      Tokens: {compactTokens(runTokenTotal(run.tokens))}
-                    </span>
-                    {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
-                      <Markdown
-                        markdown={run.reviewBody}
-                        class="mt-1 max-h-64 w-full overflow-auto rounded bg-neutral-50 p-2"
-                      />
-                    {/if}
-                    {#if run.model !== null && run.model !== undefined}
-                      <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
-                    {/if}
-                    {#if run.prUrl !== null}
-                      <!-- eslint-disable svelte/no-navigation-without-resolve -->
-                      <a
-                        href={run.prUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        class="text-xs underline"
-                      >
-                        PR #{pullRequestNumber(run.prUrl)}
-                      </a>
-                      <!-- eslint-enable svelte/no-navigation-without-resolve -->
-                    {/if}
-                    {#if run.logs !== null && run.logs.trim() !== ''}
-                      <details class="w-full">
-                        <summary class="cursor-pointer text-xs text-neutral-500">Logs</summary>
-                        <pre
-                          class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
-                      </details>
-                    {/if}
-                    {#if liveRunId === run.id}
-                      <div class="w-full">
-                        <div class="flex items-center justify-between gap-2">
-                          <p class="text-xs text-neutral-500">Live output</p>
-                          {#if !following}
-                            <button
-                              type="button"
-                              onclick={jumpToLatest}
-                              class="rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
-                            >
-                              Jump to latest
-                            </button>
-                          {/if}
-                        </div>
-                        <pre
-                          bind:this={liveLogEl}
-                          onscroll={handleLiveLogScroll}
-                          class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
-                          data-testid="live-agent-log">{liveLog === ''
-                            ? 'Waiting for output…'
-                            : liveLog}</pre>
-                        {#if liveError !== null}
-                          <p class="mt-1 text-xs text-red-700" role="alert">{liveError}</p>
+                  {/if}
+                  <span class="text-xs text-neutral-500">
+                    {(run.costCents / 100).toFixed(2)}
+                  </span>
+                  <span class="text-xs text-neutral-500" data-testid="run-tokens">
+                    Tokens: {compactTokens(runTokenTotal(run.tokens))}
+                  </span>
+                  {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
+                    <Markdown
+                      markdown={run.reviewBody}
+                      class="mt-1 max-h-64 w-full overflow-auto rounded bg-neutral-50 p-2"
+                    />
+                  {/if}
+                  {#if run.model !== null && run.model !== undefined}
+                    <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
+                  {/if}
+                  {#if run.prUrl !== null}
+                    <!-- eslint-disable svelte/no-navigation-without-resolve -->
+                    <a href={run.prUrl} target="_blank" rel="noreferrer" class="text-xs underline">
+                      PR #{pullRequestNumber(run.prUrl)}
+                    </a>
+                    <!-- eslint-enable svelte/no-navigation-without-resolve -->
+                  {/if}
+                  {#if run.logs !== null && run.logs.trim() !== ''}
+                    <details class="w-full">
+                      <summary class="cursor-pointer text-xs text-neutral-500">Logs</summary>
+                      <pre
+                        class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
+                    </details>
+                  {/if}
+                  {#if liveRunId === run.id}
+                    <div class="w-full">
+                      <div class="flex items-center justify-between gap-2">
+                        <p class="text-xs text-neutral-500">Live output</p>
+                        {#if !following}
+                          <button
+                            type="button"
+                            onclick={jumpToLatest}
+                            class="rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                          >
+                            Jump to latest
+                          </button>
                         {/if}
                       </div>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </section>
-
-          {#if actionError !== null}
-            <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-              {actionError}
-            </p>
+                      <pre
+                        bind:this={liveLogEl}
+                        onscroll={handleLiveLogScroll}
+                        class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
+                        data-testid="live-agent-log">{liveLog === ''
+                          ? 'Waiting for output…'
+                          : liveLog}</pre>
+                      {#if liveError !== null}
+                        <p class="mt-1 text-xs text-red-700" role="alert">{liveError}</p>
+                      {/if}
+                    </div>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
           {/if}
+        </section>
 
-          <div class="mt-auto flex flex-wrap gap-2">
-            {#if editing}
-              <button
-                type="button"
-                onclick={() => void saveEdit()}
-                disabled={busy || draftTitle.trim() === '' || draftSummary.trim() === ''}
-                class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onclick={() => (editing = false)}
-                class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-              >
-                Cancel
-              </button>
-            {:else if confirmingDelete}
-              <button
-                type="button"
-                onclick={() => void removeIssue()}
-                disabled={busy}
-                class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Confirm delete
-              </button>
-              <button
-                type="button"
-                onclick={() => (confirmingDelete = false)}
-                class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-              >
-                Cancel
-              </button>
-            {:else}
-              <button
-                type="button"
-                onclick={() => void rerun(selected.id)}
-                disabled={busy}
-                class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-              >
-                Re-run
-              </button>
-              <button
-                type="button"
-                onclick={() => startEdit(selected)}
-                class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onclick={() => (confirmingDelete = true)}
-                class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-              >
-                Delete
-              </button>
-            {/if}
-          </div>
+        {#if actionError !== null}
+          <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {actionError}
+          </p>
+        {/if}
+
+        <div class="mt-auto flex flex-wrap gap-2">
+          {#if editing}
+            <button
+              type="button"
+              onclick={() => void saveEdit()}
+              disabled={busy || draftTitle.trim() === '' || draftSummary.trim() === ''}
+              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onclick={() => (editing = false)}
+              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              Cancel
+            </button>
+          {:else if confirmingDelete}
+            <button
+              type="button"
+              onclick={() => void removeIssue()}
+              disabled={busy}
+              class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Confirm delete
+            </button>
+            <button
+              type="button"
+              onclick={() => (confirmingDelete = false)}
+              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              Cancel
+            </button>
+          {:else}
+            <button
+              type="button"
+              onclick={() => void rerun(selected.id)}
+              disabled={busy}
+              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Re-run
+            </button>
+            <button
+              type="button"
+              onclick={() => startEdit(selected)}
+              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onclick={() => (confirmingDelete = true)}
+              class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+            >
+              Delete
+            </button>
+          {/if}
         </div>
-      </div>
-    {/if}
+      {/if}
+    </Sheet>
   {/if}
 </div>

@@ -9,6 +9,7 @@ import {
   dependencyEdges,
   issueIdFromParam,
   pullRequestNumber,
+  resolveLaneTab,
   spendByIssue,
   withoutChip,
 } from './issue-board';
@@ -530,5 +531,28 @@ describe('boardView lanes', () => {
     expect(view.lanes.find((lane) => lane.column === 'closed')?.visible).toBe(true);
     expect(view.lanes.find((lane) => lane.column === 'closed')?.items).toHaveLength(1);
     expect(view.count).toBe(1);
+  });
+});
+
+describe('resolveLaneTab', () => {
+  const lanes = boardView(
+    [issue({ title: 'Schema', label: 'ready' }), issue({ title: 'Scaffold', status: 'closed' })],
+    { nodes: [], cycles: [] },
+  ).lanes;
+
+  it('keeps the requested lane while that lane is visible', () => {
+    expect(resolveLaneTab(lanes, 'in_progress')).toBe('in_progress');
+    expect(resolveLaneTab(lanes, 'failed')).toBe('failed');
+  });
+
+  it('falls back to the first visible lane when the requested one is hidden', () => {
+    expect(resolveLaneTab(lanes, 'closed')).toBe('ready');
+  });
+
+  it('only considers lanes that are on screen', () => {
+    const closed = lanes.find((lane) => lane.column === 'closed');
+    expect(closed?.visible).toBe(false);
+    expect(resolveLaneTab(lanes, 'closed')).toBe('ready');
+    expect(resolveLaneTab([{ ...closed!, visible: true }], 'closed')).toBe('closed');
   });
 });
