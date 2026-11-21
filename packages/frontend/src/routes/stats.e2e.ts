@@ -93,16 +93,117 @@ const STATS = {
   ],
 };
 
-async function mockStats(page: Page, onStats?: (url: string) => void): Promise<void> {
+const SHORT_STATS = {
+  issues: { total: 2, open: 0, inProgress: 0, closed: 2, failed: 0, averageAttempts: 1 },
+  agents: {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+    active: 0,
+    successRate: 1,
+    totalCostCents: 500,
+    totalTokens: 1_200,
+    measuredRuns: 1,
+    modelRuns: 1,
+    duration: { averageSeconds: 60, minSeconds: 60, maxSeconds: 60 },
+  },
+  usageByIssue: [
+    {
+      issueId: 'i1',
+      title: 'Schema',
+      costCents: 500,
+      tokens: 1_200,
+      measuredRuns: 1,
+      modelRuns: 1,
+    },
+  ],
+  velocity: {
+    last7Days: { closed: 2, perDay: 2 / 7 },
+    last14Days: { closed: 2, perDay: 2 / 14 },
+    last30Days: { closed: 2, perDay: 2 / 30 },
+  },
+  closedPerDay: [
+    { date: '2026-01-26', count: 0 },
+    { date: '2026-01-27', count: 0 },
+    { date: '2026-01-28', count: 1 },
+    { date: '2026-01-29', count: 0 },
+    { date: '2026-01-30', count: 0 },
+    { date: '2026-01-31', count: 1 },
+    { date: '2026-02-01', count: 0 },
+  ],
+  runs: [
+    {
+      id: 'r2',
+      issueId: 'i1',
+      issueTitle: 'Schema',
+      attemptNumber: 1,
+      status: 'success',
+      durationSeconds: 60,
+      costCents: 500,
+      tokens: 1_200,
+      prUrl: null,
+      createdAt: '2026-02-01T00:00:00.000Z',
+    },
+  ],
+};
+
+const EMPTY_STATS = {
+  issues: { total: 0, open: 0, inProgress: 0, closed: 0, failed: 0, averageAttempts: 0 },
+  agents: {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    active: 0,
+    successRate: null,
+    totalCostCents: 0,
+    totalTokens: null,
+    measuredRuns: 0,
+    modelRuns: 0,
+    duration: { averageSeconds: null, minSeconds: null, maxSeconds: null },
+  },
+  usageByIssue: [],
+  velocity: {
+    last7Days: { closed: 0, perDay: 0 },
+    last14Days: { closed: 0, perDay: 0 },
+    last30Days: { closed: 0, perDay: 0 },
+  },
+  closedPerDay: [
+    { date: '2026-01-30', count: 0 },
+    { date: '2026-01-31', count: 0 },
+    { date: '2026-02-01', count: 0 },
+  ],
+  runs: [],
+};
+
+/** How many days the stats request asks for, read from the ISO range. */
+function requestedDays(url: string): number {
+  const params = new URL(url).searchParams;
+  const from = params.get('from');
+  const to = params.get('to');
+  if (from === null || to === null) return 30;
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
+}
+
+interface MockOptions {
+  onStats?: (url: string) => void;
+  respond?: (url: string) => unknown;
+  delayMs?: number;
+}
+
+async function mockStats(page: Page, options: MockOptions = {}): Promise<void> {
   await page.route('**/api/auth/status', (route) =>
     route.fulfill({
       json: { setupComplete: true, authenticated: true, user: { id: 'u', username: 'alice' } },
     }),
   );
   await page.route(/\/api\/projects\/p1$/, (route) => route.fulfill({ json: PROJECT }));
-  await page.route(/\/api\/projects\/p1\/stats(\?.*)?$/, (route) => {
-    onStats?.(route.request().url());
-    return route.fulfill({ json: STATS });
+  await page.route(/\/api\/projects\/p1\/stats(\?.*)?$/, async (route) => {
+    const url = route.request().url();
+    options.onStats?.(url);
+    if (options.delayMs !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    }
+    return route.fulfill({ json: options.respond?.(url) ?? STATS });
   });
 }
 
@@ -112,21 +213,46 @@ async function gotoHydrated(page: Page, path: string): Promise<void> {
   await hydrated;
 }
 
-test('shows summary cards, charts and the run history', async ({ page }) => {
+test('shows KPI tiles, accessible charts and the run history', async ({ page }) => {
   await mockStats(page);
 
   await gotoHydrated(page, '/projects/p1/stats');
 
   await expect(page.getByRole('heading', { level: 1, name: 'todo-app stats' })).toBeVisible();
+
+  const tiles = page.locator('section[aria-labelledby="summary-heading"] dd');
+  await expect(tiles.first()).toHaveText('5');
   await expect(page.getByText('67%')).toBeVisible();
   await expect(page.getByText('$12.34', { exact: true })).toBeVisible();
   await expect(page.getByText('2m 30s').first()).toBeVisible();
-  await expect(page.getByText('5', { exact: true })).toBeVisible();
   await expect(page.getByText('1 open · 1 in progress · 2 closed · 1 failed')).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Issue status breakdown' })).toBeVisible();
-  await expect(
-    page.getByText('$12.34 total · ≥ 41.7k tokens across 4 runs', { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText('≥ 41.7k tokens across 4 runs', { exact: true })).toBeVisible();
+
+  const donut = page.getByRole('img', { name: 'Issue status breakdown' });
+  await expect(donut).toBeVisible();
+  const legend = page.locator('section[aria-labelledby="status-heading"] li');
+  await expect(legend).toHaveCount(4);
+  await expect(legend.first()).toContainText('Open');
+  await expect(legend.first()).toContainText('1');
+  await expect(legend.first()).toContainText('20%');
+  await expect(legend.nth(2)).toContainText('Closed');
+  await expect(legend.nth(2)).toContainText('2');
+  await expect(legend.nth(2)).toContainText('40%');
+
+  const throughput = page.getByRole('slider', { name: /Issues closed per day/ });
+  await expect(throughput).toBeVisible();
+  await expect(throughput).toHaveAttribute('aria-valuemax', '3');
+  await throughput.focus();
+  await expect(throughput).toHaveAttribute('aria-valuetext', '2026-01-30: 0 Issues closed');
+  await throughput.press('End');
+  await expect(throughput).toHaveAttribute('aria-valuetext', '2026-02-01: 1 Issue closed');
+  await expect(page.getByTestId('throughput-status')).toContainText('2026-02-01');
+
+  await page.getByText('View data table').click();
+  const table = page.locator('section[aria-labelledby="velocity-heading"] table');
+  await expect(table.locator('tbody tr')).toHaveCount(3);
+  await expect(table.locator('tbody tr').last()).toContainText('2026-02-01');
+  await expect(table.locator('tbody tr').last()).toContainText('1');
 
   await expect(page.getByRole('heading', { name: 'Cost and tokens per issue' })).toBeVisible();
   const usageRows = page.locator('section[aria-labelledby="cost-heading"] li');
@@ -136,7 +262,12 @@ test('shows summary cards, charts and the run history', async ({ page }) => {
   await expect(usageRows.last()).toContainText('Docs');
   await expect(usageRows.last()).toContainText('$0.00 · 1.2k tokens');
 
-  const rows = page.locator('tbody tr');
+  const duration = page.locator('section[aria-labelledby="duration-heading"]');
+  await expect(duration).toContainText('2m');
+  await expect(duration).toContainText('1m 30s');
+  await expect(duration).toContainText('1 run');
+
+  const rows = page.locator('section[aria-labelledby="history-heading"] tbody tr');
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText('Api');
   await expect(rows.first()).toContainText('success');
@@ -156,7 +287,7 @@ test('sorts and filters the run history', async ({ page }) => {
 
   await page.getByLabel('Sort runs').selectOption('duration');
 
-  const rows = page.locator('tbody tr');
+  const rows = page.locator('section[aria-labelledby="history-heading"] tbody tr');
   await expect(rows.first()).toContainText('Schema');
   await expect(rows.first()).toContainText('2m');
 
@@ -166,18 +297,110 @@ test('sorts and filters the run history', async ({ page }) => {
   await expect(rows.first()).toContainText('Schema');
 });
 
-test('refetches the stats when the date range changes', async ({ page }) => {
+test('refetches KPIs and charts when the date range changes', async ({ page }) => {
   const urls: string[] = [];
-  await mockStats(page, (url) => urls.push(url));
+  await mockStats(page, {
+    onStats: (url) => urls.push(url),
+    respond: (url) => (requestedDays(url) === 7 ? SHORT_STATS : STATS),
+  });
 
   await gotoHydrated(page, '/projects/p1/stats');
   await expect(page.getByRole('button', { name: '7 days' })).toBeVisible();
+  await expect(page.getByRole('slider', { name: /over the last 30 days/ })).toBeVisible();
+  await expect(
+    page.locator('section[aria-labelledby="summary-heading"]').getByText('$12.34', {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await page.getByRole('button', { name: '7 days' }).click();
 
-  await expect.poll(() => urls.some((url) => url.includes('from='))).toBe(true);
   await expect(page.getByRole('button', { name: '7 days' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
+  await expect(
+    page.locator('section[aria-labelledby="summary-heading"]').getByText('$5.00', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const tiles = page.locator('section[aria-labelledby="summary-heading"] dd');
+  await expect(tiles.first()).toHaveText('2');
+  await expect(page.getByRole('slider', { name: /over the last 7 days/ })).toBeVisible();
+  await expect.poll(() => urls.filter((url) => requestedDays(url) === 7).length).toBeGreaterThan(0);
+});
+
+test('shows a busy loading state before the stats arrive', async ({ page }) => {
+  await mockStats(page, { delayMs: 600 });
+
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  const loading = page.getByLabel('Loading stats');
+  await expect(loading).toBeVisible();
+  await expect(loading).toHaveAttribute('aria-busy', 'true');
+
+  await expect(page.getByRole('heading', { level: 1, name: 'todo-app stats' })).toBeVisible();
+  await expect(loading).toHaveCount(0);
+});
+
+test('explains an empty range instead of drawing hollow charts', async ({ page }) => {
+  await mockStats(page, { respond: () => EMPTY_STATS });
+
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  const tiles = page.locator('section[aria-labelledby="summary-heading"] dd');
+  await expect(tiles.first()).toHaveText('0');
+
+  await expect(
+    page.getByText('No Issues were closed in the last 30 days.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole('slider', { name: /Issues closed per day/ })).toHaveCount(0);
+  await expect(page.getByText('No Issues in this Project yet.', { exact: false })).toBeVisible();
+  await expect(
+    page.getByText('No agent spend or token usage in the last 30 days.', { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('No completed agent runs in the last 30 days.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText('No agent runs in the last 30 days.')).toBeVisible();
+});
+
+test('inspects chart points with the pointer and restores the hint', async ({ page }) => {
+  await mockStats(page);
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  const throughput = page.getByRole('slider', { name: /Issues closed per day/ });
+  const box = await throughput.boundingBox();
+  expect(box).not.toBeNull();
+  if (box === null) return;
+
+  if (test.info().project.name === 'mobile') {
+    await throughput.focus();
+    await throughput.press('End');
+  } else {
+    await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2);
+  }
+  await expect(throughput).toHaveAttribute('aria-valuetext', '2026-02-01: 1 Issue closed');
+
+  if (test.info().project.name === 'mobile') return;
+
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await expect(throughput).toHaveAttribute('aria-valuetext', '2026-01-30: 0 Issues closed');
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 40);
+  await expect(page.getByText('Hover or focus the chart to inspect a day.')).toBeVisible();
+});
+
+test('reflows chart cards and tiles at 360px without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await mockStats(page);
+  await gotoHydrated(page, '/projects/p1/stats');
+
+  await expect(page.getByRole('heading', { level: 1, name: 'todo-app stats' })).toBeVisible();
+  await expect(page.getByRole('slider', { name: /Issues closed per day/ })).toBeVisible();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
 });
