@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Issue, IssueGraph } from '@yaaabk/issues';
 import {
+  boardChips,
   boardColumn,
   boardItems,
+  boardView,
   budgetRemaining,
   dependencyEdges,
   issueIdFromParam,
   pullRequestNumber,
   spendByIssue,
+  withoutChip,
 } from './issue-board';
 
 function issue(overrides: Partial<Issue> & { title: string }): Issue {
@@ -294,5 +297,238 @@ describe('issueIdFromParam', () => {
   it('returns null when the parameter is absent or empty', () => {
     expect(issueIdFromParam(null, issues)).toBeNull();
     expect(issueIdFromParam('', issues)).toBeNull();
+  });
+});
+
+describe('boardView filters', () => {
+  const issues = [
+    issue({ title: 'Schema', label: 'ready', summary: 'Create the tables.' }),
+    issue({
+      title: 'Api',
+      label: 'blocked',
+      body: 'Build the endpoints',
+      createdAt: '2026-01-02T00:00:00.000Z',
+    }),
+    issue({
+      title: 'Refine',
+      label: 'refinement-needed',
+      createdAt: '2026-01-03T00:00:00.000Z',
+    }),
+    issue({ title: 'Loop', createdAt: '2026-01-04T00:00:00.000Z' }),
+  ];
+  const g = graph([
+    { id: 'schema', wave: 0 },
+    { id: 'api', wave: 1 },
+    { id: 'refine', wave: 1 },
+    { id: 'loop', wave: null },
+  ]);
+  const activePlan = { id: 'plan-1', version: 1 };
+
+  it('combines text, label, lane and wave', () => {
+    const view = boardView(issues, g, {
+      activePlan,
+      filters: { text: 'endpoints', label: 'blocked', column: 'blocked', wave: 1 },
+    });
+
+    expect(view.items.map((item) => item.issue.title)).toEqual(['Api']);
+    expect(view.count).toBe(1);
+    expect(view.total).toBe(4);
+  });
+
+  it('lets any one filter narrow the same board', () => {
+    const one = (filters: NonNullable<Parameters<typeof boardView>[2]>['filters']) =>
+      boardView(issues, g, { activePlan, filters }).items.map((item) => item.issue.title);
+
+    expect(one({ text: 'refine' })).toEqual(['Refine']);
+    expect(one({ label: 'refinement-needed' })).toEqual(['Refine']);
+    expect(one({ column: 'ready' })).toEqual(['Schema', 'Refine', 'Loop']);
+    expect(one({ wave: null })).toEqual(['Loop']);
+  });
+
+  it('generates one chip per active filter and ignores blank search text', () => {
+    expect(boardChips({})).toEqual([]);
+    expect(boardChips({ text: '   ' })).toEqual([]);
+    expect(boardChips({ text: 'api', label: 'blocked', column: 'blocked', wave: null })).toEqual([
+      { kind: 'text', label: 'Search: api', value: 'api' },
+      { kind: 'label', label: 'Label: blocked', value: 'blocked' },
+      { kind: 'column', label: 'Lane: Blocked', value: 'blocked' },
+      { kind: 'wave', label: 'Unordered', value: null },
+    ]);
+  });
+
+  it('removes exactly the chip filter and leaves the rest alone', () => {
+    const filters = { text: 'api', label: 'blocked' as const, column: 'blocked' as const, wave: 1 };
+    const [text, label, column, wave] = boardChips(filters);
+
+    expect(text && withoutChip(filters, text)).toEqual({
+      label: 'blocked',
+      column: 'blocked',
+      wave: 1,
+    });
+    expect(label && withoutChip(filters, label)).toEqual({
+      text: 'api',
+      column: 'blocked',
+      wave: 1,
+    });
+    expect(column && withoutChip(filters, column)).toEqual({
+      text: 'api',
+      label: 'blocked',
+      wave: 1,
+    });
+    expect(wave && withoutChip(filters, wave)).toEqual({
+      text: 'api',
+      label: 'blocked',
+      column: 'blocked',
+    });
+  });
+
+  it('restores the cards a removed chip was hiding', () => {
+    const filters = { column: 'ready' as const, label: 'refinement-needed' as const };
+    expect(
+      boardView(issues, g, { activePlan, filters }).items.map((item) => item.issue.title),
+    ).toEqual(['Refine']);
+
+    const labelChip = boardChips(filters).find((chip) => chip.kind === 'label');
+    expect(labelChip).toBeDefined();
+    const restored = boardView(issues, g, {
+      activePlan,
+      filters: labelChip === undefined ? filters : withoutChip(filters, labelChip),
+    });
+
+    expect(restored.items.map((item) => item.issue.title)).toEqual(['Schema', 'Refine', 'Loop']);
+    expect(restored.chips.map((chip) => chip.label)).toEqual(['Lane: Ready']);
+  });
+});
+
+describe('boardView plan scope', () => {
+  const issues = [
+    issue({ title: 'Current', planId: 'plan-1' }),
+    issue({ title: 'Legacy', planId: 'plan-0', createdAt: '2026-01-02T00:00:00.000Z' }),
+    issue({
+      title: 'Manual',
+      planId: null,
+      createdAt: '2026-01-03T00:00:00.000Z',
+    }),
+    issue({
+      title: 'Old closed',
+      planId: 'plan-0',
+      status: 'closed',
+      createdAt: '2026-01-04T00:00:00.000Z',
+    }),
+  ];
+  const g = graph([
+    { id: 'current', wave: 0 },
+    { id: 'legacy', wave: 0 },
+    { id: 'manual', wave: 0 },
+    { id: 'old-closed', wave: 0 },
+  ]);
+  const activePlan = { id: 'plan-1', version: 2 };
+
+  it('follows the active Plan and reports the open earlier-Plan work it hides', () => {
+    const view = boardView(issues, g, { activePlan });
+
+    expect(view.items.map((item) => item.issue.title)).toEqual(['Current']);
+    expect(view.earlierWork.map((work) => work.title)).toEqual(['Legacy', 'Manual']);
+  });
+
+  it('shows every Plan and stops warning once earlier Plans are shown', () => {
+    const view = boardView(issues, g, { activePlan, showEarlierPlans: true });
+
+    expect(view.items.map((item) => item.issue.title)).toEqual(['Current', 'Legacy', 'Manual']);
+    expect(view.earlierWork).toEqual([]);
+  });
+
+  it('does not scope or warn when the Project has no Plan', () => {
+    const view = boardView(issues, g, { activePlan: null });
+
+    expect(view.items.map((item) => item.issue.title)).toEqual(['Current', 'Legacy', 'Manual']);
+    expect(view.earlierWork).toEqual([]);
+  });
+
+  it('offers the graph waves and unordered option for the filter', () => {
+    const view = boardView(issues, g, {
+      activePlan,
+      filters: {},
+    });
+
+    expect(view.waves).toEqual([0]);
+    expect(view.hasUnordered).toBe(false);
+  });
+});
+
+describe('boardView lanes', () => {
+  const issues = [
+    issue({ title: 'Schema', label: 'ready', createdAt: '2026-01-01T00:00:00.000Z' }),
+    issue({ title: 'Api', label: 'blocked', createdAt: '2026-01-02T00:00:00.000Z' }),
+    issue({ title: 'Auth', status: 'in_progress', createdAt: '2026-01-03T00:00:00.000Z' }),
+    issue({ title: 'Scaffold', status: 'closed', createdAt: '2026-01-04T00:00:00.000Z' }),
+    issue({ title: 'Deploy', status: 'failed', createdAt: '2026-01-05T00:00:00.000Z' }),
+  ];
+  const g = graph([
+    { id: 'schema', wave: 0 },
+    { id: 'api', wave: 1 },
+    { id: 'auth', wave: 0 },
+    { id: 'scaffold', wave: 0 },
+    { id: 'deploy', wave: 2 },
+  ]);
+  const activePlan = { id: 'plan-1', version: 1 };
+
+  it('returns every lane with its cards, count and visibility', () => {
+    const view = boardView(issues, g, { activePlan });
+
+    expect(view.lanes.map((lane) => [lane.column, lane.visible, lane.count])).toEqual([
+      ['ready', true, 1],
+      ['blocked', true, 1],
+      ['in_progress', true, 1],
+      ['closed', false, 0],
+      ['failed', true, 1],
+    ]);
+    expect(view.lanes[0]?.items.map((item) => item.issue.title)).toEqual(['Schema']);
+    expect(view.count).toBe(4);
+    expect(view.total).toBe(4);
+  });
+
+  it('keeps empty lanes in the model so the page can explain them', () => {
+    const view = boardView(issues, g, {
+      activePlan,
+      filters: { wave: 2 },
+    });
+
+    expect(view.lanes.map((lane) => [lane.column, lane.count])).toEqual([
+      ['ready', 0],
+      ['blocked', 0],
+      ['in_progress', 0],
+      ['closed', 0],
+      ['failed', 1],
+    ]);
+    expect(view.lanes.filter((lane) => lane.visible).map((lane) => lane.column)).toEqual([
+      'ready',
+      'blocked',
+      'in_progress',
+      'failed',
+    ]);
+  });
+
+  it('makes the closed lane visible only when history is shown', () => {
+    expect(
+      boardView(issues, g, { activePlan }).lanes.find((lane) => lane.column === 'closed')?.visible,
+    ).toBe(false);
+
+    const history = boardView(issues, g, { activePlan, showClosed: true });
+
+    expect(history.lanes.find((lane) => lane.column === 'closed')?.visible).toBe(true);
+    expect(history.lanes.find((lane) => lane.column === 'closed')?.count).toBe(1);
+    expect(history.total).toBe(5);
+  });
+
+  it('makes the closed lane visible when the lane filter asks for it', () => {
+    const view = boardView(issues, g, {
+      activePlan,
+      filters: { column: 'closed' },
+    });
+
+    expect(view.lanes.find((lane) => lane.column === 'closed')?.visible).toBe(true);
+    expect(view.lanes.find((lane) => lane.column === 'closed')?.items).toHaveLength(1);
+    expect(view.count).toBe(1);
   });
 });
