@@ -123,7 +123,7 @@ describe('scaffold against the bundled svelte-bun template', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const { directory } = result.value;
+    const { directory, files } = result.value;
 
     const rootPkg = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
     expect(rootPkg.name).toBe('todo-app');
@@ -136,6 +136,17 @@ describe('scaffold against the bundled svelte-bun template', () => {
     const webPkg = JSON.parse(await readFile(join(directory, 'web/package.json'), 'utf8'));
     expect(webPkg.imports['#lib']).toBe('./src/lib');
     expect(webPkg.imports['#lib/*']).toBe('./src/lib/*');
+    expect(webPkg.scripts['test:unit']).toBe('vitest run');
+    expect(webPkg.devDependencies.vitest).toBeDefined();
+    expect(webPkg.devDependencies['@testing-library/svelte']).toBeDefined();
+
+    for (const relative of [
+      'web/vitest.config.ts',
+      'web/src/vitest-setup.ts',
+      'web/src/routes/page.test.ts',
+    ]) {
+      expect(files).toContain(relative);
+    }
 
     const serverApp = await readFile(join(directory, 'server/src/app.ts'), 'utf8');
     expect(serverApp).toContain("path.startsWith('/api/')");
