@@ -122,7 +122,11 @@ describe('createOpenCode', () => {
 
     const openCode = createOpenCode(
       { model: 'openrouter/chosen' },
-      { run: runner.run, exportSession: recordingExport().exportSession },
+      {
+        run: runner.run,
+        exportSession: recordingExport().exportSession,
+        readLog: async () => undefined,
+      },
     );
     const result = await openCode.implement({
       directory: '/work/repo',
@@ -134,6 +138,49 @@ describe('createOpenCode', () => {
       output: 'Error: This request requires more credits',
       tokens: TOKENS,
     });
+  });
+
+  it('appends OpenCode\u2019s own log when an invocation fails', async () => {
+    const runner = recordingRunner({ exitCode: 1, stdout: '', stderr: '' });
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      {
+        run: runner.run,
+        exportSession: recordingExport().exportSession,
+        retryDelaysMs: [],
+        readLog: async () => 'level=ERROR status=429 free-models-per-min',
+      },
+    );
+    const result = await openCode.implement({
+      directory: '/work/repo',
+      prompt: 'Implement issue #42',
+    });
+
+    expect(result.exitCode).toBe(1);
+    // A provider rejection that never reaches stdout is still in the report.
+    expect(result.output).toContain('--- OpenCode log (tail) ---');
+    expect(result.output).toContain('status=429 free-models-per-min');
+  });
+
+  it('does not read OpenCode\u2019s log when the invocation succeeds', async () => {
+    let reads = 0;
+
+    const openCode = createOpenCode(
+      { model: 'openrouter/chosen' },
+      {
+        run: recordingRunner({ exitCode: 0, stdout: 'done' }).run,
+        exportSession: recordingExport().exportSession,
+        retryDelaysMs: [],
+        readLog: async () => {
+          reads += 1;
+          return 'unused';
+        },
+      },
+    );
+    await openCode.implement({ directory: '/work/repo', prompt: 'Implement issue #42' });
+
+    expect(reads).toBe(0);
   });
 
   it('retries with fresh sessions and sums what each attempt used', async () => {
@@ -253,6 +300,7 @@ describe('createOpenCode', () => {
         run: runner.run,
         retryDelaysMs: [0, 0],
         exportSession: recordingExport().exportSession,
+        readLog: async () => undefined,
       },
     );
     const result = await openCode.implement({ directory: '/work/repo', prompt: 'Implement #42' });

@@ -238,6 +238,12 @@ describe('spawn', () => {
       name: 'OPENCODE_CONFIG',
       value: AGENT_OPENCODE_CONFIG_PATH,
     });
+    // OpenCode's session store and its log must outlive the container, so a
+    // failed attempt can report the provider error it hit.
+    expect(container.env).toContainEqual({
+      name: 'XDG_DATA_HOME',
+      value: '/work/.local/share',
+    });
     expect(container.envFrom).toEqual([]);
     expect(spec.template.spec.serviceAccountName).toBe('yaaabk-agent');
     expect(container.volumeMounts).toEqual([{ name: 'work', mountPath: '/work' }]);
