@@ -391,7 +391,9 @@ test('lands on the issue board after accepting the plan', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Accept Plan v1?' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(/creates or updates its Issues on GitHub/)).toBeVisible();
-  await expect(dialog.getByText(/agents start on the Issues labelled/)).toBeVisible();
+  await expect(dialog.locator('[data-slot="dialog-description"]')).toContainText(
+    'agents start on the Issues labelled',
+  );
   await expect(dialog.getByText(/needs-human/)).toBeVisible();
   await expect(dialog.getByText(/Issue labels do not change/)).toBeVisible();
 

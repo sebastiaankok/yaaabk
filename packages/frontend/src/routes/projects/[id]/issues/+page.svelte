@@ -730,659 +730,651 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-  {#if loading}
-    <div class="flex flex-col gap-4" aria-busy="true" aria-label="Loading the issue board">
-      <Skeleton class="h-9 w-64" />
-      <Skeleton class="h-5 w-96 max-w-full" />
-      <Skeleton class="h-14 w-full rounded-xl" />
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {#each [0, 1, 2, 3] as lane (lane)}
-          <Skeleton class="h-72 w-full rounded-xl" />
-        {/each}
-      </div>
+{#if loading}
+  <div class="flex flex-col gap-4" aria-busy="true" aria-label="Loading the issue board">
+    <Skeleton class="h-9 w-64" />
+    <Skeleton class="h-5 w-96 max-w-full" />
+    <Skeleton class="h-14 w-full rounded-xl" />
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {#each [0, 1, 2, 3] as lane (lane)}
+        <Skeleton class="h-72 w-full rounded-xl" />
+      {/each}
     </div>
-  {:else if error !== null && project === null}
-    <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
-      {error}
-    </p>
-  {:else if project !== null}
-    {@const currentProjectId = project.id}
-    <PageHeader
-      title="Issue board"
-      purpose={`The work for ${project.name}, grouped by lane and ordered by wave.`}
-      breadcrumbs={shell.breadcrumbs}
-    >
-      {#snippet tabs()}
-        <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
-      {/snippet}
-    </PageHeader>
+  </div>
+{:else if error !== null && project === null}
+  <p class="rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive" role="alert">
+    {error}
+  </p>
+{:else if project !== null}
+  {@const currentProjectId = project.id}
+  <PageHeader
+    title="Issue board"
+    purpose={`The work for ${project.name}, grouped by lane and ordered by wave.`}
+    breadcrumbs={shell.breadcrumbs}
+  >
+    {#snippet tabs()}
+      <ProjectTabs projectId={currentProjectId} activeTab={shell.activeProjectTab} />
+    {/snippet}
+  </PageHeader>
 
-    <p class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-      {#if plan !== null && !showEarlierPlans}
-        Showing <span class="font-medium text-foreground">Plan v{plan.version}</span>.
-      {/if}
-      {#if plan !== null && plan.isActive && plan.acceptedAt === null}
-        <a
-          href={resolve('/projects/[id]/issues/review', { id: project.id })}
-          class="inline-block rounded-full bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning hover:underline"
-        >
-          {#if showEarlierPlans}Plan v{plan.version} not accepted{:else}not accepted{/if}
-        </a>
-      {/if}
-    </p>
-
-    {#if error !== null}
-      <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+  <p class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    {#if plan !== null && !showEarlierPlans}
+      Showing <span class="font-medium text-foreground">Plan v{plan.version}</span>.
     {/if}
-
-    {#if acceptedNotice !== null}
-      <div
-        class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
-        role="status"
+    {#if plan !== null && plan.isActive && plan.acceptedAt === null}
+      <a
+        href={resolve('/projects/[id]/issues/review', { id: project.id })}
+        class="inline-block rounded-full bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning hover:underline"
       >
-        <p>Plan v{acceptedNotice} accepted and synced to GitHub</p>
-        <button
-          type="button"
-          onclick={() => (acceptedNotice = null)}
-          class="rounded-md px-2 py-0.5 text-xs font-medium hover:bg-emerald-100"
-        >
-          Dismiss
-        </button>
-      </div>
+        {#if showEarlierPlans}Plan v{plan.version} not accepted{:else}not accepted{/if}
+      </a>
     {/if}
+  </p>
 
-    {#if view !== null && view.earlierWork.length > 0}
-      <p class="rounded-lg bg-warning-subtle px-3 py-2 text-sm text-warning" role="status">
-        {view.earlierWork.length} open
-        {view.earlierWork.length === 1 ? 'issue belongs' : 'issues belong'} to an earlier Plan and
-        {view.earlierWork.length === 1 ? 'is' : 'are'} still being worked.
-      </p>
-    {/if}
+  {#if error !== null}
+    <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>
+  {/if}
 
+  {#if acceptedNotice !== null}
     <div
-      class="sticky top-14 z-20 -mx-2 flex flex-col gap-2 rounded-xl border border-border-subtle bg-background/95 px-2 py-2 shadow-elevation-1 backdrop-blur lg:top-0"
-      data-testid="board-toolbar"
+      class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+      role="status"
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          aria-label="Search issues"
-          bind:value={searchText}
-          placeholder="Search issues"
-          class="h-9 flex-1 basis-full sm:max-w-sm sm:basis-auto"
-        />
+      <p>Plan v{acceptedNotice} accepted and synced to GitHub</p>
+      <button
+        type="button"
+        onclick={() => (acceptedNotice = null)}
+        class="rounded-md px-2 py-0.5 text-xs font-medium hover:bg-emerald-100"
+      >
+        Dismiss
+      </button>
+    </div>
+  {/if}
 
-        <div class="relative">
-          <Button
-            variant="outline"
-            size="lg"
-            bind:ref={filterButton}
-            aria-expanded={filtersOpen}
-            aria-controls="board-filters"
-            onclick={() => (filtersOpen ? void closeFilters(false) : void openFilters())}
+  {#if view !== null && view.earlierWork.length > 0}
+    <p class="rounded-lg bg-warning-subtle px-3 py-2 text-sm text-warning" role="status">
+      {view.earlierWork.length} open
+      {view.earlierWork.length === 1 ? 'issue belongs' : 'issues belong'} to an earlier Plan and
+      {view.earlierWork.length === 1 ? 'is' : 'are'} still being worked.
+    </p>
+  {/if}
+
+  <div
+    class="sticky top-14 z-20 -mx-2 flex flex-col gap-2 rounded-xl border border-border-subtle bg-background/95 px-2 py-2 shadow-elevation-1 backdrop-blur lg:top-0"
+    data-testid="board-toolbar"
+  >
+    <div class="flex flex-wrap items-center gap-2">
+      <Input
+        type="search"
+        aria-label="Search issues"
+        bind:value={searchText}
+        placeholder="Search issues"
+        class="h-9 flex-1 basis-full sm:max-w-sm sm:basis-auto"
+      />
+
+      <div class="relative">
+        <Button
+          variant="outline"
+          size="lg"
+          bind:ref={filterButton}
+          aria-expanded={filtersOpen}
+          aria-controls="board-filters"
+          onclick={() => (filtersOpen ? void closeFilters(false) : void openFilters())}
+        >
+          <SlidersHorizontal aria-hidden="true" />
+          Filters
+          {#if view !== null && view.chips.length > 0}
+            <Badge variant="secondary">{view.chips.length}</Badge>
+          {/if}
+        </Button>
+
+        {#if filtersOpen}
+          <button
+            type="button"
+            tabindex="-1"
+            aria-label="Close filters"
+            class="fixed inset-0 z-20 cursor-default"
+            onclick={() => void closeFilters(false)}
+          ></button>
+          <div
+            id="board-filters"
+            bind:this={filtersPanel}
+            role="group"
+            aria-label="Filters"
+            class="absolute left-0 z-30 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border border-border-subtle bg-popover p-3 shadow-elevation-overlay max-md:fixed max-md:left-2 max-md:right-2 max-md:mt-2 max-md:max-h-[calc(100dvh-7rem)] max-md:w-auto max-md:max-w-none max-md:overflow-y-auto"
           >
-            <SlidersHorizontal aria-hidden="true" />
-            Filters
-            {#if view !== null && view.chips.length > 0}
-              <Badge variant="secondary">{view.chips.length}</Badge>
-            {/if}
-          </Button>
+            <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              Label
+              <select
+                aria-label="Filter by label"
+                bind:value={labelFilter}
+                class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <option value="">All labels</option>
+                {#each BOARD_LABELS as label (label)}
+                  <option value={label}>{label}</option>
+                {/each}
+              </select>
+            </label>
 
-          {#if filtersOpen}
+            <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              Lane
+              <select
+                aria-label="Filter by lane"
+                bind:value={laneFilter}
+                class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <option value="">All lanes</option>
+                {#each BOARD_COLUMNS as column (column)}
+                  <option value={column}>{BOARD_COLUMN_LABELS[column]}</option>
+                {/each}
+              </select>
+            </label>
+
+            <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              Wave
+              <select
+                aria-label="Filter by wave"
+                bind:value={waveFilter}
+                class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <option value="">All waves</option>
+                {#each view?.waves ?? [] as wave (wave)}
+                  <option value={String(wave)}>Wave {wave}</option>
+                {/each}
+                {#if view?.hasUnordered}
+                  <option value="null">Unordered</option>
+                {/if}
+              </select>
+            </label>
+
+            <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" aria-label="Show closed issues" bind:checked={showClosed} />
+              Show closed
+            </label>
+
+            <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                aria-label="Show earlier plans"
+                bind:checked={showEarlierPlans}
+                disabled={plan === null}
+              />
+              Show earlier plans
+            </label>
+          </div>
+        {/if}
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <ArrowUpDown class="size-4 text-muted-foreground" aria-hidden="true" />
+        <select
+          aria-label="Sort issues"
+          bind:value={sort}
+          class="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <option value="wave">Wave</option>
+          <option value="created">Creation date</option>
+          <option value="title">Title</option>
+        </select>
+      </div>
+
+      <p class="ml-auto text-sm text-muted-foreground" data-testid="board-count" aria-live="polite">
+        Showing {view?.count ?? 0} of {view?.total ?? 0} issues
+      </p>
+    </div>
+
+    {#if view !== null && view.chips.length > 0}
+      <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Active filters">
+        {#each view.chips as chip (chip.kind)}
+          <span
+            class="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+          >
+            {chip.label}
             <button
               type="button"
-              tabindex="-1"
-              aria-label="Close filters"
-              class="fixed inset-0 z-20 cursor-default"
-              onclick={() => void closeFilters(false)}
-            ></button>
-            <div
-              id="board-filters"
-              bind:this={filtersPanel}
-              role="group"
-              aria-label="Filters"
-              class="absolute left-0 z-30 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border border-border-subtle bg-popover p-3 shadow-elevation-overlay max-md:fixed max-md:left-2 max-md:right-2 max-md:mt-2 max-md:max-h-[calc(100dvh-7rem)] max-md:w-auto max-md:max-w-none max-md:overflow-y-auto"
+              aria-label={`Remove filter ${chip.label}`}
+              onclick={() => removeChip(chip)}
+              class="rounded-full p-0.5 hover:bg-secondary-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
-              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-                Label
-                <select
-                  aria-label="Filter by label"
-                  bind:value={labelFilter}
-                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <option value="">All labels</option>
-                  {#each BOARD_LABELS as label (label)}
-                    <option value={label}>{label}</option>
-                  {/each}
-                </select>
-              </label>
-
-              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-                Lane
-                <select
-                  aria-label="Filter by lane"
-                  bind:value={laneFilter}
-                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <option value="">All lanes</option>
-                  {#each BOARD_COLUMNS as column (column)}
-                    <option value={column}>{BOARD_COLUMN_LABELS[column]}</option>
-                  {/each}
-                </select>
-              </label>
-
-              <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-                Wave
-                <select
-                  aria-label="Filter by wave"
-                  bind:value={waveFilter}
-                  class="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <option value="">All waves</option>
-                  {#each view?.waves ?? [] as wave (wave)}
-                    <option value={String(wave)}>Wave {wave}</option>
-                  {/each}
-                  {#if view?.hasUnordered}
-                    <option value="null">Unordered</option>
-                  {/if}
-                </select>
-              </label>
-
-              <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
-                <input type="checkbox" aria-label="Show closed issues" bind:checked={showClosed} />
-                Show closed
-              </label>
-
-              <label class="flex min-h-11 items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  aria-label="Show earlier plans"
-                  bind:checked={showEarlierPlans}
-                  disabled={plan === null}
-                />
-                Show earlier plans
-              </label>
-            </div>
-          {/if}
-        </div>
-
-        <div class="flex items-center gap-1.5">
-          <ArrowUpDown class="size-4 text-muted-foreground" aria-hidden="true" />
-          <select
-            aria-label="Sort issues"
-            bind:value={sort}
-            class="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            <option value="wave">Wave</option>
-            <option value="created">Creation date</option>
-            <option value="title">Title</option>
-          </select>
-        </div>
-
-        <p
-          class="ml-auto text-sm text-muted-foreground"
-          data-testid="board-count"
-          aria-live="polite"
-        >
-          Showing {view?.count ?? 0} of {view?.total ?? 0} issues
-        </p>
+              <X class="size-3" aria-hidden="true" />
+            </button>
+          </span>
+        {/each}
+        <Button variant="ghost" size="xs" onclick={clearFilters}>Clear all</Button>
       </div>
+    {/if}
+  </div>
 
-      {#if view !== null && view.chips.length > 0}
-        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Active filters">
-          {#each view.chips as chip (chip.kind)}
-            <span
-              class="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
-            >
-              {chip.label}
+  {#snippet laneSection(lane: BoardLane)}
+    <section
+      class="flex min-h-40 flex-col gap-3 rounded-xl border border-border-subtle bg-surface p-3"
+      aria-labelledby={`lane-${lane.column}-heading`}
+    >
+      <h2
+        id={`lane-${lane.column}-heading`}
+        class="flex items-center justify-between gap-2 text-sm font-semibold text-foreground"
+      >
+        {lane.label}
+        <Badge variant="outline" class="bg-background">{lane.count}</Badge>
+      </h2>
+
+      {#if lane.items.length === 0}
+        <p
+          class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-muted-foreground"
+        >
+          {view !== null && view.total === 0
+            ? 'No Issues in this Plan yet.'
+            : 'No Issues match the current filters.'}
+        </p>
+      {:else}
+        <ul class="flex flex-col gap-2">
+          {#each lane.items as item (item.issue.id)}
+            <li>
               <button
                 type="button"
-                aria-label={`Remove filter ${chip.label}`}
-                onclick={() => removeChip(chip)}
-                class="rounded-full p-0.5 hover:bg-secondary-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                data-issue-id={item.issue.id}
+                onclick={() => open(item.issue.id)}
+                class="relative z-10 flex w-full flex-col gap-2 rounded-lg border border-border-subtle bg-card p-3 text-left text-sm shadow-elevation-1 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                <X class="size-3" aria-hidden="true" />
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-foreground">{item.issue.title}</span>
+                  <span class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}">
+                    {item.issue.label}
+                  </span>
+                </span>
+                <span class="line-clamp-2 text-xs text-muted-foreground">
+                  {summaryForIssue(item.issue)}
+                </span>
+                <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{item.wave === null ? 'Unordered' : `Wave ${item.wave}`}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {(budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100).toFixed(2)} left
+                  </span>
+                </span>
+                {#if item.issue.dependsOn.length > 0}
+                  <span class="text-xs text-muted-foreground">
+                    Depends on: {item.issue.dependsOn.join(', ')}
+                  </span>
+                {/if}
               </button>
-            </span>
+            </li>
           {/each}
-          <Button variant="ghost" size="xs" onclick={clearFilters}>Clear all</Button>
-        </div>
+        </ul>
       {/if}
-    </div>
+    </section>
+  {/snippet}
 
-    {#snippet laneSection(lane: BoardLane)}
-      <section
-        class="flex min-h-40 flex-col gap-3 rounded-xl border border-border-subtle bg-surface p-3"
-        aria-labelledby={`lane-${lane.column}-heading`}
+  <div
+    class="relative"
+    bind:this={boardEl}
+    bind:clientWidth={boardWidth}
+    bind:clientHeight={boardHeight}
+  >
+    {#if wide}
+      <div
+        class="grid items-start gap-4 md:grid-cols-2 {lanes.length > 4
+          ? 'xl:grid-cols-5'
+          : 'xl:grid-cols-4'}"
       >
-        <h2
-          id={`lane-${lane.column}-heading`}
-          class="flex items-center justify-between gap-2 text-sm font-semibold text-foreground"
+        {#each lanes as lane (lane.column)}
+          {@render laneSection(lane)}
+        {/each}
+      </div>
+    {:else}
+      <div class="flex flex-col gap-3">
+        <div
+          class="grid grid-cols-2 gap-2"
+          role="tablist"
+          aria-label="Issue lanes"
+          data-testid="lane-tabs"
         >
-          {lane.label}
-          <Badge variant="outline" class="bg-background">{lane.count}</Badge>
-        </h2>
+          {#each lanes as lane, index (lane.column)}
+            <button
+              type="button"
+              role="tab"
+              id={`lane-tab-${lane.column}`}
+              aria-selected={activeLane === lane.column}
+              aria-controls={`lane-panel-${lane.column}`}
+              tabindex={activeLane === lane.column ? 0 : -1}
+              onclick={() => (activeLane = lane.column)}
+              onkeydown={(event) => handleLaneTabKeydown(event, index)}
+              class="flex min-h-11 w-full items-center justify-between gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none {activeLane ===
+              lane.column
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border-subtle bg-surface text-muted-foreground hover:text-foreground'}"
+            >
+              {lane.label}
+              <Badge variant="outline" class="bg-background">{lane.count}</Badge>
+            </button>
+          {/each}
+        </div>
 
-        {#if lane.items.length === 0}
-          <p
-            class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-muted-foreground"
+        {#if activeLaneView !== null}
+          <div
+            role="tabpanel"
+            id={`lane-panel-${activeLaneView.column}`}
+            aria-labelledby={`lane-tab-${activeLaneView.column}`}
           >
-            {view !== null && view.total === 0
-              ? 'No Issues in this Plan yet.'
-              : 'No Issues match the current filters.'}
-          </p>
+            {@render laneSection(activeLaneView)}
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <svg
+      class="pointer-events-none absolute inset-0 z-0 hidden text-muted-foreground md:block"
+      width={boardWidth}
+      height={boardHeight}
+      aria-hidden="true"
+    >
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+        </marker>
+      </defs>
+      {#each arrows as arrow (arrow.key)}
+        <path
+          d={arrow.d}
+          data-edge={arrow.key}
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          marker-end="url(#arrowhead)"
+        />
+      {/each}
+    </svg>
+  </div>
+
+  <Sheet
+    open={selected !== null}
+    onOpenChange={(next) => {
+      if (!next) close();
+    }}
+    title={selected?.title ?? 'Issue details'}
+    class="gap-4"
+  >
+    {#if selected !== null}
+      <span class="w-fit rounded-full px-2 py-0.5 text-xs {labelClass[selected.label]}">
+        {selected.label}
+      </span>
+
+      {#if selected.githubNumber !== null}
+        <p class="text-xs text-neutral-500">GitHub #{selected.githubNumber}</p>
+      {/if}
+
+      <dl class="grid grid-cols-3 gap-3 text-sm">
+        <div>
+          <dt class="text-neutral-500">Attempts</dt>
+          <dd>{selected.attemptCount} / {selected.maxAttempts}</dd>
+        </div>
+        <div>
+          <dt class="text-neutral-500">Budget</dt>
+          <dd>{usd(selectedBudget?.budgetCents ?? selected.budgetCents)}</dd>
+        </div>
+        <div>
+          <dt class="text-neutral-500">Spent</dt>
+          <dd>{usd(selectedBudget?.spentCents ?? spend.get(selected.id) ?? 0)}</dd>
+        </div>
+        <div>
+          <dt class="text-neutral-500">Left</dt>
+          <dd>{usd(selectedBudget?.remainingCents ?? selected.budgetCents)}</dd>
+        </div>
+      </dl>
+
+      {#if selectedBudget?.exhausted}
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+          This Issue’s budget is spent. Raise it to allow another attempt.
+        </p>
+      {/if}
+
+      <section aria-label="Token usage" class="space-y-1">
+        <h3 class="text-sm font-semibold">Tokens</h3>
+        {#if selectedRuns.length === 0}
+          <p class="text-sm text-neutral-500">No agent runs yet.</p>
+        {:else}
+          <p class="text-sm" data-testid="issue-tokens">Total: {tokenTotalLabel}</p>
+          {#if tokenBreakdownLabel !== null}
+            <p class="text-xs text-neutral-500" data-testid="issue-token-breakdown">
+              {tokenBreakdownLabel}
+            </p>
+          {/if}
+          {#if tokenSummary.partial}
+            <p class="text-xs text-neutral-500">Some model runs did not report token usage.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
+        <select
+          id="issue-agent-model"
+          bind:value={modelChoice}
+          onchange={() => void saveModel()}
+          class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+        >
+          <option value="">Use project default ({effectiveDefault})</option>
+          {#each catalogue?.models ?? [] as option (option.id)}
+            <option value={option.id}>{option.name}</option>
+          {/each}
+          {#if modelChoice !== '' && !(catalogue?.models ?? []).some((m) => m.id === modelChoice)}
+            <option value={modelChoice}>{modelChoice}</option>
+          {/if}
+        </select>
+        <p class="text-xs text-neutral-500">
+          Runs use {selected.agentModel ?? effectiveDefault}.
+        </p>
+        {#if modelSaving}
+          <p class="text-xs text-neutral-500" role="status">Saving…</p>
+        {:else if modelStatus !== null}
+          <p class="text-xs text-emerald-700" role="status">{modelStatus}</p>
+        {/if}
+        {#if modelError !== null}
+          <p class="text-xs text-red-700" role="alert">{modelError}</p>
+        {/if}
+        {#if catalogueError !== null}
+          <p class="text-xs text-amber-700">{catalogueError}</p>
+        {/if}
+      </div>
+
+      {#if editing}
+        <div class="flex flex-col gap-2">
+          <label class="flex flex-col gap-1 text-xs text-neutral-500">
+            Title
+            <input
+              aria-label="Issue title"
+              bind:value={draftTitle}
+              class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-neutral-500">
+            Summary
+            <textarea
+              aria-label="Issue summary"
+              rows="2"
+              maxlength={SUMMARY_MAX_LENGTH}
+              bind:value={draftSummary}
+              class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+            ></textarea>
+            <span class="text-neutral-400">
+              One or two plain sentences, at most {SUMMARY_MAX_LENGTH} characters.
+            </span>
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-neutral-500">
+            Body
+            <textarea
+              aria-label="Issue body"
+              rows="6"
+              bind:value={draftBody}
+              class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+            ></textarea>
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-neutral-500">
+            Issue budget (USD)
+            <input
+              aria-label="Issue budget (USD)"
+              inputmode="decimal"
+              bind:value={draftBudget}
+              class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
+            />
+            <span class="text-neutral-400">
+              Between $0.01 and $5.00. Raising it lets the next attempt spend the difference.
+            </span>
+          </label>
+        </div>
+      {:else if selected.body !== ''}
+        <Markdown markdown={selected.body} class="mt-1" />
+      {/if}
+
+      <section aria-label="Agent runs" class="space-y-2">
+        <h3 class="text-sm font-semibold">Agent runs</h3>
+        {#if selectedRuns.length === 0}
+          <p class="text-sm text-neutral-500">No agent runs yet.</p>
         {:else}
           <ul class="flex flex-col gap-2">
-            {#each lane.items as item (item.issue.id)}
-              <li>
-                <button
-                  type="button"
-                  data-issue-id={item.issue.id}
-                  onclick={() => open(item.issue.id)}
-                  class="relative z-10 flex w-full flex-col gap-2 rounded-lg border border-border-subtle bg-card p-3 text-left text-sm shadow-elevation-1 transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <span class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-foreground">{item.issue.title}</span>
-                    <span class="rounded-full px-2 py-0.5 text-xs {labelClass[item.issue.label]}">
-                      {item.issue.label}
-                    </span>
+            {#each selectedRuns as run (run.id)}
+              <li
+                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
+              >
+                <span class="font-medium">{runLabel(run)}</span>
+                <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                  {run.status}
+                </span>
+                {#if run.reviewVerdict != null}
+                  <span
+                    class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'}"
+                  >
+                    {run.reviewVerdict === 'approve' ? 'approved' : 'changes requested'}
                   </span>
-                  <span class="line-clamp-2 text-xs text-muted-foreground">
-                    {summaryForIssue(item.issue)}
-                  </span>
-                  <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{item.wave === null ? 'Unordered' : `Wave ${item.wave}`}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>
-                      {(budgetRemaining(item.issue, spend.get(item.issue.id) ?? 0) / 100).toFixed(
-                        2,
-                      )} left
-                    </span>
-                  </span>
-                  {#if item.issue.dependsOn.length > 0}
-                    <span class="text-xs text-muted-foreground">
-                      Depends on: {item.issue.dependsOn.join(', ')}
-                    </span>
-                  {/if}
-                </button>
+                {/if}
+                <span class="text-xs text-neutral-500">
+                  {(run.costCents / 100).toFixed(2)}
+                </span>
+                <span class="text-xs text-neutral-500" data-testid="run-tokens">
+                  Tokens: {compactTokens(runTokenTotal(run.tokens))}
+                </span>
+                {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
+                  <Markdown
+                    markdown={run.reviewBody}
+                    class="mt-1 max-h-64 w-full overflow-auto rounded bg-neutral-50 p-2"
+                  />
+                {/if}
+                {#if run.model !== null && run.model !== undefined}
+                  <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
+                {/if}
+                {#if run.prUrl !== null}
+                  <!-- eslint-disable svelte/no-navigation-without-resolve -->
+                  <a href={run.prUrl} target="_blank" rel="noreferrer" class="text-xs underline">
+                    PR #{pullRequestNumber(run.prUrl)}
+                  </a>
+                  <!-- eslint-enable svelte/no-navigation-without-resolve -->
+                {/if}
+                {#if run.logs !== null && run.logs.trim() !== ''}
+                  <details class="w-full">
+                    <summary class="cursor-pointer text-xs text-neutral-500">Logs</summary>
+                    <pre
+                      class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
+                  </details>
+                {/if}
+                {#if liveRunId === run.id}
+                  <div class="w-full">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="text-xs text-neutral-500">Live output</p>
+                      {#if !following}
+                        <button
+                          type="button"
+                          onclick={jumpToLatest}
+                          class="rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
+                        >
+                          Jump to latest
+                        </button>
+                      {/if}
+                    </div>
+                    <pre
+                      bind:this={liveLogEl}
+                      onscroll={handleLiveLogScroll}
+                      class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
+                      data-testid="live-agent-log">{liveLog === ''
+                        ? 'Waiting for output…'
+                        : liveLog}</pre>
+                    {#if liveError !== null}
+                      <p class="mt-1 text-xs text-red-700" role="alert">{liveError}</p>
+                    {/if}
+                  </div>
+                {/if}
               </li>
             {/each}
           </ul>
         {/if}
       </section>
-    {/snippet}
 
-    <div
-      class="relative"
-      bind:this={boardEl}
-      bind:clientWidth={boardWidth}
-      bind:clientHeight={boardHeight}
-    >
-      {#if wide}
-        <div
-          class="grid items-start gap-4 md:grid-cols-2 {lanes.length > 4
-            ? 'xl:grid-cols-5'
-            : 'xl:grid-cols-4'}"
-        >
-          {#each lanes as lane (lane.column)}
-            {@render laneSection(lane)}
-          {/each}
-        </div>
-      {:else}
-        <div class="flex flex-col gap-3">
-          <div
-            class="grid grid-cols-2 gap-2"
-            role="tablist"
-            aria-label="Issue lanes"
-            data-testid="lane-tabs"
-          >
-            {#each lanes as lane, index (lane.column)}
-              <button
-                type="button"
-                role="tab"
-                id={`lane-tab-${lane.column}`}
-                aria-selected={activeLane === lane.column}
-                aria-controls={`lane-panel-${lane.column}`}
-                tabindex={activeLane === lane.column ? 0 : -1}
-                onclick={() => (activeLane = lane.column)}
-                onkeydown={(event) => handleLaneTabKeydown(event, index)}
-                class="flex min-h-11 w-full items-center justify-between gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none {activeLane ===
-                lane.column
-                  ? 'border-foreground bg-foreground text-background'
-                  : 'border-border-subtle bg-surface text-muted-foreground hover:text-foreground'}"
-              >
-                {lane.label}
-                <Badge variant="outline" class="bg-background">{lane.count}</Badge>
-              </button>
-            {/each}
-          </div>
-
-          {#if activeLaneView !== null}
-            <div
-              role="tabpanel"
-              id={`lane-panel-${activeLaneView.column}`}
-              aria-labelledby={`lane-tab-${activeLaneView.column}`}
-            >
-              {@render laneSection(activeLaneView)}
-            </div>
-          {/if}
-        </div>
+      {#if actionError !== null}
+        <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {actionError}
+        </p>
       {/if}
 
-      <svg
-        class="pointer-events-none absolute inset-0 z-0 hidden text-muted-foreground md:block"
-        width={boardWidth}
-        height={boardHeight}
-        aria-hidden="true"
-      >
-        <defs>
-          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
-          </marker>
-        </defs>
-        {#each arrows as arrow (arrow.key)}
-          <path
-            d={arrow.d}
-            data-edge={arrow.key}
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            marker-end="url(#arrowhead)"
-          />
-        {/each}
-      </svg>
-    </div>
-
-    <Sheet
-      open={selected !== null}
-      onOpenChange={(next) => {
-        if (!next) close();
-      }}
-      title={selected?.title ?? 'Issue details'}
-      class="gap-4"
-    >
-      {#if selected !== null}
-        <span class="w-fit rounded-full px-2 py-0.5 text-xs {labelClass[selected.label]}">
-          {selected.label}
-        </span>
-
-        {#if selected.githubNumber !== null}
-          <p class="text-xs text-neutral-500">GitHub #{selected.githubNumber}</p>
-        {/if}
-
-        <dl class="grid grid-cols-3 gap-3 text-sm">
-          <div>
-            <dt class="text-neutral-500">Attempts</dt>
-            <dd>{selected.attemptCount} / {selected.maxAttempts}</dd>
-          </div>
-          <div>
-            <dt class="text-neutral-500">Budget</dt>
-            <dd>{usd(selectedBudget?.budgetCents ?? selected.budgetCents)}</dd>
-          </div>
-          <div>
-            <dt class="text-neutral-500">Spent</dt>
-            <dd>{usd(selectedBudget?.spentCents ?? spend.get(selected.id) ?? 0)}</dd>
-          </div>
-          <div>
-            <dt class="text-neutral-500">Left</dt>
-            <dd>{usd(selectedBudget?.remainingCents ?? selected.budgetCents)}</dd>
-          </div>
-        </dl>
-
-        {#if selectedBudget?.exhausted}
-          <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
-            This Issue’s budget is spent. Raise it to allow another attempt.
-          </p>
-        {/if}
-
-        <section aria-label="Token usage" class="space-y-1">
-          <h3 class="text-sm font-semibold">Tokens</h3>
-          {#if selectedRuns.length === 0}
-            <p class="text-sm text-neutral-500">No agent runs yet.</p>
-          {:else}
-            <p class="text-sm" data-testid="issue-tokens">Total: {tokenTotalLabel}</p>
-            {#if tokenBreakdownLabel !== null}
-              <p class="text-xs text-neutral-500" data-testid="issue-token-breakdown">
-                {tokenBreakdownLabel}
-              </p>
-            {/if}
-            {#if tokenSummary.partial}
-              <p class="text-xs text-neutral-500">Some model runs did not report token usage.</p>
-            {/if}
-          {/if}
-        </section>
-
-        <div class="flex flex-col gap-1">
-          <label class="text-xs text-neutral-500" for="issue-agent-model">Agent model</label>
-          <select
-            id="issue-agent-model"
-            bind:value={modelChoice}
-            onchange={() => void saveModel()}
-            class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-          >
-            <option value="">Use project default ({effectiveDefault})</option>
-            {#each catalogue?.models ?? [] as option (option.id)}
-              <option value={option.id}>{option.name}</option>
-            {/each}
-            {#if modelChoice !== '' && !(catalogue?.models ?? []).some((m) => m.id === modelChoice)}
-              <option value={modelChoice}>{modelChoice}</option>
-            {/if}
-          </select>
-          <p class="text-xs text-neutral-500">
-            Runs use {selected.agentModel ?? effectiveDefault}.
-          </p>
-          {#if modelSaving}
-            <p class="text-xs text-neutral-500" role="status">Saving…</p>
-          {:else if modelStatus !== null}
-            <p class="text-xs text-emerald-700" role="status">{modelStatus}</p>
-          {/if}
-          {#if modelError !== null}
-            <p class="text-xs text-red-700" role="alert">{modelError}</p>
-          {/if}
-          {#if catalogueError !== null}
-            <p class="text-xs text-amber-700">{catalogueError}</p>
-          {/if}
-        </div>
-
+      <div class="mt-auto flex flex-wrap gap-2">
         {#if editing}
-          <div class="flex flex-col gap-2">
-            <label class="flex flex-col gap-1 text-xs text-neutral-500">
-              Title
-              <input
-                aria-label="Issue title"
-                bind:value={draftTitle}
-                class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-              />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-neutral-500">
-              Summary
-              <textarea
-                aria-label="Issue summary"
-                rows="2"
-                maxlength={SUMMARY_MAX_LENGTH}
-                bind:value={draftSummary}
-                class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-              ></textarea>
-              <span class="text-neutral-400">
-                One or two plain sentences, at most {SUMMARY_MAX_LENGTH} characters.
-              </span>
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-neutral-500">
-              Body
-              <textarea
-                aria-label="Issue body"
-                rows="6"
-                bind:value={draftBody}
-                class="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-              ></textarea>
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-neutral-500">
-              Issue budget (USD)
-              <input
-                aria-label="Issue budget (USD)"
-                inputmode="decimal"
-                bind:value={draftBudget}
-                class="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-900"
-              />
-              <span class="text-neutral-400">
-                Between $0.01 and $5.00. Raising it lets the next attempt spend the difference.
-              </span>
-            </label>
-          </div>
-        {:else if selected.body !== ''}
-          <Markdown markdown={selected.body} class="mt-1" />
+          <button
+            type="button"
+            onclick={() => void saveEdit()}
+            disabled={busy || draftTitle.trim() === '' || draftSummary.trim() === ''}
+            class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onclick={() => (editing = false)}
+            class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          >
+            Cancel
+          </button>
+        {:else if confirmingDelete}
+          <button
+            type="button"
+            onclick={() => void removeIssue()}
+            disabled={busy}
+            class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            Confirm delete
+          </button>
+          <button
+            type="button"
+            onclick={() => (confirmingDelete = false)}
+            class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          >
+            Cancel
+          </button>
+        {:else}
+          <button
+            type="button"
+            onclick={() => void rerun(selected.id)}
+            disabled={busy}
+            class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            Re-run
+          </button>
+          <button
+            type="button"
+            onclick={() => startEdit(selected)}
+            class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onclick={() => (confirmingDelete = true)}
+            class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+          >
+            Delete
+          </button>
         {/if}
-
-        <section aria-label="Agent runs" class="space-y-2">
-          <h3 class="text-sm font-semibold">Agent runs</h3>
-          {#if selectedRuns.length === 0}
-            <p class="text-sm text-neutral-500">No agent runs yet.</p>
-          {:else}
-            <ul class="flex flex-col gap-2">
-              {#each selectedRuns as run (run.id)}
-                <li
-                  class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 p-3 text-sm"
-                >
-                  <span class="font-medium">{runLabel(run)}</span>
-                  <span class="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
-                    {run.status}
-                  </span>
-                  {#if run.reviewVerdict != null}
-                    <span
-                      class="rounded-full px-2 py-0.5 text-xs {run.reviewVerdict === 'approve'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'}"
-                    >
-                      {run.reviewVerdict === 'approve' ? 'approved' : 'changes requested'}
-                    </span>
-                  {/if}
-                  <span class="text-xs text-neutral-500">
-                    {(run.costCents / 100).toFixed(2)}
-                  </span>
-                  <span class="text-xs text-neutral-500" data-testid="run-tokens">
-                    Tokens: {compactTokens(runTokenTotal(run.tokens))}
-                  </span>
-                  {#if run.reviewBody != null && run.reviewBody.trim() !== ''}
-                    <Markdown
-                      markdown={run.reviewBody}
-                      class="mt-1 max-h-64 w-full overflow-auto rounded bg-neutral-50 p-2"
-                    />
-                  {/if}
-                  {#if run.model !== null && run.model !== undefined}
-                    <span class="w-full text-xs text-neutral-500">Model: {run.model}</span>
-                  {/if}
-                  {#if run.prUrl !== null}
-                    <!-- eslint-disable svelte/no-navigation-without-resolve -->
-                    <a href={run.prUrl} target="_blank" rel="noreferrer" class="text-xs underline">
-                      PR #{pullRequestNumber(run.prUrl)}
-                    </a>
-                    <!-- eslint-enable svelte/no-navigation-without-resolve -->
-                  {/if}
-                  {#if run.logs !== null && run.logs.trim() !== ''}
-                    <details class="w-full">
-                      <summary class="cursor-pointer text-xs text-neutral-500">Logs</summary>
-                      <pre
-                        class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs text-neutral-700">{run.logs}</pre>
-                    </details>
-                  {/if}
-                  {#if liveRunId === run.id}
-                    <div class="w-full">
-                      <div class="flex items-center justify-between gap-2">
-                        <p class="text-xs text-neutral-500">Live output</p>
-                        {#if !following}
-                          <button
-                            type="button"
-                            onclick={jumpToLatest}
-                            class="rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100"
-                          >
-                            Jump to latest
-                          </button>
-                        {/if}
-                      </div>
-                      <pre
-                        bind:this={liveLogEl}
-                        onscroll={handleLiveLogScroll}
-                        class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-xs text-neutral-100"
-                        data-testid="live-agent-log">{liveLog === ''
-                          ? 'Waiting for output…'
-                          : liveLog}</pre>
-                      {#if liveError !== null}
-                        <p class="mt-1 text-xs text-red-700" role="alert">{liveError}</p>
-                      {/if}
-                    </div>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-
-        {#if actionError !== null}
-          <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-            {actionError}
-          </p>
-        {/if}
-
-        <div class="mt-auto flex flex-wrap gap-2">
-          {#if editing}
-            <button
-              type="button"
-              onclick={() => void saveEdit()}
-              disabled={busy || draftTitle.trim() === '' || draftSummary.trim() === ''}
-              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onclick={() => (editing = false)}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-            >
-              Cancel
-            </button>
-          {:else if confirmingDelete}
-            <button
-              type="button"
-              onclick={() => void removeIssue()}
-              disabled={busy}
-              class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              Confirm delete
-            </button>
-            <button
-              type="button"
-              onclick={() => (confirmingDelete = false)}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-            >
-              Cancel
-            </button>
-          {:else}
-            <button
-              type="button"
-              onclick={() => void rerun(selected.id)}
-              disabled={busy}
-              class="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            >
-              Re-run
-            </button>
-            <button
-              type="button"
-              onclick={() => startEdit(selected)}
-              class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onclick={() => (confirmingDelete = true)}
-              class="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-            >
-              Delete
-            </button>
-          {/if}
-        </div>
-      {/if}
-    </Sheet>
-  {/if}
-</div>
+      </div>
+    {/if}
+  </Sheet>
+{/if}
