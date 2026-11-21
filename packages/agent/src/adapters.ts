@@ -8,6 +8,7 @@ import {
 } from '@yaaabk/shared';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentConfig } from './config';
 import type {
@@ -302,10 +303,43 @@ export interface OpenCodeAdapterOptions {
   /** Creates the fresh session id each invocation runs in. */
   newSessionId?: () => string;
   /**
+   * Reads the tail of OpenCode's own log, appended to a failed run's output.
+   * Defaults to {@link readOpenCodeLog}; tests inject a stub.
+   */
+  readLog?: () => Promise<string | undefined>;
+  /**
    * Delays between retries when OpenCode cannot resolve the model yet.
    * Defaults to {@link MODEL_RETRY_DELAYS_MS}; tests pass `[]` to keep runs fast.
    */
   retryDelaysMs?: number[];
+}
+
+/**
+ * How many trailing bytes of OpenCode's log a failed run reports.
+ *
+ * The log records every request, including the provider's error body, while
+ * stdout only shows what the CLI decided to print. A few kilobytes is enough
+ * for the failing request without drowning the run's own output.
+ */
+const OPENCODE_LOG_TAIL_BYTES = 4_000;
+
+/**
+ * The tail of OpenCode's own log, or `undefined` when it cannot be read.
+ *
+ * OpenCode writes under `$XDG_DATA_HOME/opencode/log` (or `~/.local/share`).
+ * Agent Jobs point `XDG_DATA_HOME` at the workspace volume, so the file
+ * survives the container and the next attempt can inspect it. A missing file
+ * is normal (an image without the log, or a run that never started).
+ */
+export async function readOpenCodeLog(): Promise<string | undefined> {
+  const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
+  try {
+    const text = await readFile(join(dataHome, 'opencode', 'log', 'opencode.log'), 'utf8');
+    const tail = text.slice(-OPENCODE_LOG_TAIL_BYTES).trim();
+    return tail === '' ? undefined : tail;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -539,6 +573,7 @@ export function createOpenCode(
   const readVerdict = options.readVerdict ?? readVerdictFile;
   const exportSession = options.exportSession ?? exportSessionWithBun;
   const newSessionId = options.newSessionId ?? newOpenCodeSessionId;
+  const readLog = options.readLog ?? readOpenCodeLog;
   const retryDelays = options.retryDelaysMs ?? MODEL_RETRY_DELAYS_MS;
 
   /** The model to invoke, failing with the configuration to set when absent. */
@@ -606,6 +641,15 @@ export function createOpenCode(
     // Provider failures arrive on stderr; dropping it leaves an empty run log
     // with no clue why the attempt failed.
     const output = [finished.stdout, finished.stderr ?? ''].filter((part) => part.trim() !== '');
+    if (finished.exitCode !== 0) {
+      // The provider's rejection is written to OpenCode's own log even when the
+      // CLI prints nothing, so a failure report includes it. Without it a
+      // mid-run 429 or stream error looks like OpenCode exiting silently.
+      const log = await readLog();
+      if (log !== undefined) {
+        output.push(`--- OpenCode log (tail) ---\n${log}`);
+      }
+    }
     if (tokens !== null) progressTokens(tokens);
     return { exitCode: finished.exitCode, output: output.join('\n'), tokens };
   }

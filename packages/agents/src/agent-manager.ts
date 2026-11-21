@@ -521,6 +521,10 @@ export function createAgentManager(options: AgentManagerOptions): AgentManager {
         MAX_ATTEMPTS: String(issue.maxAttempts),
         AGENT_RUN_ID: run.id,
         AGENT_RUN_TOKEN: token,
+        // OpenCode keeps its session store and its own log under XDG_DATA_HOME.
+        // Point them at the workspace volume so a failed attempt leaves the log
+        // the Agent reports, instead of losing it with the container.
+        XDG_DATA_HOME: `${WORKSPACE_MOUNT_PATH}/.local/share`,
         // The image has no global git identity, so an Agent that commits its
         // work would otherwise fail with "Author identity unknown" and have to
         // configure one itself.
