@@ -31,6 +31,7 @@ Run the same checks YAAABK runs:
 
 ```sh
 bun run check   # lint, typecheck, tests, build and smoke
+bun run test    # API tests and component tests
 bun run smoke   # start the API, check /health, /api/hello and /, stop it
 bun run build   # just the production build, when you need it
 ```
