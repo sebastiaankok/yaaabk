@@ -39,9 +39,6 @@ jobs:
       - name: Check
         run: bun run check
 
-      - name: Smoke
-        run: bun run smoke
-
   image:
     name: Build and push image
     needs: verify

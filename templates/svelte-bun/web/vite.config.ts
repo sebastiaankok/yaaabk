@@ -4,6 +4,13 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // In development the SPA is served by Vite on :5173 while the API listens on
+  // the project's port. Proxy `/api` so the page's relative fetches reach it.
+  server: {
+    proxy: {
+      '/api': 'http://localhost:{{port}}',
+    },
+  },
   plugins: [
     tailwindcss(),
     sveltekit({

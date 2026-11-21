@@ -22,13 +22,16 @@ bun install
 bun run dev   # API on :{{port}}, web dev server on :5173
 ```
 
+`/api` requests from the dev server proxy to the API, so the page works against
+the live API during development.
+
 ## Checks
 
 Run the same checks YAAABK runs:
 
 ```sh
-bun run check   # lint, typecheck, tests and build
-bun run smoke   # start the API, check /health and /api/hello, stop it
+bun run check   # lint, typecheck, tests, build and smoke
+bun run smoke   # start the API, check /health, /api/hello and /, stop it
 bun run build   # just the production build, when you need it
 ```
 

@@ -15,4 +15,11 @@ describe('{{projectName}} API', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ message: 'Hello from {{projectName}}' });
   });
+
+  test('answers an unknown API route with a JSON 404, not the SPA shell', async () => {
+    const response = await app.request('/api/does-not-exist');
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
+  });
 });
