@@ -31,6 +31,14 @@ const PLAN = {
 
 const ACCEPTED_AT = '2026-01-02T00:00:00.000Z';
 
+const OVERVIEW = {
+  project: PROJECT,
+  activePlan: null,
+  activeWork: [],
+  issues: { total: 0, open: 0, inProgress: 0, closed: 0, failed: 0, averageAttempts: 0 },
+  lastRunAt: null,
+};
+
 const MODELS = {
   models: [{ id: 'openrouter/default-model', name: 'Default model' }],
   defaultModel: 'openrouter/default-model',
@@ -103,6 +111,7 @@ async function mockReview(page: Page, overrides: Partial<Mocks> = {}): Promise<M
     }),
   );
   await page.route('**/api/projects/p1', (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/projects/p1/overview', (route) => route.fulfill({ json: OVERVIEW }));
   await page.route('**/api/projects/p1/plans', (route) =>
     route.fulfill({ json: { plans: state.plans } }),
   );

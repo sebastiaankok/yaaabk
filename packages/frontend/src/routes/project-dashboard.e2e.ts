@@ -101,6 +101,60 @@ test('asks for a review while the active Plan is unaccepted', async ({ page }) =
   ).toBeVisible();
 });
 
+test('shows the pending review and active run count in the project tabs', async ({ page }) => {
+  await mockProject(
+    page,
+    overview({
+      activePlan: { id: 'plan-2', version: 2, acceptedAt: null },
+      activeWork: [
+        {
+          id: 'r1',
+          issueId: 'i1',
+          issueTitle: 'Schema',
+          kind: 'implement-issue',
+          attemptNumber: 1,
+          status: 'running',
+          createdAt: '2026-02-03T01:00:00.000Z',
+          startedAt: '2026-02-03T01:01:00.000Z',
+        },
+        {
+          id: 'r2',
+          issueId: 'i2',
+          issueTitle: 'Api',
+          kind: 'review',
+          attemptNumber: 1,
+          status: 'queued',
+          createdAt: '2026-02-04T02:00:00.000Z',
+          startedAt: null,
+        },
+      ],
+    }),
+  );
+
+  await gotoHydrated(page, '/projects/p1');
+
+  const tabs = page.getByTestId('project-tabs');
+  await expect(tabs.getByTestId('review-indicator')).toBeVisible();
+  await expect(tabs.getByRole('link', { name: /Plan v2 not accepted/ })).toBeVisible();
+  await expect(tabs.getByTestId('issues-indicator')).toHaveText('2');
+  await expect(tabs.getByRole('link', { name: /2 active agent runs/ })).toBeVisible();
+});
+
+test('shows no tab indicators without a pending review or active runs', async ({ page }) => {
+  await mockProject(
+    page,
+    overview({
+      activePlan: { id: 'plan-1', version: 2, acceptedAt: '2026-02-02T00:00:00.000Z' },
+    }),
+  );
+
+  await gotoHydrated(page, '/projects/p1');
+
+  const tabs = page.getByTestId('project-tabs');
+  await expect(tabs.getByTestId('review-indicator')).toHaveCount(0);
+  await expect(tabs.getByTestId('issues-indicator')).toHaveCount(0);
+});
+
 test('lists active work and links each row to its issue', async ({ page }) => {
   await mockProject(
     page,
@@ -202,6 +256,9 @@ test('polls active work and the plan banner without clobbering unsaved forms', a
     'href',
     '/projects/p1/issues?issue=i3',
   );
+  const tabs = page.getByTestId('project-tabs');
+  await expect(tabs.getByTestId('review-indicator')).toBeVisible();
+  await expect(tabs.getByTestId('issues-indicator')).toHaveText('1');
   await expect(page.getByLabel('Default agent model')).toHaveValue('openrouter/unsaved');
   await expect(page.getByLabel('GitHub username')).toHaveValue('dev');
   expect(patches).toHaveLength(0);
