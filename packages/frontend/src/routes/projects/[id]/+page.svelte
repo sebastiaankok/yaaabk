@@ -232,9 +232,7 @@
             <Button
               href={action.id === 'start-plan'
                 ? resolve('/projects/[id]/plan', { id: project.id })
-                : action.id === 'review-plan'
-                  ? resolve('/projects/[id]/issues/review', { id: project.id })
-                  : resolve('/projects/[id]/issues', { id: project.id })}
+                : resolve('/projects/[id]/issues/review', { id: project.id })}
               class="h-11 w-full px-5 text-base sm:w-auto"
               data-testid="primary-action"
             >

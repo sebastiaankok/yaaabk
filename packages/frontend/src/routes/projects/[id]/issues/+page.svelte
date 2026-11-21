@@ -79,8 +79,8 @@
   let laneFilter = $state<BoardColumn | ''>('');
   let waveFilter = $state('');
   let sort = $state<BoardSort>('wave');
-  /** Whether the closed lane is shown; history is off by default. */
-  let showClosed = $state(false);
+  /** Whether the closed lane is shown; completed work is history worth seeing. */
+  let showClosed = $state(true);
   /** Whether earlier Plans are shown; the board follows the active Plan. */
   let showEarlierPlans = $state(false);
   /** Whether the Filters popover is open. */

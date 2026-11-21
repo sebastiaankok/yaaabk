@@ -343,21 +343,22 @@ test('previews the issue summary on the card and the full body in the drawer', a
   await expect(panel.getByText('Create the tables')).toBeVisible();
 });
 
-test('hides closed issues until the history is asked for', async ({ page }) => {
+test('shows closed issues by default and hides them when asked', async ({ page }) => {
   await mockBoard(page);
 
   await page.goto('/projects/p1/issues');
 
-  await expect(page.getByRole('heading', { name: 'Closed' })).toHaveCount(0);
-  await expect(card(page, 'Scaffold')).toHaveCount(0);
-
-  const filters = await openFilters(page);
-  await filters.getByLabel('Show closed issues').check();
-  await page.keyboard.press('Escape');
-
   await showLane(page, 'Closed');
   await expect(page.getByRole('heading', { name: 'Closed' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Closed' }).getByText('Scaffold')).toBeVisible();
+
+  const filters = await openFilters(page);
+  await expect(filters.getByLabel('Show closed issues')).toBeChecked();
+  await filters.getByLabel('Show closed issues').uncheck();
+  await page.keyboard.press('Escape');
+
+  await expect(page.getByRole('heading', { name: 'Closed' })).toHaveCount(0);
+  await expect(card(page, 'Scaffold')).toHaveCount(0);
 });
 
 test('follows the active plan until earlier plans are shown', async ({ page }) => {
@@ -576,14 +577,14 @@ test('shows the result count and one removable chip per active filter', async ({
   await page.goto('/projects/p1/issues');
 
   const toolbar = page.getByTestId('board-toolbar');
-  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 4 of 4 issues');
+  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 5 of 5 issues');
 
   await toolbar.getByLabel('Search issues').fill('bookmark');
   const filters = await openFilters(page);
   await filters.getByLabel('Filter by label').selectOption('blocked');
   await page.keyboard.press('Escape');
 
-  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 1 of 4 issues');
+  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 1 of 5 issues');
   await expect(
     toolbar.getByRole('button', { name: 'Remove filter Search: bookmark' }),
   ).toBeVisible();
@@ -613,7 +614,7 @@ test('removing a chip restores exactly the filter it represents', async ({ page 
   await expect(
     toolbar.getByRole('button', { name: 'Remove filter Search: bookmark' }),
   ).toBeVisible();
-  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 2 of 4 issues');
+  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 2 of 5 issues');
   await expect(card(page, 'Api')).toBeVisible();
   await showLane(page, 'Ready');
   await expect(card(page, 'Schema')).toBeVisible();
@@ -621,7 +622,7 @@ test('removing a chip restores exactly the filter it represents', async ({ page 
   await toolbar.getByRole('button', { name: 'Remove filter Search: bookmark' }).click();
 
   await expect(toolbar.getByRole('group', { name: 'Active filters' })).toHaveCount(0);
-  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 4 of 4 issues');
+  await expect(toolbar.getByTestId('board-count')).toHaveText('Showing 5 of 5 issues');
   await expect(card(page, 'Schema')).toBeVisible();
   await showLane(page, 'Blocked');
   await expect(card(page, 'Api')).toBeVisible();
@@ -662,7 +663,7 @@ test('sorts the cards inside their lanes', async ({ page }) => {
   await page.getByLabel('Sort issues').selectOption('title');
 
   await expect(ready.locator('[data-issue-id]')).toHaveText([/^Alpha /, /^Schema /, /^Zebra /]);
-  await expect(page.getByTestId('board-count')).toHaveText('Showing 6 of 6 issues');
+  await expect(page.getByTestId('board-count')).toHaveText('Showing 7 of 7 issues');
 });
 
 test('explains an empty lane left by the filters', async ({ page }) => {
@@ -674,7 +675,7 @@ test('explains an empty lane left by the filters', async ({ page }) => {
   await filters.getByLabel('Filter by wave').selectOption('2');
   await page.keyboard.press('Escape');
 
-  await expect(page.getByTestId('board-count')).toHaveText('Showing 1 of 4 issues');
+  await expect(page.getByTestId('board-count')).toHaveText('Showing 1 of 5 issues');
   await expect(
     page.getByRole('region', { name: 'Ready' }).getByText('No Issues match the current filters.'),
   ).toBeVisible();
@@ -1123,12 +1124,12 @@ test.describe('on a phone', () => {
 
     const tabs = page.getByTestId('lane-tabs');
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole('tab')).toHaveCount(4);
+    await expect(tabs.getByRole('tab')).toHaveCount(5);
     await expect(laneTab(page, 'Ready')).toContainText('1');
     await expect(laneTab(page, 'Blocked')).toContainText('1');
     await expect(laneTab(page, 'In Progress')).toContainText('1');
     await expect(laneTab(page, 'Failed')).toContainText('1');
-    await expect(laneTab(page, 'Closed')).toHaveCount(0);
+    await expect(laneTab(page, 'Closed')).toContainText('1');
     await expect(laneTab(page, 'Ready')).toHaveAttribute('aria-selected', 'true');
 
     // The tablist follows the arrow keys and keeps a single tab stop.
@@ -1191,7 +1192,7 @@ test.describe('on a phone', () => {
     // A chip removal leaves the tab and the filters that remain intact.
     await page.getByRole('button', { name: 'Remove filter Lane: Failed' }).click();
     await expect(laneTab(page, 'Failed')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('board-count')).toHaveText('Showing 4 of 4 issues');
+    await expect(page.getByTestId('board-count')).toHaveText('Showing 5 of 5 issues');
   });
 
   test('opens the issue Sheet full screen and restores focus to the card', async ({ page }) => {

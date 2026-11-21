@@ -1,6 +1,6 @@
 import type { OverviewPlan } from '@yaaabk/stats';
 
-export type NextActionId = 'start-plan' | 'review-plan' | 'issue-board';
+export type NextActionId = 'start-plan' | 'review-plan';
 
 /** The single primary action a Project overview offers a Developer. */
 export interface NextAction {
@@ -10,11 +10,12 @@ export interface NextAction {
 }
 
 /**
- * Resolves the one action that moves a Project forward: publish a first Plan,
- * review the Plan waiting for acceptance, or work the accepted Plan's Issues.
+ * Resolves the one action that moves a Project forward: publish a first Plan or
+ * review the Plan waiting for acceptance. An accepted Plan needs no action: the
+ * project tabs already lead to its Issues.
  * The page turns the id into a route so the model stays free of URL building.
  */
-export function nextAction(activePlan: OverviewPlan | null): NextAction {
+export function nextAction(activePlan: OverviewPlan | null): NextAction | null {
   if (activePlan !== null && activePlan.acceptedAt === null) {
     return {
       id: 'review-plan',
@@ -24,11 +25,7 @@ export function nextAction(activePlan: OverviewPlan | null): NextAction {
   }
 
   if (activePlan !== null) {
-    return {
-      id: 'issue-board',
-      label: 'Open the issue board',
-      detail: `Plan v${activePlan.version} is accepted. Follow the Issues its Agents are working on.`,
-    };
+    return null;
   }
 
   return {

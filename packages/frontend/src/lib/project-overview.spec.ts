@@ -18,13 +18,9 @@ describe('nextAction', () => {
     });
   });
 
-  it('opens the issue board once the active Plan is accepted', () => {
-    expect(
-      nextAction({ id: 'plan-1', version: 3, acceptedAt: '2026-02-02T00:00:00.000Z' }),
-    ).toEqual({
-      id: 'issue-board',
-      label: 'Open the issue board',
-      detail: 'Plan v3 is accepted. Follow the Issues its Agents are working on.',
-    });
+  it('offers no primary action once the active Plan is accepted', () => {
+    expect(nextAction({ id: 'plan-1', version: 3, acceptedAt: '2026-02-02T00:00:00.000Z' })).toBe(
+      null,
+    );
   });
 });
