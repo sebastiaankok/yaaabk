@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import type { Project } from '@yaaabk/projects';
-  import type { ProjectStats } from '@yaaabk/stats';
+  import type { ProjectStats, RunHistoryEntry } from '@yaaabk/stats';
   import { compactTokens } from '#lib/agent-run.js';
   import { ApiError, getProject, getProjectStats } from '#lib/api.js';
   import PageHeader from '#lib/components/page-header.svelte';
@@ -18,14 +18,22 @@
     formatPercent,
     nearestChartIndex,
     rangeForDays,
-    sortRuns,
+    runHistoryEmptyState,
     type RunSort,
+    type RunStatusFilter,
+    visibleRuns,
   } from '#lib/stats-view.js';
 
   const projectId = $derived(page.params.id);
 
   const RANGES = [7, 14, 30] as const;
-  const STATUS_FILTERS = ['all', 'success', 'failed', 'running', 'queued'] as const;
+  const STATUS_FILTERS: readonly RunStatusFilter[] = [
+    'all',
+    'success',
+    'failed',
+    'running',
+    'queued',
+  ];
 
   let project = $state<Project | null>(null);
   const shell = $derived(resolveShell(page.url.pathname, project?.name));
@@ -34,7 +42,7 @@
   let error = $state<string | null>(null);
   let days = $state<(typeof RANGES)[number]>(30);
   let sort = $state<RunSort>('newest');
-  let statusFilter = $state<(typeof STATUS_FILTERS)[number]>('all');
+  let statusFilter = $state<RunStatusFilter>('all');
 
   let throughputElement = $state<SVGSVGElement | undefined>(undefined);
   let activeIndex = $state<number | null>(null);
@@ -68,17 +76,20 @@
   const durationBars = $derived(durationByAttempt(stats?.runs ?? []));
   const maxDuration = $derived(Math.max(1, ...durationBars.map((bar) => bar.averageSeconds)));
 
-  const visibleRuns = $derived(
-    sortRuns(stats?.runs ?? [], sort).filter(
-      (run) => statusFilter === 'all' || run.status === statusFilter,
-    ),
-  );
+  const displayedRuns = $derived(visibleRuns(stats?.runs ?? [], sort, statusFilter));
+  const historyEmptyState = $derived(runHistoryEmptyState(stats?.runs ?? [], statusFilter, days));
 
   const firstDate = $derived(stats?.closedPerDay[0]?.date ?? '');
   const lastDate = $derived(stats?.closedPerDay.at(-1)?.date ?? '');
 
   function describe(cause: unknown): string {
     return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.';
+  }
+
+  function statusClass(status: RunHistoryEntry['status']): string {
+    if (status === 'success') return 'bg-success-subtle text-success';
+    if (status === 'failed') return 'bg-destructive-subtle text-destructive';
+    return 'bg-muted text-foreground';
   }
 
   function inspectAt(event: PointerEvent): void {
@@ -568,14 +579,73 @@
           </label>
         </div>
       </div>
-      {#if visibleRuns.length === 0}
-        <p class="p-4 text-sm text-muted-foreground">
-          {stats.runs.length === 0
-            ? `No agent runs in the last ${days} days.`
-            : 'No agent runs match this filter.'}
-        </p>
+      {#if displayedRuns.length === 0}
+        <div class="p-4" data-testid="run-history-empty">
+          <p class="text-sm font-medium text-foreground">{historyEmptyState.title}</p>
+          <p class="mt-1 text-sm text-muted-foreground">{historyEmptyState.hint}</p>
+          {#if statusFilter !== 'all' && stats.runs.length > 0}
+            <button
+              type="button"
+              onclick={() => (statusFilter = 'all')}
+              class="mt-3 rounded-md border border-border-subtle px-3 py-1.5 text-sm hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              Clear status filter
+            </button>
+          {/if}
+        </div>
       {:else}
-        <div class="overflow-x-auto">
+        <ul class="divide-y divide-border-subtle min-[720px]:hidden" data-testid="run-cards">
+          {#each displayedRuns as run (run.id)}
+            <li class="p-4" data-testid="run-card">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <h3 class="min-w-0 break-words text-sm font-medium text-foreground">
+                  {run.issueTitle}
+                </h3>
+                <span class="shrink-0 rounded-full px-2 py-0.5 text-xs {statusClass(run.status)}">
+                  {run.status}
+                </span>
+              </div>
+              <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div>
+                  <dt class="text-xs text-muted-foreground">Attempt</dt>
+                  <dd class="tabular-nums">{run.attemptNumber}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-muted-foreground">Duration</dt>
+                  <dd class="tabular-nums">{formatDuration(run.durationSeconds)}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-muted-foreground">Cost</dt>
+                  <dd class="tabular-nums">{formatDollars(run.costCents)}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-muted-foreground">Tokens</dt>
+                  <dd class="tabular-nums">{compactTokens(run.tokens)}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-muted-foreground">PR</dt>
+                  <dd>
+                    {#if run.prUrl !== null}
+                      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+                      <a href={run.prUrl} target="_blank" rel="noreferrer" class="hover:underline">
+                        Open PR
+                      </a>
+                    {:else}
+                      —
+                    {/if}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-muted-foreground">Started</dt>
+                  <dd class="text-muted-foreground">
+                    <time datetime={run.createdAt}>{run.createdAt.slice(0, 10)}</time>
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          {/each}
+        </ul>
+        <div class="hidden overflow-x-auto min-[720px]:block" data-testid="run-table">
           <table class="w-full text-left text-sm">
             <thead class="bg-surface text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -590,18 +660,12 @@
               </tr>
             </thead>
             <tbody>
-              {#each visibleRuns as run (run.id)}
+              {#each displayedRuns as run (run.id)}
                 <tr class="border-t border-border-subtle">
                   <td class="px-4 py-2">{run.issueTitle}</td>
                   <td class="px-4 py-2 tabular-nums">{run.attemptNumber}</td>
                   <td class="px-4 py-2">
-                    <span
-                      class="rounded-full px-2 py-0.5 text-xs {run.status === 'success'
-                        ? 'bg-success-subtle text-success'
-                        : run.status === 'failed'
-                          ? 'bg-destructive-subtle text-destructive'
-                          : 'bg-muted text-foreground'}"
-                    >
+                    <span class="rounded-full px-2 py-0.5 text-xs {statusClass(run.status)}">
                       {run.status}
                     </span>
                   </td>

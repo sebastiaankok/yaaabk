@@ -10,7 +10,9 @@ import {
   formatPercent,
   nearestChartIndex,
   rangeForDays,
+  runHistoryEmptyState,
   sortRuns,
+  visibleRuns,
 } from './stats-view';
 
 describe('formatPercent', () => {
@@ -188,6 +190,58 @@ describe('sortRuns', () => {
       'old-cheap',
     ]);
     expect(runs.map((run) => run.id)).toEqual(['old-cheap', 'new-pricey', 'middle-long']);
+  });
+});
+
+describe('visibleRuns', () => {
+  const runs = [
+    historyRun({ id: 'new-success', createdAt: '2026-01-03T00:00:00.000Z' }),
+    historyRun({
+      id: 'old-failed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      status: 'failed',
+      costCents: 20,
+    }),
+    historyRun({
+      id: 'middle-success',
+      createdAt: '2026-01-02T00:00:00.000Z',
+      costCents: 10,
+    }),
+  ];
+
+  it('filters by status and keeps the chosen order', () => {
+    expect(visibleRuns(runs, 'newest', 'all').map((run) => run.id)).toEqual([
+      'new-success',
+      'middle-success',
+      'old-failed',
+    ]);
+    expect(visibleRuns(runs, 'cost', 'success').map((run) => run.id)).toEqual([
+      'middle-success',
+      'new-success',
+    ]);
+    expect(visibleRuns(runs, 'newest', 'failed').map((run) => run.id)).toEqual(['old-failed']);
+  });
+
+  it('is empty when no run matches the filter', () => {
+    expect(visibleRuns(runs, 'newest', 'running')).toEqual([]);
+  });
+});
+
+describe('runHistoryEmptyState', () => {
+  it('explains an empty range and how to look further back', () => {
+    expect(runHistoryEmptyState([], 'all', 30)).toEqual({
+      title: 'No agent runs in the last 30 days',
+      hint: 'Widen the range or start an agent to see runs here.',
+    });
+  });
+
+  it('names the status filter that matched nothing', () => {
+    const runs = [historyRun({ id: 'ok', status: 'success' })];
+
+    expect(runHistoryEmptyState(runs, 'failed', 7)).toEqual({
+      title: 'No runs with status failed in the last 7 days',
+      hint: '1 run in this range has another status. Clear the filter or change the range.',
+    });
   });
 });
 
