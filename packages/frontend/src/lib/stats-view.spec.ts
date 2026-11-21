@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { RunHistoryEntry } from '@yaaabk/stats';
 import {
-  chartPoints,
+  chartGeometry,
   donutGradient,
   durationByAttempt,
   formatCoveredTokens,
   formatDollars,
   formatDuration,
   formatPercent,
+  nearestChartIndex,
   rangeForDays,
   sortRuns,
 } from './stats-view';
@@ -67,25 +68,80 @@ describe('rangeForDays', () => {
   });
 });
 
-describe('chartPoints', () => {
-  it('scales values into an SVG viewport with the zero line at the bottom', () => {
-    expect(chartPoints([0, 2, 1], 100, 50)).toEqual([
-      { x: 0, y: 50 },
-      { x: 50, y: 0 },
-      { x: 100, y: 25 },
-    ]);
+describe('chartGeometry', () => {
+  it('keeps an empty series empty while still drawing an axis from zero to one', () => {
+    const chart = chartGeometry([]);
+
+    expect(chart.points).toEqual([]);
+    expect(chart.linePath).toBe('');
+    expect(chart.areaPath).toBe('');
+    expect(chart.xTicks).toEqual([]);
+    expect(chart.bounds).toEqual({ min: 0, max: 1 });
+    expect(chart.yTicks.map((tick) => tick.value)).toEqual([0, 1]);
+    expect(chart.yTicks[0].offset).toBe(chart.plot.y + chart.plot.height);
+    expect(chart.yTicks.at(-1)?.offset).toBe(chart.plot.y);
   });
 
-  it('keeps a flat series on the zero line', () => {
-    expect(chartPoints([0, 0, 0], 100, 50)).toEqual([
-      { x: 0, y: 50 },
-      { x: 50, y: 50 },
-      { x: 100, y: 50 },
-    ]);
+  it('centres a single point in the plot and fills down to the baseline', () => {
+    const chart = chartGeometry([2], { width: 100, height: 100 });
+
+    expect(chart.plot).toEqual({ x: 44, y: 12, width: 44, height: 64 });
+    expect(chart.points).toEqual([{ x: 66, y: 12 }]);
+    expect(chart.linePath).toBe('M 66 12');
+    expect(chart.areaPath).toBe('M 66 12 L 66 76 L 66 76 Z');
+    expect(chart.xTicks).toEqual([{ offset: 66, value: 0, label: '0' }]);
   });
 
-  it('returns no points for an empty series', () => {
-    expect(chartPoints([], 100, 50)).toEqual([]);
+  it('places a multi-point series across the plot with a readable value axis', () => {
+    const chart = chartGeometry([0, 2, 1]);
+
+    expect(chart.plot).toEqual({ x: 44, y: 12, width: 544, height: 164 });
+    expect(chart.bounds).toEqual({ min: 0, max: 2 });
+    expect(chart.points).toEqual([
+      { x: 44, y: 176 },
+      { x: 316, y: 12 },
+      { x: 588, y: 94 },
+    ]);
+    expect(chart.yTicks).toEqual([
+      { value: 0, offset: 176, label: '0' },
+      { value: 1, offset: 94, label: '1' },
+      { value: 2, offset: 12, label: '2' },
+    ]);
+    expect(chart.xTicks).toEqual([
+      { offset: 44, value: 0, label: '0' },
+      { offset: 316, value: 1, label: '1' },
+      { offset: 588, value: 2, label: '2' },
+    ]);
+    expect(chart.linePath).toBe('M 44 176 L 316 12 L 588 94');
+    expect(chart.areaPath).toBe('M 44 176 L 316 12 L 588 94 L 588 176 L 44 176 Z');
+  });
+
+  it('rounds the value axis up to a step that reads well', () => {
+    const chart = chartGeometry([0, 7, 2], { xTickCount: 2 });
+
+    expect(chart.bounds).toEqual({ min: 0, max: 8 });
+    expect(chart.yTicks.map((tick) => tick.label)).toEqual(['0', '2', '4', '6', '8']);
+    expect(chart.xTicks.map((tick) => tick.value)).toEqual([0, 2]);
+  });
+});
+
+describe('nearestChartIndex', () => {
+  const points = [
+    { x: 0, y: 10 },
+    { x: 50, y: 20 },
+    { x: 100, y: 30 },
+  ];
+
+  it('finds the point nearest to the pointer, including the ends', () => {
+    expect(nearestChartIndex(points, -20)).toBe(0);
+    expect(nearestChartIndex(points, 24)).toBe(0);
+    expect(nearestChartIndex(points, 26)).toBe(1);
+    expect(nearestChartIndex(points, 80)).toBe(2);
+    expect(nearestChartIndex(points, 400)).toBe(2);
+  });
+
+  it('has no answer for an empty series', () => {
+    expect(nearestChartIndex([], 10)).toBeNull();
   });
 });
 
