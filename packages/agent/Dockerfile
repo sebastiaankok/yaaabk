@@ -26,7 +26,7 @@ COPY templates/svelte-bun/server/package.json server/package.json
 COPY templates/svelte-bun/web/package.json web/package.json
 RUN BUN_INSTALL_CACHE_DIR=/bun-cache bun install --frozen-lockfile
 
-FROM oven/bun:1.3-alpine AS runtime
+FROM oven/bun:1.3-alpine AS runtime-base
 # Pin the terminal and agent runtime. Sessions and Agent Jobs share this image,
 # so there is one OpenCode version to upgrade and verify. The versions live in
 # runtime-versions.env, which the backend's local session stage reads too.
@@ -37,12 +37,16 @@ COPY --from=build /app/packages/agent/runtime-versions.env /tmp/runtime-versions
 # `yaaabk-agent` ServiceAccount token, and probe an endpoint. ttyd owns the PTY
 # for grill sessions; tmux supervises OpenCode so a terminal client disconnect
 # does not kill it.
+# Node is required by the template's web unit tests: Vitest and jsdom drive
+# worker threads and DOM APIs Bun does not implement, so running them under Bun
+# fails with `child.channel?.unref is not a function`. The template's `check`
+# script is what every Agent runs, so the runtime must provide Node.
 # OpenCode ships a musl build that runs on this Alpine image.
 # The pinned OpenCode binary is a Bun standalone executable. Running it under
 # QEMU during an emulated amd64 build can segfault, so the build does not
 # execute it; the container runs it natively on the target host.
 RUN . /tmp/runtime-versions.env && \
-    apk add --no-cache git github-cli ca-certificates curl tmux && \
+    apk add --no-cache git github-cli ca-certificates curl nodejs tmux && \
     case "${TARGETARCH}" in \
       amd64) KUBECTL_ARCH=amd64; TTYD_ARCH=x86_64; OPENCODE_ARCH=x64;; \
       arm64) KUBECTL_ARCH=arm64; TTYD_ARCH=aarch64; OPENCODE_ARCH=arm64;; \
@@ -59,6 +63,30 @@ RUN . /tmp/runtime-versions.env && \
     rm -f /tmp/opencode.tar.gz /tmp/runtime-versions.env
 WORKDIR /app
 ENV NODE_ENV=production
+# The template's dependency cache. `bun install --prefer-offline` in the
+# attempt's clone resolves from here and only reaches the network for a
+# dependency the scaffold does not already use.
+COPY --from=project-cache /bun-cache /home/bun/.bun/install/cache
+RUN mkdir -p /work && chown -R bun:bun /work /home/bun/.bun
+ENV BUN_INSTALL_CACHE_DIR=/home/bun/.bun/install/cache
+ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
+ENV KUBECONFIG=/app/kubeconfig.yaml
+
+# Prove the bundled template passes its own checks in this image before any
+# Agent Job runs them. The template's `check` script is the contract every
+# attempt is judged by, so a template that needs a runtime this image lacks
+# must fail the build here rather than half-way through a model run. The stage
+# is not shipped; `runtime` depends on its marker file.
+FROM runtime-base AS template-check
+COPY --parents package.json bun.lock packages/*/package.json ./
+RUN --mount=type=cache,target=/home/bun/.bun/install/cache bun install --frozen-lockfile
+COPY packages ./packages
+COPY templates ./templates
+USER bun
+RUN bun packages/template/scripts/check-template.ts && touch /tmp/template-check-ok
+
+FROM runtime-base AS runtime
+USER bun
 COPY --from=build /app/packages/agent/dist ./dist
 # The Agent skills and the image-baked Grill-Me skills. Both configs register
 # the Agent skills; the session config also registers the Grill-Me directory.
@@ -76,13 +104,6 @@ COPY --from=build /app/packages/agent/opencode-session.json ./opencode-session.j
 # kubectl does not discover the mounted ServiceAccount by itself; this points it
 # at the in-cluster API and lets the projected token authenticate every call.
 COPY --from=build /app/packages/agent/kubeconfig.yaml ./kubeconfig.yaml
-# The template's dependency cache. `bun install --prefer-offline` in the
-# attempt's clone resolves from here and only reaches the network for a
-# dependency the scaffold does not already use.
-COPY --from=project-cache /bun-cache /home/bun/.bun/install/cache
-RUN mkdir -p /work && chown -R bun:bun /work /home/bun/.bun
-ENV BUN_INSTALL_CACHE_DIR=/home/bun/.bun/install/cache
-ENV YAAABK_SESSION_OPENCODE_CONFIG=/app/opencode-session.json
-ENV KUBECONFIG=/app/kubeconfig.yaml
-USER bun
+# Forces the template check above to run for every image build.
+COPY --from=template-check /tmp/template-check-ok /tmp/template-check-ok
 CMD ["bun", "dist/index.js"]
