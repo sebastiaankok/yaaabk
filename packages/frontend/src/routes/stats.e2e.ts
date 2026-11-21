@@ -15,6 +15,14 @@ const PROJECT = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+const OVERVIEW = {
+  project: PROJECT,
+  activePlan: null,
+  activeWork: [],
+  issues: { total: 0, open: 0, inProgress: 0, closed: 0, failed: 0, averageAttempts: 0 },
+  lastRunAt: null,
+};
+
 const STATS = {
   issues: { total: 5, open: 1, inProgress: 1, closed: 2, failed: 1, averageAttempts: 1.4 },
   agents: {
@@ -197,6 +205,7 @@ async function mockStats(page: Page, options: MockOptions = {}): Promise<void> {
     }),
   );
   await page.route(/\/api\/projects\/p1$/, (route) => route.fulfill({ json: PROJECT }));
+  await page.route('**/api/projects/p1/overview', (route) => route.fulfill({ json: OVERVIEW }));
   await page.route(/\/api\/projects\/p1\/stats(\?.*)?$/, async (route) => {
     const url = route.request().url();
     options.onStats?.(url);
