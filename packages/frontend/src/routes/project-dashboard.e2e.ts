@@ -264,7 +264,7 @@ test('polls active work and the plan banner without clobbering unsaved forms', a
   expect(patches).toHaveLength(0);
 });
 
-test('opens the issue board when the active plan is accepted', async ({ page }) => {
+test('offers no primary action when the active plan is accepted', async ({ page }) => {
   await mockProject(
     page,
     overview({
@@ -274,9 +274,9 @@ test('opens the issue board when the active plan is accepted', async ({ page }) 
 
   await gotoHydrated(page, '/projects/p1');
 
-  const action = page.getByTestId('primary-action');
-  await expect(action).toHaveText('Open the issue board');
-  await expect(action).toHaveAttribute('href', '/projects/p1/issues');
+  await expect(page.getByTestId('primary-action')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Start a Plan' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Review Plan/ })).toHaveCount(0);
   await expect(page.getByText(/not accepted/)).toHaveCount(0);
 });
 
