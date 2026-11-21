@@ -272,9 +272,13 @@ function sessionPodSpec(
         envFrom: sessionSecret === null ? undefined : [{ secretRef: { name: sessionSecret } }],
         volumeMounts: [{ name: 'workspace', mountPath: SESSION_WORKSPACE_PATH }],
         securityContext: restrictedContainer('session'),
+        // OpenCode's server keeps a session's state in memory and grows past
+        // 1Gi during a healthy session, so the kubelet OOM-killed sessions
+        // with nothing reported. 2Gi leaves headroom for a full conversation,
+        // the same envelope the issue Agents run with.
         resources: options.resources ?? {
-          requests: { cpu: '250m', memory: '256Mi' },
-          limits: { cpu: '1', memory: '1Gi' },
+          requests: { cpu: '250m', memory: '512Mi' },
+          limits: { cpu: '1', memory: '2Gi' },
         },
       },
     ],
