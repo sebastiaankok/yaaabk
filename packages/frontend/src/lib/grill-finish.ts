@@ -1,6 +1,23 @@
 /** What the backend says Finish is missing, as the API client carries it. */
 export type FinishMissing = readonly string[];
 
+/** What the agent has reported but not yet published. */
+export interface GrillDraft {
+  hasPrd: boolean;
+  issueCount: number;
+}
+
+/**
+ * Whether both of the agent's drafts are publishable, so Finish can succeed.
+ *
+ * The Finish button uses this to draw the Developer's eye once the agent has
+ * reported a Plan and at least one Issue. Publishing stays manual: the UI only
+ * hints, it never calls Finish on the Developer's behalf.
+ */
+export function isFinishReady(draft: GrillDraft): boolean {
+  return draft.hasPrd && draft.issueCount > 0;
+}
+
 /**
  * Whether a forced publish can succeed.
  *

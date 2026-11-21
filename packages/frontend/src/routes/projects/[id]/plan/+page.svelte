@@ -11,6 +11,7 @@
     cancelGrill,
     finishGrill,
     getActiveGrillSession,
+    getGrillSession,
     getProject,
     listIssues,
     listModels,
@@ -20,7 +21,7 @@
     type GrillSessionView,
     type ModelCatalogueView,
   } from '#lib/api.js';
-  import { canForceFinish, finishHint } from '#lib/grill-finish.js';
+  import { canForceFinish, finishHint, isFinishReady } from '#lib/grill-finish.js';
   import ModelCombobox from '#lib/components/model-combobox.svelte';
   import PageHeader from '#lib/components/page-header.svelte';
   import ProjectTabs from '#lib/components/project-tabs.svelte';
@@ -38,6 +39,7 @@
   import { Textarea } from '#lib/components/ui/textarea/index.js';
   import { planFilePath, planFileUrl } from '#lib/plan-file.js';
   import { planProgress, planStatusLabel, type PlanLifecycleStatus } from '#lib/plan-lifecycle.js';
+  import { pollWhileVisible } from '#lib/polling.js';
   import { projectModeLabel } from '#lib/project-mode.js';
   import { resolveShell } from '#lib/shell.js';
   import Terminal from '#lib/terminal.svelte';
@@ -66,6 +68,10 @@
   const terminalUrl = $derived(
     session === null || projectId === undefined ? '' : terminalWebSocketUrl(projectId, session.id),
   );
+  const sessionId = $derived(session?.id);
+  const finishReady = $derived(session !== null && isFinishReady(session.draft));
+  // Pulsing stops while Finish is in flight and once Cancel is being confirmed.
+  const pulseFinish = $derived(finishReady && !busy && !confirmingCancel);
 
   const draftPlanLabel = $derived(session?.draft.hasPrd === true ? 'Plan drafted' : 'No Plan yet');
   const draftIssuesLabel = $derived(
@@ -157,6 +163,56 @@
       });
     return () => {
       cancelled = true;
+    };
+  });
+
+  // Watch the agent's drafts while the session is on screen, so Finish lights
+  // up as soon as it reports both a Plan and its Issues. Publishing stays
+  // manual; this poll never calls the finish endpoint.
+  $effect(() => {
+    const id = projectId;
+    const liveSessionId = sessionId;
+    if (id === undefined || liveSessionId === undefined) return;
+    let cancelled = false;
+    const stop = pollWhileVisible({
+      intervalMs: 5_000,
+      isVisible: () => document.visibilityState === 'visible',
+      onVisibilityChange: (listener) => {
+        document.addEventListener('visibilitychange', listener);
+        return () => document.removeEventListener('visibilitychange', listener);
+      },
+      poll: () =>
+        getGrillSession(id, liveSessionId)
+          .then((next) => {
+            if (cancelled) return;
+            if (
+              next.status === 'finished' ||
+              next.status === 'cancelled' ||
+              next.status === 'failed'
+            ) {
+              session = null;
+              terminalStatus = 'closed';
+              terminalError = null;
+              if (next.status === 'failed' && next.error !== null) error = next.error;
+              return;
+            }
+            session = next;
+            // Fresh drafts make an earlier 409 obsolete; drop its panel so the
+            // pulse can take over.
+            if (isFinishReady(next.draft)) finishConflict = null;
+          })
+          .catch((cause) => {
+            if (cancelled) return;
+            if (cause instanceof ApiError && cause.status === 404) {
+              session = null;
+              terminalStatus = 'closed';
+              terminalError = null;
+            }
+          }),
+    });
+    return () => {
+      cancelled = true;
+      stop();
     };
   });
 
@@ -368,7 +424,21 @@
                   </li>
                 </ul>
                 <div class="flex flex-wrap gap-2">
-                  <Button onclick={() => void finish()} disabled={busy}>Finish</Button>
+                  <p class="sr-only" aria-live="polite" data-testid="finish-ready-announcement">
+                    {finishReady
+                      ? 'The agent has drafted a Plan and its Issues. Finish publishes them.'
+                      : ''}
+                  </p>
+                  <Button
+                    onclick={() => void finish()}
+                    disabled={busy}
+                    data-finish-ready={finishReady ? 'true' : undefined}
+                    class={pulseFinish
+                      ? 'ring-primary/50 animate-pulse ring-2 [animation-duration:3s] motion-reduce:animate-none'
+                      : ''}
+                  >
+                    Finish
+                  </Button>
                   <Button
                     variant="outline"
                     class="border-destructive/40 text-destructive hover:bg-destructive-subtle"
