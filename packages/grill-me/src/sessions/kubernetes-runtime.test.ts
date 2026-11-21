@@ -194,8 +194,8 @@ describe('Kubernetes session Pods', () => {
       runAsNonRoot: true,
     });
     expect(pod.containers[0]?.resources).toEqual({
-      requests: { cpu: '250m', memory: '256Mi' },
-      limits: { cpu: '1', memory: '1Gi' },
+      requests: { cpu: '250m', memory: '512Mi' },
+      limits: { cpu: '1', memory: '2Gi' },
     });
   });
 
